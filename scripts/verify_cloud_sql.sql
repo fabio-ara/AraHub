@@ -34,6 +34,12 @@ do $test$ declare first jsonb; replay jsonb; begin
   replay := public.hub_record_delta(current_setting('arahub.qa_delta')::jsonb);
   if first->>'id' is null or first->>'id' is distinct from replay->>'id' or replay->>'replayed' is distinct from 'true' then raise exception 'qa_idempotency_failed'; end if;
   if (select count(*) from public.hub_files)<>1 then raise exception 'qa_owner_read_failed'; end if;
+  begin
+    update public.hub_connections set origin='https://synthetic-attacker.invalid',oauth_epoch=0
+      where id=current_setting('arahub.qa_connection')::uuid;
+    raise exception 'qa_connection_mutation_allowed';
+  exception when insufficient_privilege then null;
+  end;
 end $test$;
 
 -- An OAuth client token with OIDC scopes alone must not get direct Data API memory.

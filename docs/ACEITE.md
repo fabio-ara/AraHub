@@ -4,7 +4,7 @@ Atualizada em 2026-10-05. Contrato completo: `.arahub-bootstrap/07-ACEITE-E-TEST
 
 | ID | Capacidade | Estado local | Prova real / pendência |
 |---|---|---|---|
-| A01 | Instalação limpa e MCP | Sete migrations em banco SQL novo, RLS/dois donos/retry; cliente SDK HTTP local | Schema aplicado no projeto Free autorizado, hashes conferidos; cache vazio e MCP hospedado pendentes |
+| A01 | Instalação limpa e MCP | Oito migrations em banco SQL novo, RLS/dois donos/retry; cliente SDK HTTP local | Schema aplicado no projeto Free autorizado, hashes conferidos; cache vazio e MCP hospedado pendentes |
 | A02 | Isolamento por usuário | SQL/RLS/FKs, busca/exportação/jobs testados | SQL hospedado com dois donos sintéticos/rollback aprovado; cliente Auth/backend/Storage hospedados pendentes |
 | A03 | Isolamento por conexão | IDs colidentes e relações cruzadas testados | Segunda instalação/duas contas Google reais pendentes |
 | A04 | Segredos em todas as superfícies | Exclusões verificadas; scan índice/histórico e markers no gate | Auditoria pré-publicação futura |
@@ -19,7 +19,7 @@ Atualizada em 2026-10-05. Contrato completo: `.arahub-bootstrap/07-ACEITE-E-TEST
 | A13 | Autoria e versão publicada | Regra no domínio, versões migradas preservadas | Comparação de rascunho/post ainda parcial |
 | A14 | Reabertura | Estado de disponibilidade independente | Refresh integrado pendente |
 | A15 | Fusos e datas vagas | IANA/DST testados; precisão migrada preservada | Interface de planejamento pendente |
-| A16 | Moodle real | Adaptador próprio + fixtures | Prova real local de leitura e pequeno arquivo; IP remoto não testado |
+| A16 | Moodle real | Adaptador próprio + fixtures | Prova real local de leitura e pequeno arquivo; renovação HTTP/SQL sintética preserva identidade/histórico e respeita desconexão; renovação real/IP remoto pendentes |
 | A17 | Outro Moodle | Fixtures de subdiretório/funções faltantes; banco IDs colidentes | Segunda instalação/IFSP não comprovados |
 | A18 | Erros/cobertura/cursor | Fixtures e jobs testados; cursor não avança em partial | Orquestração de sync ainda parcial |
 | A19 | Google múltiplas contas | OAuth/HTTP persistente, conta verificada, cofre/CAS/epoch, callback tardio e escopos testados | App OAuth/consentimentos/duas contas reais não configurados |

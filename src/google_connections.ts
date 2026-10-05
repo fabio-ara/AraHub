@@ -474,7 +474,7 @@ export class GoogleConnections {
       });
     } catch (error) {
       // Negacao/erro de autorizacao: denied apenas para conexao nova; reauth nao derruba a conectada.
-      await this.#markDeniedIfPending(p, connectionId);
+      await this.#markDeniedIfPending(p, connectionId, pendingEpoch);
       throw toHubError(error);
     }
 
@@ -745,12 +745,16 @@ export class GoogleConnections {
   }
 
   /** Erro/negacao de autorizacao vira denied apenas para conexao nova (pending). */
-  async #markDeniedIfPending(p: GooglePrincipal, connectionId: string): Promise<void> {
+  async #markDeniedIfPending(
+    p: GooglePrincipal,
+    connectionId: string,
+    epoch: number,
+  ): Promise<void> {
     try {
-      await asOwner(this.#hub.db, p, async (tx) => {
+      await this.#hub.db.begin(async (tx) => {
         await tx.unsafe(
-          "update public.hub_connections set state='denied' where owner_id=$1 and id=$2 and provider='google' and state='pending'",
-          [p.ownerId, connectionId],
+          "update public.hub_connections set state='denied' where owner_id=$1 and id=$2 and provider='google' and state='pending' and oauth_epoch=$3",
+          [p.ownerId, connectionId, epoch],
         );
       });
     } catch {
@@ -760,7 +764,7 @@ export class GoogleConnections {
 
   async #markExpired(p: GooglePrincipal, connectionId: string, epoch: number): Promise<void> {
     try {
-      await asOwner(this.#hub.db, p, async (tx) => {
+      await this.#hub.db.begin(async (tx) => {
         await tx.unsafe(
           "update public.hub_connections set state='expired' where owner_id=$1 and id=$2 and provider='google' and state='connected' and oauth_epoch=$3",
           [p.ownerId, connectionId, epoch],

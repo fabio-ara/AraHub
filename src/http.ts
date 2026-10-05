@@ -133,6 +133,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           label: z.string().min(1).max(100),
           origin: z.string().url(),
           token: z.string().min(8).max(4096),
+          connection_id: z.string().uuid().optional(),
         }).strict().parse(JSON.parse(await boundedBody(req, 8192)));
         return json(await config.connections.addMoodle(p, input));
       }

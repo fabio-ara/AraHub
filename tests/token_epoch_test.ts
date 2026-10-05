@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { asOwner, createDb } from "../src/db.ts";
+import { createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
 import { PostgresTokenStore } from "../src/connections.ts";
 import { sealTokenRecord, TokenVault } from "../src/adapters/token_vault.ts";
@@ -11,12 +11,7 @@ Deno.test("A19: refresh antigo não substitui novo consentimento mesmo com vers�
   try {
     await db`insert into auth.users(id) values(${p.ownerId})`;
     const connection = await hub.connect(p, "google", "Conta sintética", null, "stable-subject");
-    await asOwner(
-      db,
-      p,
-      (tx) =>
-        tx`update public.hub_connections set oauth_epoch=1,state='connected' where id=${connection.id}`,
-    );
+    await db`update public.hub_connections set oauth_epoch=1,state='connected' where owner_id=${p.ownerId} and id=${connection.id}`;
     const vault = await TokenVault.fromRawKeys([{
       kid: "fixture",
       key: crypto.getRandomValues(new Uint8Array(32)),

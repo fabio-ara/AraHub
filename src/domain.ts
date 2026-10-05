@@ -96,7 +96,7 @@ export class Hub {
         } order by recorded_at desc limit 50`
         : [];
       const connections =
-        await tx`select id,provider,label,state,capabilities,desired_scopes,granted_scopes from public.hub_connections where owner_id=${p.ownerId}`;
+        await tx`select id,provider,label,origin,state,capabilities,desired_scopes,granted_scopes from public.hub_connections where owner_id=${p.ownerId}`;
       return {
         contexts,
         deltas,

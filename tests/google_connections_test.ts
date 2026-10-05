@@ -734,6 +734,44 @@ Deno.test("callback superado nao troca identidade nem token; o atual vence", asy
   }
 });
 
+Deno.test("negação de callback antigo não invalida consentimento mais recente", async () => {
+  const env = await makeEnv();
+  try {
+    const p = await newPrincipal(env.db);
+    const old = await env.service.start(p, {
+      label: "Synthetic",
+      scopes: ["gmail_read"],
+    });
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((r) => release = r),
+      started = new Promise<void>((r) => entered = r);
+    env.setTokenResponse(async () => {
+      entered();
+      await gate;
+      return jsonResponse({ error: "access_denied" }, 400);
+    });
+    const callback = env.service.callback(p, {
+      code: "synthetic",
+      state: old.state,
+    });
+    const rejected = assert.rejects(callback);
+    await started;
+    await env.service.start(p, {
+      connection_id: old.connection_id,
+      label: "Synthetic",
+      scopes: ["gmail_read"],
+    });
+    release();
+    await rejected;
+    const rows = await env
+      .db`select state,oauth_epoch from public.hub_connections where owner_id=${p.ownerId} and id=${old.connection_id}`;
+    assert.equal(rows[0].state, "pending");
+    assert.equal(rows[0].oauth_epoch, 2);
+  } finally {
+    await env.db.end();
+  }
+});
+
 Deno.test("callback em voo apos disconnect nao reativa nem guarda token", async () => {
   const env = await makeEnv();
   try {

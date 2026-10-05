@@ -299,3 +299,9 @@ O main monta o adaptador por conexão (proprietário + credencial), chama
 `initialize()` no cadastro e persiste as capacidades de `discover()`. As
 leituras devolvem observed_at para proveniência e cobrem o estado acadêmico sem
 notas ou status de submissão próprios, que permanecem bloqueados por política.
+
+## Renovação do token
+
+O formulário permite selecionar Renovar acesso na conexão existente. A API exige interface de navegador, confere instalação e identidade antes de trocar o token e preserva os IDs/histórico. Conexão e credencial cifrada são gravadas em uma transação. Desconexão e renovação incrementam uma versão de autorização; uma renovação atrasada não supera uma desconexão ou renovação concorrente. A Data API não pode alterar origem/identidade/estado/escopos dessa conexão: o ciclo depende do backend com proprietário verificado.
+
+Prova HTTP/SQL usa Moodle sintético; troca válida, conta/origem estrangeiras, acesso de outro dono, duplicação e desconexão concorrente foram verificados. Renovação real, interação e QA visual do botão ainda estão pendentes. As provas anteriores de leitura Moodle real continuam válidas para o adaptador, sem comprovar esse novo fluxo.

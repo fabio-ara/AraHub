@@ -20,6 +20,15 @@ const supabase = cfg.supabaseUrl && cfg.publishableKey
   })
   : null;
 let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthetic-token") : null;
+let renewingMoodle: string | null = null;
+let moodleSubmitting = false;
+function resetMoodleForm() {
+  renewingMoodle = null;
+  (el("moodle-connect-form") as HTMLFormElement).reset();
+  (el("moodle-origin") as HTMLInputElement).readOnly = false;
+  el("moodle-cancel-renewal").hidden = true;
+  el("moodle-submit").textContent = "Conectar Moodle";
+}
 el("synthetic-login").hidden = !cfg.synthetic;
 el("moodle-connect-form").hidden = !cfg.canConnectMoodle;
 el("google-connect-form").hidden = !cfg.canConnectGoogle;
@@ -28,7 +37,9 @@ if (!supabase) {
   el("setup-note").hidden = false;
 }
 const api = async (path: string) => {
-  const r = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+  const r = await fetch(path, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   const result = await r.json();
   if (!r.ok) throw new Error(result.message ?? "Não foi possível atualizar.");
   return result;
@@ -36,11 +47,16 @@ const api = async (path: string) => {
 async function post(path: string, payload: unknown) {
   const response = await fetch(path, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(payload),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.message ?? "Não foi possível concluir.");
+  if (!response.ok) {
+    throw new Error(result.message ?? "Não foi possível concluir.");
+  }
   return result;
 }
 async function googleCallback() {
@@ -49,7 +65,9 @@ async function googleCallback() {
   try {
     await post("/api/connections/google/callback", pendingGoogle);
     await render();
-    msg("Conta Google vinculada à sua memória. Confira as permissões concedidas.");
+    msg(
+      "Conta Google vinculada à sua memória. Confira as permissões concedidas.",
+    );
   } catch (e) {
     msg(
       e instanceof Error
@@ -105,13 +123,39 @@ async function render() {
           try {
             await post("/api/connections/disconnect", { connection_id: cn.id });
             await render();
-            msg("Conexão desativada. A memória preservada continua disponível.");
+            msg(
+              "Conexão desativada. A memória preservada continua disponível.",
+            );
           } catch (e) {
             disconnect.disabled = false;
-            msg(e instanceof Error ? e.message : "Não foi possível desconectar.");
+            msg(
+              e instanceof Error ? e.message : "Não foi possível desconectar.",
+            );
           }
         });
         entry.append(disconnect);
+        if (cn.provider === "moodle" && cfg.canConnectMoodle) {
+          const renew = document.createElement("button");
+          renew.className = "secondary";
+          renew.textContent = "Renovar acesso";
+          renew.addEventListener("click", () => {
+            if (moodleSubmitting) return;
+            renewingMoodle = cn.id;
+            (el("moodle-label") as HTMLInputElement).value = cn.label;
+            const origin = el("moodle-origin") as HTMLInputElement;
+            origin.value = cn.origin;
+            origin.readOnly = true;
+            (el("moodle-token") as HTMLInputElement).value = "";
+            el("moodle-submit").textContent = "Renovar Moodle";
+            el("moodle-cancel-renewal").hidden = false;
+            el("moodle-connect-form").scrollIntoView({ block: "nearest" });
+            el("moodle-token").focus();
+            msg(
+              "Informe um novo token da mesma conta Moodle. O histórico será preservado.",
+            );
+          });
+          entry.append(renew);
+        }
         if (cn.provider === "moodle" && cn.state === "connected") {
           const sync = document.createElement("button");
           sync.className = "secondary";
@@ -119,14 +163,18 @@ async function render() {
           sync.addEventListener("click", async () => {
             sync.disabled = true;
             try {
-              const result = await post("/api/sync/moodle-courses", { connection_id: cn.id });
+              const result = await post("/api/sync/moodle-courses", {
+                connection_id: cn.id,
+              });
               msg(
                 result.job?.state === "complete"
                   ? "Cursos atualizados e preservados."
                   : "Atualização incompleta. A memória preservada continua disponível.",
               );
             } catch (e) {
-              msg(e instanceof Error ? e.message : "A fonte não foi atualizada.");
+              msg(
+                e instanceof Error ? e.message : "A fonte não foi atualizada.",
+              );
             } finally {
               sync.disabled = false;
             }
@@ -210,7 +258,11 @@ for (const which of ["memory", "connections"]) {
 }
 el("export").addEventListener("click", async () => {
   try {
-    el("export-content").textContent = JSON.stringify(await api("/api/export"), null, 2);
+    el("export-content").textContent = JSON.stringify(
+      await api("/api/export"),
+      null,
+      2,
+    );
     el("export-content").hidden = false;
     msg("Exportação privada preparada. Credenciais têm recuperação separada.");
   } catch {
@@ -235,8 +287,12 @@ async function consent() {
   for (const action of ["approve", "deny"]) {
     el(action).addEventListener("click", async () => {
       const { data: result, error: failure } = action === "approve"
-        ? await supabase.auth.oauth.approveAuthorization(id, { skipBrowserRedirect: true })
-        : await supabase.auth.oauth.denyAuthorization(id, { skipBrowserRedirect: true });
+        ? await supabase.auth.oauth.approveAuthorization(id, {
+          skipBrowserRedirect: true,
+        })
+        : await supabase.auth.oauth.denyAuthorization(id, {
+          skipBrowserRedirect: true,
+        });
       if (failure || !result?.redirect_url) {
         msg("Não foi possível concluir a autorização.");
         return;
@@ -251,6 +307,7 @@ if (supabase) {
   supabase.auth.onAuthStateChange((_event, session) => {
     token = session?.access_token ?? null;
     if (!token) {
+      resetMoodleForm();
       el("context-list").replaceChildren();
       el("connection-list").replaceChildren();
       el("export-content").textContent = "";
@@ -268,31 +325,52 @@ await googleCallback();
 
 el("moodle-connect-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (moodleSubmitting) return;
+  moodleSubmitting = true;
+  const button = el("moodle-submit") as HTMLButtonElement;
+  button.disabled = true;
   const secret = el("moodle-token") as HTMLInputElement;
   try {
     const response = await fetch("/api/connections/moodle", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         label: (el("moodle-label") as HTMLInputElement).value,
         origin: (el("moodle-origin") as HTMLInputElement).value,
         token: secret.value,
+        ...(renewingMoodle ? { connection_id: renewingMoodle } : {}),
       }),
     });
     secret.value = "";
     const result = await response.json();
     if (!response.ok) {
       throw new Error(
-        result.message ?? "Não foi possível conectar. Verifique a origem e a validade do acesso.",
+        result.message ??
+          "Não foi possível conectar. Verifique a origem e a validade do acesso.",
       );
     }
     await render();
+    resetMoodleForm();
     msg(
-      "Moodle conectado. As consultas preservam a cobertura e não alteram atividades acadêmicas.",
+      result.renewed
+        ? "Acesso Moodle renovado. A identidade e o histórico foram preservados."
+        : "Moodle conectado. As consultas preservam a cobertura e não alteram atividades acadêmicas.",
     );
   } catch (e) {
     secret.value = "";
     msg(e instanceof Error ? e.message : "Não foi possível conectar.");
+  } finally {
+    moodleSubmitting = false;
+    button.disabled = false;
+  }
+});
+el("moodle-cancel-renewal").addEventListener("click", () => {
+  if (!moodleSubmitting) {
+    resetMoodleForm();
+    msg("Renovação cancelada. A conexão não foi alterada.");
   }
 });
 
@@ -302,8 +380,12 @@ el("google-connect-form").addEventListener("submit", async (e) => {
   button.disabled = true;
   try {
     const scopes = [(el("google-drive-mode") as HTMLSelectElement).value];
-    if ((el("google-gmail") as HTMLInputElement).checked) scopes.push("gmail_read");
-    if ((el("google-calendar") as HTMLInputElement).checked) scopes.push("calendar_read");
+    if ((el("google-gmail") as HTMLInputElement).checked) {
+      scopes.push("gmail_read");
+    }
+    if ((el("google-calendar") as HTMLInputElement).checked) {
+      scopes.push("calendar_read");
+    }
     const result = await post("/api/connections/google/start", {
       label: (el("google-label") as HTMLInputElement).value,
       scopes,
