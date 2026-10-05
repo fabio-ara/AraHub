@@ -103,6 +103,31 @@ Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético
     assert.equal((await call("hub_record_delta", delta)).id, receipt.id);
     const unknown = await call("hub_record_delta", { ...delta, owner_id: crypto.randomUUID() });
     assert.equal(unknown.id, receipt.id); // SDK strips unknown args; owner is always verified principal.
+    const preference = await call("hub_record_delta", {
+      ...delta,
+      kind: "preference",
+      expected_version: 1,
+      idempotency_key: crypto.randomUUID(),
+      content: "Exemplos no fórum",
+      scope: { genre: "forum" },
+      preference: { key: "writing_style", state: "active", supersedes: [] },
+    });
+    const applicable = await call("hub_preferences", { scope: { genre: "forum" } });
+    assert.equal(applicable.applicable[0].id, preference.id);
+    const withdrawn = await call("hub_record_delta", {
+      ...delta,
+      kind: "preference",
+      expected_version: 2,
+      idempotency_key: crypto.randomUUID(),
+      content: "Retiro a regra",
+      scope: { genre: "forum" },
+      preference: { key: "writing_style", state: "withdrawn", supersedes: [preference.id] },
+    });
+    assert.equal(withdrawn.version, 3);
+    assert.equal(
+      (await call("hub_preferences", { scope: { genre: "forum" } })).applicable.length,
+      0,
+    );
     await client.close();
     const fresh = new Client({ name: "new-conversation", version: "1.0.0" });
     await fresh.connect(

@@ -67,11 +67,20 @@ export async function handleMcp(
     inputSchema: deltaSchema.shape,
     annotations: { ...write, idempotentHint: true },
   }, (a: Delta) => response(() => hub.recordDelta(principal, a)));
-  server.registerTool("hub_preferences", {
-    description: "Recupera preferências pelo escopo e evidencia histórico; não altera políticas.",
-    inputSchema: { scope: z.record(z.string()) },
-    annotations: read,
-  }, (a: { scope: Record<string, string> }) => response(() => hub.preferences(principal, a.scope)));
+  server.registerTool(
+    "hub_preferences",
+    {
+      description:
+        "Recupera preferências vigentes pelo escopo, superações, hipóteses e conflitos. Instruções atuais explícitas governam a tarefa; o histórico nunca altera políticas.",
+      inputSchema: {
+        scope: z.record(z.string()),
+        at: z.string().datetime({ offset: true }).optional(),
+      },
+      annotations: read,
+    },
+    (a: { scope: Record<string, string>; at?: string }) =>
+      response(() => hub.preferences(principal, a.scope, a.at)),
+  );
   server.registerTool("hub_export", {
     description:
       "Exportação privada da memória do proprietário, sem credenciais. Dados não podem ser publicados sem consentimento.",

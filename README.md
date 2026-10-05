@@ -25,7 +25,7 @@ Para modo configurado, copie apenas os nomes de `.env.example` para um arquivo i
 ## Documentação por etapa
 
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
-- [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [migração](docs/MIGRACAO.md).
+- [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
 - [Gate de implantação](docs/IMPLANTACAO.md), [plugin e Skill](plugin/README.md).
 - O bootstrap e todas as evidências pessoais ficam fora do Git. Consulte o bootstrap apenas na etapa pertinente.
 

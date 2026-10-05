@@ -4,15 +4,15 @@ Atualizada em 2026-10-05. Contrato completo: `.arahub-bootstrap/07-ACEITE-E-TEST
 
 | ID | Capacidade | Estado local | Prova real / pendência |
 |---|---|---|---|
-| A01 | Instalação limpa e MCP | Seis migrations em banco SQL novo, RLS/dois donos/retry; cliente SDK HTTP local | Cache de dependências vazio e hospedado pendentes |
-| A02 | Isolamento por usuário | SQL/RLS/FKs, busca/exportação/jobs testados | Revisão de backend privilegiado/Storage hospedado pendente |
+| A01 | Instalação limpa e MCP | Sete migrations em banco SQL novo, RLS/dois donos/retry; cliente SDK HTTP local | Schema aplicado no projeto Free autorizado, hashes conferidos; cache vazio e MCP hospedado pendentes |
+| A02 | Isolamento por usuário | SQL/RLS/FKs, busca/exportação/jobs testados | SQL hospedado com dois donos sintéticos/rollback aprovado; cliente Auth/backend/Storage hospedados pendentes |
 | A03 | Isolamento por conexão | IDs colidentes e relações cruzadas testados | Segunda instalação/duas contas Google reais pendentes |
 | A04 | Segredos em todas as superfícies | Exclusões verificadas; scan índice/histórico e markers no gate | Auditoria pré-publicação futura |
 | A05 | Conteúdo hostil e redirects | Sem executor a partir de conteúdo, saídas como dados; fixtures | Parsing PDF/HTML aprofundado pendente |
 | A06 | Deltas idempotentes | SQL real, retry e recibo | Cliente hospedado pendente |
 | A07 | Memória antes de refresh com falha | Domínio e ferramenta MCP gravam recibo antes do refresh dirigido | Fluxo com fontes/cliente hospedados pendente |
 | A08 | Concorrência web/mobile | Transação/lock/version em Postgres testados | Duas superfícies reais pendentes |
-| A09 | Preferência contextual e história | Filtro por escopo, eventos preservados | Precedência/superação explícita ainda parcial |
+| A09 | Preferência contextual e história | Vigência, superação/retirada explícita, prioridade do escopo específico, hipóteses e conflitos sem escolha por recência; SQL + MCP SDK | Preferências legadas exigem revisão; uso em conversa real e tarefa atual pendentes |
 | A10 | Recuperação sem chat | Cliente SDK novo recupera evento no HTTP local | Ativação da Skill e conversa real pendentes |
 | A11 | Relato de entrega | Dimensões e ambiguidade testadas | Resolução automática de contexto ativo parcial |
 | A12 | Falsa confirmação | Completion/nota não provam entrega; rotas perigosas bloqueadas | Mesma política a validar remotamente |

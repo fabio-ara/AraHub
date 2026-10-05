@@ -2,6 +2,7 @@ import { z } from "zod";
 import { studyPackage } from "./production.ts";
 import { asOwner, type Db } from "./db.ts";
 import { type Delta, HubError, type Principal, type Provider } from "./contracts.ts";
+import { preferenceSchema, resolvePreferences } from "./preferences.ts";
 
 export const deltaSchema = z.object({
   idempotency_key: z.string().min(8).max(200),
@@ -29,6 +30,7 @@ export const deltaSchema = z.object({
     }).strict(),
   ).max(30),
   scope: z.record(z.string().max(200)).optional(),
+  preference: preferenceSchema.optional(),
 }).strict();
 
 export class Hub {
@@ -48,6 +50,15 @@ export class Hub {
   }
   recordDelta(p: Principal, input: Delta) {
     const delta = deltaSchema.parse(input);
+    if (
+      delta.preference && (delta.kind !== "preference" ||
+        (delta.preference.supersedes.length && delta.evidence_kind !== "user_report"))
+    ) {
+      throw new HubError(
+        "invalid_preference",
+        "Superação exige uma preferência explicitamente declarada.",
+      );
+    }
     return asOwner(
       this.db,
       p,
@@ -80,7 +91,7 @@ export class Hub {
       if (id && !contexts.length) throw new HubError("not_found", "Registro não encontrado.", 404);
       const ids = contexts.map((c) => c.id as string);
       const deltas = ids.length
-        ? await tx`select id,context_id,kind,content,evidence_kind,scope,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and context_id in ${
+        ? await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and context_id in ${
           tx(ids)
         } order by recorded_at desc limit 50`
         : [];
@@ -105,7 +116,7 @@ export class Hub {
     }
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select id,context_id,kind,content,evidence_kind,scope,provenance,version from public.hub_deltas where owner_id=${p.ownerId} and (to_tsvector('simple',content) @@ plainto_tsquery('simple',${query}) or content ilike ${
+        await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version from public.hub_deltas where owner_id=${p.ownerId} and (to_tsvector('simple',content) @@ plainto_tsquery('simple',${query}) or content ilike ${
           "%" + query + "%"
         }) order by recorded_at desc limit 21 offset ${offset}`;
       return {
@@ -115,17 +126,15 @@ export class Hub {
       };
     });
   }
-  preferences(p: Principal, scope: Record<string, string>) {
+  preferences(p: Principal, scope: Record<string, string>, at?: string) {
+    const checkedScope = z.record(z.string().max(200)).parse(scope);
+    const instant = at ? z.string().datetime({ offset: true }).parse(at) : new Date().toISOString();
     return asOwner(this.db, p, async (tx) => {
       const all =
-        await tx`select id,context_id,content,evidence_kind,scope,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and kind='preference' and scope <@ ${
-          tx.json(scope)
-        } order by recorded_at desc limit 50`;
-      return {
-        applicable: all,
-        rule:
-          "Explicit current instructions govern this task; inferred or contradictory preferences require review, never automatic policy changes.",
-      };
+        await tx`select id,context_id,content,evidence_kind,scope,preference,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and kind='preference' and scope <@ ${
+          tx.json(checkedScope)
+        } order by recorded_at desc,id limit 201`;
+      return resolvePreferences(all, instant);
     });
   }
   connect(
@@ -174,7 +183,7 @@ export class Hub {
         await tx`select id,version from public.hub_contexts where owner_id=${p.ownerId} and id=${contextId}`;
       if (!parent.length) throw new HubError("not_found", "Registro não encontrado.", 404);
       const rows =
-        await tx`select id,context_id,kind,content,evidence_kind,scope,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and context_id=${contextId} order by version desc limit 21 offset ${offset}`;
+        await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and context_id=${contextId} order by version desc limit 21 offset ${offset}`;
       return {
         context: parent[0],
         records: rows.slice(0, 20),

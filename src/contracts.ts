@@ -30,6 +30,13 @@ export interface Delta {
   expected_version: number;
   provenance: Provenance[];
   scope?: Record<string, string>;
+  preference?: {
+    key: string;
+    state: "active" | "withdrawn";
+    valid_from?: string;
+    valid_until?: string;
+    supersedes: string[];
+  };
 }
 export class HubError extends Error {
   constructor(public code: string, message: string, public status = 400) {
