@@ -1,0 +1,40 @@
+# Mesclar com .gitignore existente; não sobrescrever outras regras.
+# Pacote de transferência de contexto e dados privados.
+/.arahub-bootstrap/
+/AraHub-pacote-inicial.zip
+/AraHub-pacote-inicial*.zip
+/.private/
+/private-data/
+/migration-private/
+/backups-private/
+
+# Credenciais e ambientes. Exemplo público deve conter só nomes/placeholders.
+.env
+.env.*
+!.env.example
+.envrc
+/client_secret*.json
+/credentials*.json
+/service-account*.json
+*.pem
+*.key
+
+# Dependências/saídas locais; ajustar à stack escolhida.
+node_modules/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+dist/
+build/
+.supabase/
+/supabase/.temp/
+/supabase/.branches/
+*.log
+.DS_Store
+Thumbs.db
+/web/app.js
+
+# Não ignorar migrations SQL, schemas, manifests ou fixtures sintéticas úteis.
