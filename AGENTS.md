@@ -2,6 +2,8 @@
 
 AraHub integra fontes e memória acadêmica por MCP, com Supabase como backend preferencial. Código novo sob MIT; dados de usuários e fontes acadêmicas não são código público.
 
+Comunique em português brasileiro e UTF-8. Valide proporcionalmente ao risco: UI exige interação e inspeção visual; integração exige cliente real quando disponível. Separe fixtures, prova local, prova hospedada e bloqueios.
+
 ## Retomar
 
 Leia `STATUS.md`, inspecione Git e consulte os documentos da etapa. Durante o arranque, leia `.arahub-bootstrap/LEIA_PRIMEIRO.md` se disponível. Depois mantenha requisitos genéricos em `docs/` e contexto da implantação em `.private/`.
@@ -12,7 +14,7 @@ Implemente e teste, não pare na elaboração do plano. Persista decisões e evi
 
 ## Fronteiras
 
-Escrever no AraHub local e testar com dados sintéticos está autorizado. Fontes/repositórios irmãos são somente leitura. Provisionamento remoto, importação real, agendamentos, publicação, custos e escritas em contas externas precisam de autorização específica para seu alvo/escopo. Não pedir segredos no chat, burlar política institucional ou alterar projetos irmãos.
+Engenharia, staging/importação privada no banco local exclusivo e testes dentro do mandato estão autorizados. Fontes/repositórios irmãos são somente leitura. Provisionamento remoto, importação hospedada, agendamentos, publicação, custos e escritas em contas externas precisam de autorização específica para seu alvo/escopo. Não pedir segredos no chat, burlar política institucional ou alterar projetos irmãos.
 
 ## Invariantes
 
