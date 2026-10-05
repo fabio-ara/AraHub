@@ -13,3 +13,8 @@ grant usage on schema auth to authenticated;
 grant execute on function auth.uid() to authenticated;
 create extension if not exists pgcrypto with schema extensions;
 create table if not exists public.arahub_migrations(name text primary key);
+
+create or replace function auth.jwt() returns jsonb language sql stable as $$
+ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb)
+$$;
+grant execute on function auth.jwt() to authenticated;

@@ -1,5 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 const el = (id: string) => document.getElementById(id)!;
+const callbackUrl = new URL(location.href);
+const pendingGoogle = callbackUrl.pathname === "/oauth/google/callback"
+  ? {
+    state: callbackUrl.searchParams.get("state"),
+    code: callbackUrl.searchParams.get("code") ?? undefined,
+    error: callbackUrl.searchParams.get("error") ?? undefined,
+  }
+  : null;
+if (pendingGoogle) history.replaceState({}, "", "/oauth/google/callback");
+let googleCallbackHandled = false;
 const msg = (s: string) => {
   el("message").textContent = s;
 };
@@ -11,6 +21,8 @@ const supabase = cfg.supabaseUrl && cfg.publishableKey
   : null;
 let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthetic-token") : null;
 el("synthetic-login").hidden = !cfg.synthetic;
+el("moodle-connect-form").hidden = !cfg.canConnectMoodle;
+el("google-connect-form").hidden = !cfg.canConnectGoogle;
 if (!supabase) {
   el("login-form").hidden = true;
   el("setup-note").hidden = false;
@@ -21,6 +33,31 @@ const api = async (path: string) => {
   if (!r.ok) throw new Error(result.message ?? "Não foi possível atualizar.");
   return result;
 };
+async function post(path: string, payload: unknown) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message ?? "Não foi possível concluir.");
+  return result;
+}
+async function googleCallback() {
+  if (!pendingGoogle || googleCallbackHandled || !token) return;
+  googleCallbackHandled = true;
+  try {
+    await post("/api/connections/google/callback", pendingGoogle);
+    await render();
+    msg("Conta Google vinculada à sua memória. Confira as permissões concedidas.");
+  } catch (e) {
+    msg(
+      e instanceof Error
+        ? e.message
+        : "Não foi possível vincular. Reinicie a conexão pela interface.",
+    );
+  }
+}
 function card(title: string, detail: string) {
   const card = document.createElement("article");
   card.className = "panel";
@@ -58,7 +95,72 @@ async function render() {
     const connections = el("connection-list");
     connections.replaceChildren();
     for (const cn of c.connections) {
-      connections.append(card(cn.label, `${cn.provider} · ${cn.state}`));
+      const entry = card(cn.label, `${cn.provider} · ${cn.state}`);
+      if (!cfg.synthetic && cn.provider !== "migration") {
+        const disconnect = document.createElement("button");
+        disconnect.className = "quiet";
+        disconnect.textContent = "Desconectar";
+        disconnect.addEventListener("click", async () => {
+          disconnect.disabled = true;
+          try {
+            await post("/api/connections/disconnect", { connection_id: cn.id });
+            await render();
+            msg("Conexão desativada. A memória preservada continua disponível.");
+          } catch (e) {
+            disconnect.disabled = false;
+            msg(e instanceof Error ? e.message : "Não foi possível desconectar.");
+          }
+        });
+        entry.append(disconnect);
+        if (cn.provider === "moodle" && cn.state === "connected") {
+          const sync = document.createElement("button");
+          sync.className = "secondary";
+          sync.textContent = "Atualizar cursos";
+          sync.addEventListener("click", async () => {
+            sync.disabled = true;
+            try {
+              const result = await post("/api/sync/moodle-courses", { connection_id: cn.id });
+              msg(
+                result.job?.state === "complete"
+                  ? "Cursos atualizados e preservados."
+                  : "Atualização incompleta. A memória preservada continua disponível.",
+              );
+            } catch (e) {
+              msg(e instanceof Error ? e.message : "A fonte não foi atualizada.");
+            } finally {
+              sync.disabled = false;
+            }
+          });
+          entry.append(sync);
+        }
+        if (cn.provider === "google" && cfg.canConnectGoogle) {
+          const renew = document.createElement("button");
+          renew.className = "secondary";
+          renew.textContent = "Renovar acesso";
+          renew.addEventListener("click", async () => {
+            renew.disabled = true;
+            try {
+              const result = await post("/api/connections/google/start", {
+                connection_id: cn.id,
+                label: cn.label,
+                scopes: cn.desired_scopes?.length ? cn.desired_scopes : ["identity"],
+              });
+              location.assign(result.authorization_url);
+            } catch (e) {
+              renew.disabled = false;
+              msg(e instanceof Error ? e.message : "Não foi possível renovar.");
+            }
+          });
+          entry.append(renew);
+          const scopes = document.createElement("p");
+          scopes.className = "note";
+          scopes.textContent = `${cn.granted_scopes?.length ?? 0} permissões concedidas de ${
+            cn.desired_scopes?.length ?? 0
+          } solicitadas.`;
+          entry.append(scopes);
+        }
+      }
+      connections.append(entry);
     }
     msg("");
   } catch (e) {
@@ -82,6 +184,7 @@ el("login-form").addEventListener("submit", async (e) => {
   token = data.session?.access_token ?? null;
   await render();
   await consent();
+  await googleCallback();
 });
 el("synthetic-login").addEventListener("click", async () => {
   const r = await fetch("/api/synthetic-login", { method: "POST" });
@@ -122,8 +225,13 @@ async function consent() {
     msg("A solicitação de acesso expirou. Inicie novamente no assistente.");
     return;
   }
+  if ("redirect_url" in data) {
+    location.assign(data.redirect_url);
+    return;
+  }
   el("consent").hidden = false;
-  el("consent-details").textContent = JSON.stringify(data);
+  el("consent-details").textContent =
+    `${data.client.name} solicita acesso em nome da sua conta. Permissões de identidade: ${data.scope}.`;
   for (const action of ["approve", "deny"]) {
     el(action).addEventListener("click", async () => {
       const { data: result, error: failure } = action === "approve"
@@ -142,7 +250,67 @@ if (supabase) {
   token = data.session?.access_token ?? null;
   supabase.auth.onAuthStateChange((_event, session) => {
     token = session?.access_token ?? null;
+    if (!token) {
+      el("context-list").replaceChildren();
+      el("connection-list").replaceChildren();
+      el("export-content").textContent = "";
+      el("export-content").hidden = true;
+      el("workspace").hidden = true;
+      el("login").hidden = false;
+      el("logout").hidden = true;
+      el("consent").hidden = true;
+    }
   });
 }
 await render();
 await consent();
+await googleCallback();
+
+el("moodle-connect-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const secret = el("moodle-token") as HTMLInputElement;
+  try {
+    const response = await fetch("/api/connections/moodle", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: (el("moodle-label") as HTMLInputElement).value,
+        origin: (el("moodle-origin") as HTMLInputElement).value,
+        token: secret.value,
+      }),
+    });
+    secret.value = "";
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.message ?? "Não foi possível conectar. Verifique a origem e a validade do acesso.",
+      );
+    }
+    await render();
+    msg(
+      "Moodle conectado. As consultas preservam a cobertura e não alteram atividades acadêmicas.",
+    );
+  } catch (e) {
+    secret.value = "";
+    msg(e instanceof Error ? e.message : "Não foi possível conectar.");
+  }
+});
+
+el("google-connect-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = el("google-connect") as HTMLButtonElement;
+  button.disabled = true;
+  try {
+    const scopes = [(el("google-drive-mode") as HTMLSelectElement).value];
+    if ((el("google-gmail") as HTMLInputElement).checked) scopes.push("gmail_read");
+    if ((el("google-calendar") as HTMLInputElement).checked) scopes.push("calendar_read");
+    const result = await post("/api/connections/google/start", {
+      label: (el("google-label") as HTMLInputElement).value,
+      scopes,
+    });
+    location.assign(result.authorization_url);
+  } catch (e) {
+    button.disabled = false;
+    msg(e instanceof Error ? e.message : "Não foi possível iniciar a conexão.");
+  }
+});

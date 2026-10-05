@@ -39,6 +39,7 @@ export function createVerifier(config: AuthConfig) {
       return {
         ownerId: payload.sub,
         clientId: typeof payload.client_id === "string" ? payload.client_id : undefined,
+        sessionId: payload.session_id,
       };
     } catch {
       throw new HubError(

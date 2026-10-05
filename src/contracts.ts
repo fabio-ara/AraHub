@@ -10,6 +10,7 @@ export type Coverage =
 export interface Principal {
   readonly ownerId: string;
   readonly clientId?: string;
+  readonly sessionId?: string;
 }
 export interface Provenance {
   system: string;

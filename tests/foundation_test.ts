@@ -57,6 +57,15 @@ Deno.test("A02 A03 A06–09: SQL real, RLS, idempotência e concorrência", asyn
       3,
     );
     assert.equal((await hub.search(b, "Trabalho")).records.length, 0);
+    const directOAuth = await db.begin(async (tx) => {
+      await tx`select set_config('request.jwt.claim.sub',${a.ownerId},true)`;
+      await tx`select set_config('request.jwt.claims',${
+        JSON.stringify({ sub: a.ownerId, client_id: "unrelated-oauth-client", scope: "email" })
+      },true)`;
+      await tx`set local role authenticated`;
+      return await tx`select id from public.hub_deltas`;
+    });
+    assert.equal(directOAuth.length, 0); // OIDC consent alone does not grant Data API memory access.
     await assert.rejects(hub.context(b, c.id), /não encontrado/);
     await assert.rejects(
       hub.recordDelta(b, { ...d, idempotency_key: crypto.randomUUID() }),

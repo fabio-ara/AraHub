@@ -2,7 +2,17 @@ import postgres from "postgres";
 import { HubError, type Principal } from "./contracts.ts";
 export type Db = ReturnType<typeof postgres>;
 export function createDb(url: string): Db {
-  return postgres(url, { max: 3, prepare: false, onnotice: () => {}, connect_timeout: 10 });
+  const host = new URL(url).hostname;
+  const local = ["127.0.0.1", "localhost", "[::1]"].includes(host);
+  // 'require' in postgres.js permits unverified certificates; remote peers must be verified.
+  return postgres(url, {
+    max: 3,
+    prepare: false,
+    onnotice: () => {},
+    connect_timeout: 10,
+    ssl: local ? false : { rejectUnauthorized: true },
+    idle_timeout: 20,
+  });
 }
 export async function asOwner<T>(
   db: Db,
@@ -15,6 +25,7 @@ export async function asOwner<T>(
   try {
     return await db.begin(async (tx) => {
       await tx`select set_config('request.jwt.claim.sub',${principal.ownerId},true)`;
+      await tx`select set_config('request.jwt.claims','{}',true)`;
       await tx`set local role authenticated`;
       return await fn(tx);
     }) as T;

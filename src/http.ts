@@ -2,6 +2,11 @@ import { Hub } from "./domain.ts";
 import { HubError, type Principal } from "./contracts.ts";
 import { handleMcp } from "./mcp.ts";
 import { type AuthConfig, discovery } from "./auth.ts";
+import { boundedBody } from "./network.ts";
+import type { ConnectionService } from "./connections.ts";
+import { Sync } from "./sync.ts";
+import { z } from "zod";
+import type { GoogleConnections } from "./google_connections.ts";
 
 interface HttpConfig {
   auth: Pick<AuthConfig, "resource" | "issuer">;
@@ -10,6 +15,8 @@ interface HttpConfig {
   supabaseUrl?: string;
   publishableKey?: string;
   syntheticLogin?: () => Promise<string>;
+  connections?: ConnectionService;
+  google?: GoogleConnections;
 }
 export function createHandler(hub: Hub, config: HttpConfig) {
   return async (req: Request): Promise<Response> => {
@@ -40,12 +47,17 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           supabaseUrl: config.supabaseUrl ?? null,
           publishableKey: config.publishableKey ?? null,
           synthetic: !!config.syntheticLogin,
+          canConnectMoodle: !!config.connections && !config.syntheticLogin,
+          canConnectGoogle: !!config.google && !config.syntheticLogin,
         });
       }
       if (u.pathname === "/api/synthetic-login" && req.method === "POST" && config.syntheticLogin) {
         return json({ access_token: await config.syntheticLogin(), mode: "synthetic" });
       }
-      if (u.pathname === "/" || u.pathname === "/oauth/consent") {
+      if (
+        u.pathname === "/" || u.pathname === "/oauth/consent" ||
+        u.pathname === "/oauth/google/callback"
+      ) {
         return new Response(
           await Deno.readTextFile(new URL("../web/index.html", import.meta.url)),
           {
@@ -74,7 +86,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         const size = Number(req.headers.get("content-length") ?? "0");
         if (size > 128 * 1024) return json({ code: "limit_exceeded" }, 413);
         if (req.method === "POST") {
-          const raw = await req.text();
+          const raw = await boundedBody(req, 128 * 1024);
           if (new TextEncoder().encode(raw).length > 128 * 1024) {
             return json({ code: "limit_exceeded" }, 413);
           }
@@ -82,9 +94,69 @@ export function createHandler(hub: Hub, config: HttpConfig) {
             new Request(req.url, { method: req.method, headers: req.headers, body: raw }),
             hub,
             p,
+            config.connections,
+            config.google,
           );
         }
-        return await handleMcp(req, hub, p);
+        return await handleMcp(req, hub, p, config.connections, config.google);
+      }
+      if (
+        u.pathname === "/api/connections/google/start" && req.method === "POST" && config.google &&
+        !config.syntheticLogin
+      ) {
+        const p = await config.verify(req, false),
+          input = z.object({
+            label: z.string().min(1).max(120),
+            scopes: z.array(z.string().max(200)).min(1).max(12),
+            connection_id: z.string().uuid().optional(),
+          }).strict().parse(JSON.parse(await boundedBody(req, 4096)));
+        return json(await config.google.start(p, input));
+      }
+      if (
+        u.pathname === "/api/connections/google/callback" && req.method === "POST" &&
+        config.google && !config.syntheticLogin
+      ) {
+        const p = await config.verify(req, false),
+          input = z.object({
+            state: z.string().min(8).max(200),
+            code: z.string().min(1).max(4096).optional(),
+            error: z.string().max(100).optional(),
+          }).strict().parse(JSON.parse(await boundedBody(req, 8192)));
+        return json(await config.google.callback(p, input));
+      }
+      if (
+        u.pathname === "/api/connections/moodle" && req.method === "POST" && config.connections &&
+        !config.syntheticLogin
+      ) {
+        const p = await config.verify(req, false);
+        const input = z.object({
+          label: z.string().min(1).max(100),
+          origin: z.string().url(),
+          token: z.string().min(8).max(4096),
+        }).strict().parse(JSON.parse(await boundedBody(req, 8192)));
+        return json(await config.connections.addMoodle(p, input));
+      }
+      if (
+        u.pathname === "/api/connections/disconnect" && req.method === "POST" && config.connections
+      ) {
+        const p = await config.verify(req, false);
+        const input = z.object({ connection_id: z.string().uuid() }).strict().parse(
+          JSON.parse(await boundedBody(req, 1024)),
+        );
+        const parent = await config.connections.parent(p, input.connection_id);
+        if (parent.provider === "google" && config.google) {
+          return json(await config.google.disconnect(p, input.connection_id));
+        }
+        return json(await config.connections.disconnect(p, input.connection_id));
+      }
+      if (
+        u.pathname === "/api/sync/moodle-courses" && req.method === "POST" && config.connections
+      ) {
+        const p = await config.verify(req, false);
+        const input = z.object({ connection_id: z.string().uuid() }).strict().parse(
+          JSON.parse(await boundedBody(req, 1024)),
+        );
+        return json(await new Sync(hub, config.connections).courses(p, input.connection_id));
       }
       if (u.pathname === "/api/context") {
         if (req.method !== "GET") return json({ code: "method_not_allowed" }, 405);
@@ -97,6 +169,8 @@ export function createHandler(hub: Hub, config: HttpConfig) {
     } catch (e) {
       const err = e instanceof HubError
         ? e
+        : e instanceof z.ZodError || e instanceof SyntaxError
+        ? new HubError("invalid_request", "Verifique os campos da solicitação.", 400)
         : new HubError("operation_failed", "Não foi possível concluir a operação.", 500);
       return json(
         { code: err.code, message: err.message },

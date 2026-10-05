@@ -26,6 +26,9 @@ Para modo configurado, copie apenas os nomes de `.env.example` para um arquivo i
 
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
 - [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [migração](docs/MIGRACAO.md).
+- [Gate de implantação](docs/IMPLANTACAO.md), [plugin e Skill](plugin/README.md).
 - O bootstrap e todas as evidências pessoais ficam fora do Git. Consulte o bootstrap apenas na etapa pertinente.
 
 O AraHub não possui SQL/HTTP genérico exposto ao modelo, não captura passivamente o chat inteiro e não interpreta conteúdo recuperado como autorização. Um relato de entrega permanece distinto de submissão observada. Escritas externas e cron real precisam de autorização específica. Nenhuma implantação, publicação ou virada da memória deve ser inferida desta prova local.
+
+Verificações adicionais: `deno task edge:check`, `deno task validation:clean`, `deno task migration:validate` e `deno task backup:local`. Os dois últimos usam dados e artefatos privados disponíveis somente no workspace autorizado. A instalação limpa comprova o banco SQL local novo; não instala um ambiente hospedado nem testa um cache de dependências vazio.

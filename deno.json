@@ -16,7 +16,11 @@
     "web:build": "deno bundle --platform browser --minify --config web/deno.json web/app.ts --output web/app.js",
     "web:check": "deno check --config web/deno.json web/app.ts",
     "secrets": "deno run --allow-run=git scripts/check_secrets.ts",
-    "migration:import": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read --allow-write=.private scripts/import_staging.ts"
+    "migration:import": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read --allow-write=.private scripts/import_staging.ts",
+    "migration:validate": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read --allow-write=.private scripts/validate_import.ts",
+    "validation:clean": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read --allow-write=.private scripts/validate_clean.ts",
+    "backup:local": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read=.private --allow-write=.private --allow-run=docker scripts/backup_local.ts",
+    "edge:check": "deno check --config supabase/functions/arahub/deno.json supabase/functions/arahub/index.ts"
   },
   "fmt": {
     "lineWidth": 100

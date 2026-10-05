@@ -16,5 +16,8 @@ Fontes primárias revalidadas:
 - [Runtime](https://supabase.com/docs/guides/functions/limits): lotes limitados; medição local não comprova limites do runtime hospedado.
 - [MCP SDK oficial](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x): transporte Web Standard e cliente SDK, com versão efetivamente instalada testada. Não adotar silenciosamente protocolo latest diferente do suportado pelo cliente.
 - [Empacotamento de plugin](https://developers.openai.com/plugins/build/plugins): portable `plugin.json`, `mcp.json`, `skills/`; formato não comprova instalação nem nova chamada móvel.
+- [Schemas portáteis](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json) e [MCP](https://agent-plugins.org/schemas/1.0.0/mcp.schema.json): manifesto e transporte `streamable-http` conferidos contra as propriedades e requisitos publicados.
+- [Postgres.js](https://github.com/porsager/postgres): conexões remotas usam TLS com validação de certificado explícita; `ssl='require'` aceita certificado não verificado na versão instalada e não foi adotado. Pool compatível com transações e statements não preparados.
+- [Autenticação de Edge Functions](https://supabase.com/docs/guides/functions/auth): discovery anônimo com verificação própria em cada chamada MCP, incluindo assinatura/sessão/client ID; não há bypass de autenticação no domínio.
 
 Incertezas remanescentes: plano/quota/titularidade do destino separado, configuração OAuth Google/Workspace e audience/client ID reais, suporte da superfície móvel e armazenamento/execução remotos. Critério da auditoria inicial atingido: contratos e limites suficientes para fundação; gates externos continuam pendentes.

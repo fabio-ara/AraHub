@@ -1,6 +1,11 @@
 import postgres from "postgres";
 export const LOCAL_DB = "postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub";
-const db = postgres(Deno.env.get("LOCAL_DATABASE_URL") ?? LOCAL_DB, { max: 1, onnotice: () => {} });
+const databaseUrl = Deno.env.get("LOCAL_DATABASE_URL") ?? LOCAL_DB;
+const target = new URL(databaseUrl);
+if (target.hostname !== "127.0.0.1" || target.port !== "55432" || target.pathname !== "/arahub") {
+  throw new Error("A fixture de identidade só pode ser aplicada no banco local exclusivo.");
+}
+const db = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 try {
   await db.unsafe(await Deno.readTextFile(new URL("local_identity.sql", import.meta.url)));
   const files = [];
