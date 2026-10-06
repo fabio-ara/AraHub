@@ -18,9 +18,9 @@ Arquivos:
 Os testes desta etapa foram locais, sem OAuth real ou escrita externa. Depois,
 o app Google próprio foi configurado, a conta institucional conectada e leituras
 nativas realizadas; o OAuth incremental Docs/Sheets/Slides de escrita também
-concluiu. O lote sintético de cinco operações foi autorizado, mas as três
-criações apenas foram preparadas para revisão por versão na interface. Nenhuma
-escrita Google foi executada neste checkpoint. Ver STATUS.md e
+concluiu. O lote sintético de cinco operações foi autorizado; o titular aprovou
+cada versão na interface e as cinco escritas foram confirmadas pelo Google e
+lidas de volta. Ver STATUS.md e
 docs/LOTE-GOOGLE-ESCRITA.md para o estado de produção.
 
 ## OAuth 2.0 / OpenID Connect

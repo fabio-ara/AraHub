@@ -1,19 +1,19 @@
 # Prova delimitada de produção Google
 
-Estado em 2026-10-06: **lote autorizado, OAuth incremental concluído, nenhuma escrita
-Google executada**. O titular autorizou somente os três recursos sintéticos e as
-cinco operações abaixo. A conexão institucional retornou do callback Google com
-nove permissões solicitadas/concedidas e uma pendência OAuth consumida. As três
-criações estão preparadas no AraHub e aguardam aprovação individual da versão na
-interface confiável. Consentimento OAuth, aprovação de lote e revisão de cada versão
-são atos distintos; sem o recibo de cada versão, não executar a operação.
+Estado em 2026-10-06: **lote autorizado e concluído**. O titular autorizou somente os
+três recursos sintéticos e as cinco operações abaixo. A conexão institucional
+retornou do callback Google com nove permissões solicitadas/concedidas e uma
+pendência OAuth consumida. O titular aprovou as cinco versões na interface confiável;
+cada recibo tinha hash/revisão válidos e foi consumido uma vez. As cinco operações
+obtiveram `succeeded` e IDs nativos, sem resultado incerto. Consentimento OAuth,
+aprovação de lote e revisão de cada versão foram atos distintos.
 
 Destino: a conexão institucional já vinculada ao próprio usuário AraHub,
 no aplicativo Google exclusivo existente. Conferir conta, plano e cotas antes da
 execução: custo adicional máximo zero, sem faturamento, cartão, trial ou aumento
 de permissões administrativas. Identificadores reais e recibos ficam privados.
 
-Conferência de 2026-10-06: as páginas oficiais de [Docs](https://developers.google.com/workspace/docs/api/limits), [Sheets](https://developers.google.com/workspace/sheets/api/limits) e [Slides](https://developers.google.com/workspace/slides/api/limits) indicam uso padrão sem custo adicional e limite de 60 escritas/minuto por usuário/projeto para cada API. O lote prevê cinco operações, abaixo desses limites. A evidência privada anterior do projeto registrou faturamento desvinculado; o painel Cloud não pôde ser reconferido nesta sessão sem novo login institucional. Nenhum faturamento, trial ou aumento foi ativado.
+Conferência de 2026-10-06: as páginas oficiais de [Docs](https://developers.google.com/workspace/docs/api/limits), [Sheets](https://developers.google.com/workspace/sheets/api/limits) e [Slides](https://developers.google.com/workspace/slides/api/limits) indicam uso padrão sem custo adicional e limite de 60 escritas/minuto por usuário/projeto para cada API. O lote executou cinco operações, abaixo desses limites. A evidência privada anterior do projeto registrou faturamento desvinculado; o painel Cloud não pôde ser reconferido nesta sessão sem novo login institucional. Nenhum faturamento, trial ou aumento foi ativado.
 
 Permissões incrementais necessárias: `documents`, `spreadsheets` e `presentations`
 sob `https://www.googleapis.com/auth/`. Não pedir escrita ampla de Drive, Gmail
@@ -52,6 +52,18 @@ com ID novo. Em revisão obsoleta, reprepare e devolva a revisão ao titular.
 Resultado incerto exige leitura do destino e reconciliação antes de outra ação;
 não reenviar automaticamente nem inferir êxito por timeout. Registrar somente
 metadados de validação/IDs protegidos e hashes na evidência privada.
+
+Resultado: o MCP pessoal executou as três criações e as duas alterações nos
+recursos recém-criados. A leitura nativa confirmou um Documento com o texto
+sintético, uma Planilha `Dados` com tipos corretos e A4 calculada em 5, e uma
+Apresentação com novo slide/caixa/texto em 40×40 pt e 600×300 pt. Docs e Slides
+acrescentaram uma quebra de linha final própria do provedor. Cinco consultas
+repetidas pelos mesmos `action_id` devolveram os recibos existentes; o código
+retorna antes de qualquer POST nesse estado. Três buscas exatas e completas no
+Drive encontraram um único ID esperado por título. Prova detalhada, IDs,
+revisões, hashes e limites em `.private/evidence/google-write-lot-final-proof.json`.
+O AraHub não compartilhou arquivos; a listagem Drive usada não devolveu ACL,
+portanto a privacidade não foi auditada independentemente por permissão.
 
 Este lote não altera arquivos existentes, não envia mensagens, não compartilha,
 não apaga/move recursos, não agenda tarefas e não importa conteúdo privado.
