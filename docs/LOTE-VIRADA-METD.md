@@ -33,8 +33,9 @@ instruções pessoais globais nem ampliar permissões do aplicativo por inferên
 - Confirmar backup corrente de banco/binários/manifesto, restauração local,
   configuração e chave/credencial protegidas separadamente; não presumir backup
   automático Free nem restauração do serviço Auth pelo dump da aplicação.
-- Completar nova invocação real em celular, delta interno e recuperação web/nova
-  conversa. Viewport e instalação do pacote não substituem esse gate.
+- O teste em celular físico foi dispensado pelo titular em 2026-10-06; registrar
+  essa dispensa como mudança de aceite, sem fingir prova móvel. Reconfirmar
+  recuperação e registro em conversa nova no cliente web antes da virada.
 - Após os gates e a autorização, fixar marco UTC, commit de origem/destino, lote,
   configurações de cliente e recibos privados. Fazer conversa nova usando apenas
   AraHub; observar leitura e registro com proveniência e sem escrita no METD.

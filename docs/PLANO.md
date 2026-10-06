@@ -2,6 +2,12 @@
 
 Mandato de 2026-10-05. O pacote privado foi verificado (20 hashes). Consultar a especificação da etapa em `.arahub-bootstrap/`; o pacote e dados pessoais não são distribuídos.
 
+Em 2026-10-06, o titular dispensou o gate de celular físico e pediu reavaliar a
+ambição do AraHub como substituto de versionamento e contextualização da memória
+institucional. Os itens abaixo registram o mandato original, não uma aprovação
+nova para ampliar integrações. Até o escopo ser fechado, priorizar o núcleo de
+memória/METD e não abrir frentes novas de Moodle, Google ou automação.
+
 1. Fundação: TypeScript/Deno, Postgres compatível com Supabase, identidade autenticada, conexões qualificadas, RLS e referências por proprietário. Prova vertical MCP → delta transacional → contexto, com dois usuários sintéticos.
 2. Viabilidade: conferir Auth OAuth do Supabase e SDK MCP atuais; preparar discovery, verificação de tokens e consentimento. Nenhuma criação remota sem alvo/custo/autorização.
 3. Adaptadores: Moodle generalizado com interseção da allowlist auditada e capacidades da instalação; Google próprio com OAuth incremental, múltiplas contas e cursores. Escritas exigem aprovação por superfície confiável.

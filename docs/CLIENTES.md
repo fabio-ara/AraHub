@@ -39,8 +39,9 @@ operado no cliente pessoal antes de preservar Docs/Slides reais.
 
 Na integração inicial, uma conversa ChatGPT nova comprovou leituras Google reais
 e renovação automática. A interface na sessão titular também comprovou os estados
-de leitura. Nenhuma planilha nativa existe na conta usada: Sheets tem implementação
-e testes sintéticos, sem prova real inventada. A revisão dos dez cenários da memória
+de leitura. Naquele momento não havia planilha nativa na conta; depois, o lote
+Google aprovado criou uma planilha sintética privada, leu os tipos de células e
+confirmou a fórmula A4=5. Isso não prova planilhas acadêmicas existentes. A revisão dos dez cenários da memória
 identificou omissão de um marco na cronologia; recuperação dirigida com orientação
 genérica corrigida preservou o marco, os valores e as granularidades temporais.
 O instrumento de upload recusou o caminho do workspace. O primeiro envio manual também foi recusado por
@@ -54,10 +55,10 @@ STATUS. Uma conversa nova com a Skill instalada recuperou os dois cenários
 afetados sem repetir sua orientação no prompt; manteve os marcos, a precisão
 das datas e as distinções do trabalho coletivo. Evidências e pacote permanecem privados.
 
-No celular, é necessário testar o cliente real: conversa nova usando AraHub,
-registro de um delta interno de teste em contexto separado e recuperação posterior
-pela web. Viewport móvel em Chrome prova layout e interação, não esse fluxo.
-Consulte `docs/ACEITE.md` antes de declarar o gate móvel encerrado.
+O titular dispensou em 2026-10-06 o teste no celular físico desta entrega.
+Não houve conversa nova, delta ou recuperação entre celular e web; a QA em
+viewport móvel prova somente layout e interação no navegador de teste. O uso
+futuro no celular pode ser validado à parte, sem declarar este gate aprovado.
 
 Busca e contexto têm continuação explícita: hub_search encontra títulos e
 registros; hub_context pagina contextos por offset/next_offset e deltas
