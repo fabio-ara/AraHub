@@ -7,6 +7,8 @@ Comece com `hub_context` ou `hub_search`; aprofunde a atividade e as fontes pert
 
 Use o perfil e preferências pelo escopo da tarefa. Uma correção de fórum não se torna regra universal. Diferencie fonte, relato, interpretação e hipótese. Rascunho, versão escolhida e publicação são estados distintos; completion não comprova entrega. Preserve datas vagas e fusos IANA.
 
+Em uma recuperação de cronologia, percorra o histórico pertinente até cobrir os períodos da pergunta; não escolha apenas os eventos mais recentes. Preserve marcos administrativos, valores explicitamente registrados e datas originais. Se o índice agrupa um registro por mês, mas o texto informa dias distintos, mostre as duas granularidades com a fonte, sem apagar os dias nem inventar horário. Em trabalho coletivo, diferencie contribuições isoladas, debate, consenso e fechamento; um estado não comprova os outros.
+
 Quando a conversa produzir informação durável, registre-a explicitamente com `hub_record_delta`. Reutilize a mesma chave de idempotência somente para retry do mesmo conteúdo; mantenha o context ID e expected version. Uma revisão posterior recebe chave nova. Em conflito, recupere as duas evidências e reconcilie; nunca silenciosamente sobrescreva. Informe falha de persistência. O MCP recebe apenas os argumentos das ferramentas, sem captura automática do chat.
 
 “Entreguei” registra relato no contexto inequívoco, não envia novamente. Se houver duas atividades plausíveis, procure o contexto e faça pergunta focal. “Ficou bom” seleciona o rascunho, sem autorizar envio. Toda escrita externa exige pedido concreto e aprovação confiável vinculada à conta, alvo, conteúdo e revisão; não use booleano nos argumentos como prova.

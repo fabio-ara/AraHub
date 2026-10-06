@@ -39,7 +39,7 @@ proveniência; o parser não executa na thread da Edge Function.
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
 - [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
 - [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [PDF e páginas](docs/ARQUIVOS.md).
-- [Gate de implantação](docs/IMPLANTACAO.md), [plugin e Skill](plugin/README.md).
+- [Gate de implantação](docs/IMPLANTACAO.md), [clientes e primeiro uso](docs/CLIENTES.md), [plugin e Skill](plugin/README.md).
 - O bootstrap e todas as evidências pessoais ficam fora do Git. Consulte o bootstrap apenas na etapa pertinente.
 
 O AraHub não possui SQL/HTTP genérico exposto ao modelo, não captura passivamente o chat inteiro e não interpreta conteúdo recuperado como autorização. Um relato de entrega permanece distinto de submissão observada. Escritas externas e cron real precisam de autorização específica. Nenhuma implantação, publicação ou virada da memória deve ser inferida desta prova local.

@@ -286,9 +286,8 @@ conectada, callback superado (authorization_stale) e disconnect concorrente sem 
 
 ## Limites e pendencias
 
-- Nenhum OAuth real foi executado e nenhum app Google foi criado. Testes usam id_token assinado
-  localmente e fetch injetado; isso nao comprova aceitacao do tenant real.
-- As referências primárias de [Docs](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/get), [Sheets](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get) e [Slides](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/get) foram conferidas. O MCP pede conteúdo de todas as abas do Docs e grid data no Sheets; as respostas permanecem nativas. A prova em conta real continua pendente.
+- Aplicativo próprio Externo/Testing e OAuth humano institucional foram configurados no lote autorizado. Leituras reais e refresh CAS 1→2 comprovados; ensaios com id_token local/fetch injetado permanecem classificados como sintéticos. Segunda conta e operação permanente não comprovadas.
+- As referências primárias de [Docs](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/get), [Sheets](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get) e [Slides](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/get) foram conferidas. O MCP pede conteúdo de todas as abas do Docs e grid data no Sheets; as respostas permanecem nativas. Docs/Slides reais lidos; titular confirmou que não há planilha nativa, portanto Sheets tem somente prova sintética.
 - Autoridade e executor integrados foram testados localmente com provedores sintéticos; a prova real de A22 continua pendente. Nenhuma autorização de capacidade foi exercida em conta real.
 - Calendar nao expande semanticamente recorrencia nem converte prazos; apenas preserva o JSON. A
   interpretacao de dia inteiro e fusos e responsabilidade da camada de dominio.
@@ -296,8 +295,9 @@ conectada, callback superado (authorization_stale) e disconnect concorrente sem 
   a prova real fica pendente, nao aprovada.
 - Migrations criadas pelo CLI (npx --yes supabase@2.119.0): 20261005223942_google_oauth_pending.sql
   e 20261005224459_google_oauth_epoch.sql; aplicar localmente com deno task db:setup.
-- Rotas HTTP de start/callback estão integradas ao servidor local configurado; a UI separa a escolha da conta da sessão AraHub e remove os parâmetros do callback antes de inicializar Supabase Auth. `tests/google_http_test.ts` comprova o ciclo HTTP/MCP sintético, recusa de callback com outro dono e consulta sem capacidade consentida. Hospedagem/roteamento destas APIs ainda estão pendentes.
-- getDocument envia includeTabsContent=true por padrao; a prova contra a API real continua pendente.
+- Rotas HTTP de start/callback estão integradas ao backend hospedado; a UI separa a escolha da conta da sessão AraHub e remove os parâmetros do callback antes de inicializar Supabase Auth. `tests/google_http_test.ts` comprova o ciclo HTTP/MCP sintético, recusa de callback com outro dono e consulta sem capacidade consentida. Consentimento humano e verificação limitada por ícone comprovados na sessão titular.
+- getDocument envia includeTabsContent=true por padrão; leitura nativa de documento real comprovada, sem afirmar cobertura de todos os documentos da conta.
+- Gmail/Drive: duas páginas reais de até três itens sem repetição, ambas parciais. Calendar: lote inicial em janela de cinco minutos e repetição incremental concluídos, cursor durável conferido pelo MCP. A janela não trouxe eventos; não comprova atualização de conteúdo, recuperação de erro ou operação contínua.
 - selected_files nao implementa Picker nem concede acesso ao Drive inteiro.
 
 O refresh persistente também é ligado ao epoch da conexão: um retorno antigo não substitui o consentimento novo mesmo quando a versão da credencial reinicia após desconexão. `tests/token_epoch_test.ts` comprova esse caso. Este cofre armazena credenciais cifradas; a chave tem recuperação separada e não está em fixtures ou exportações de memória.
