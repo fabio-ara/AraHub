@@ -1,6 +1,9 @@
 // Bind generic skills to an already registered personal MCP app; no service mutation.
 export async function preparePersonalPlugin(input: {
   registeredAppId: string;
+  registeredPluginName: string;
+  registeredVersion: string;
+  registeredAppAlias: string;
   version: string;
   website: string;
   privacy: string;
@@ -14,7 +17,19 @@ export async function preparePersonalPlugin(input: {
       "Use o ID do aplicativo MCP registrado (asdk_app_, connector_ ou templated_apps_), não o ID plugin_ da página.",
     );
   }
-  if (!/^\d+\.\d+\.\d+$/.test(input.version)) throw new Error("Versão inválida.");
+  if (
+    !/^[a-z0-9][a-z0-9-]*$/.test(input.registeredPluginName) ||
+    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(input.registeredAppAlias)
+  ) {
+    throw new Error("Use o nome técnico e o apelido exatos do cadastro existente.");
+  }
+  if (
+    !/^\d+\.\d+\.\d+$/.test(input.version) ||
+    !/^\d+\.\d+\.\d+$/.test(input.registeredVersion)
+  ) throw new Error("Versão inválida.");
+  if (input.version === input.registeredVersion) {
+    throw new Error("A atualização precisa de uma versão diferente da cadastrada.");
+  }
   for (const value of [input.website, input.privacy]) {
     const url = new URL(value);
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
@@ -32,6 +47,7 @@ export async function preparePersonalPlugin(input: {
   );
   const manifest = {
     ...base,
+    name: input.registeredPluginName,
     version: input.version,
     extensions: {
       "com.openai": {
@@ -51,7 +67,11 @@ export async function preparePersonalPlugin(input: {
     ["plugin.json", JSON.stringify(manifest, null, 2) + "\n"],
     [
       ".app.json",
-      JSON.stringify({ apps: { arahub: { id: input.registeredAppId } } }, null, 2) + "\n",
+      JSON.stringify(
+        { apps: { [input.registeredAppAlias]: { id: input.registeredAppId, required: true } } },
+        null,
+        2,
+      ) + "\n",
     ],
     [
       "skills/academic-memory/SKILL.md",
@@ -74,6 +94,8 @@ export async function preparePersonalPlugin(input: {
     installed: false,
     directory: root.href,
     version: input.version,
+    registeredPluginName: input.registeredPluginName,
+    previousVersion: input.registeredVersion,
     files: hashes,
   };
   await Deno.writeTextFile(new URL("receipt.json", parent), JSON.stringify(receipt, null, 2), {
@@ -83,13 +105,31 @@ export async function preparePersonalPlugin(input: {
 }
 
 if (import.meta.main) {
-  if (Deno.args.length !== 4) {
+  if (Deno.args.length !== 7) {
     throw new Error(
-      "Uso: prepare_plugin.ts <app_ID> <versão> <site HTTPS> <privacidade HTTPS>",
+      "Uso: prepare_plugin.ts <app_ID> <nome técnico existente> <versão existente> <apelido app existente> <nova versão> <site HTTPS> <privacidade HTTPS>",
     );
   }
-  const [registeredAppId, version, website, privacy] = Deno.args;
+  const [
+    registeredAppId,
+    registeredPluginName,
+    registeredVersion,
+    registeredAppAlias,
+    version,
+    website,
+    privacy,
+  ] = Deno.args;
   console.log(
-    JSON.stringify(await preparePersonalPlugin({ registeredAppId, version, website, privacy })),
+    JSON.stringify(
+      await preparePersonalPlugin({
+        registeredAppId,
+        registeredPluginName,
+        registeredVersion,
+        registeredAppAlias,
+        version,
+        website,
+        privacy,
+      }),
+    ),
   );
 }

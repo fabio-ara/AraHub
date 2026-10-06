@@ -26,6 +26,9 @@ contas/instalação ficam na cópia privada; o repositório distribui o template
 O vínculo usa o ID do aplicativo registrado, confirmado no conector:
 `asdk_app_`, `connector_` ou `templated_apps_`. O ID `plugin_...` da página não
 é aceito nesse campo. O gerador recusa esse erro antes de preparar arquivos.
+Uma atualização também preserva o nome técnico cadastrado e o apelido do
+aplicativo; o título exibido não determina esses campos. Confira o cadastro
+existente antes de gerar o pacote e use uma versão diferente da instalada.
 Não alterar configuração global de clientes, reiniciar o aplicativo ou publicar
 o plugin em catálogo/workspace por inferência. Não remover a conexão existente
 para tentar instalar a Skill.
@@ -38,9 +41,11 @@ identificou omissão de um marco na cronologia; recuperação dirigida com orien
 genérica corrigida preservou o marco, os valores e as granularidades temporais.
 Isso não comprova que o novo pacote esteja instalado: o instrumento de upload
 recusou o caminho do workspace. O primeiro envio manual também foi recusado por
-usar o ID do plugin no campo de aplicativo. A versão 1.0.2 corrige esse vínculo,
-confirmado no conector, e tem três testes e quatro entradas/hashes ZIP conferidos;
-o aceite do novo upload e a ativação continuam pendentes. Evidências e pacote
+usar o ID do plugin no campo de aplicativo. A versão 1.0.2 corrigiu esse campo,
+mas foi recusada por nome técnico diferente do cadastro. A versão 1.0.3 preserva
+nome, apelido e vínculo obrigatório conferidos no cadastro real; quatro testes
+e quatro entradas/hashes ZIP aprovados. O aceite do upload e a ativação
+continuam pendentes. Evidências e pacote
 permanecem privados.
 
 No celular, é necessário testar o cliente real: conversa nova usando AraHub,

@@ -7,10 +7,15 @@ Estrutura portátil conferida na [documentação oficial](https://developers.ope
 Disponibilidade em viewport móvel não comprova uma nova invocação no app. A29 requer chamada nova, delta e verificação pela web. Código MIT, GitHub Pages e backend foram publicados no lote autorizado, com custo adicional máximo zero. Consentimento humano e consulta em conversa nova comprovados; não há publicação no catálogo público nem serviço pago.
 
 Para acrescentar a Skill ao aplicativo pessoal já conectado, use
-`deno task plugin:prepare <app_ID> <versão> <site-HTTPS> <privacidade-HTTPS>`.
+`deno task plugin:prepare <app_ID> <nome-técnico-existente> <versão-existente> <apelido-app-existente> <nova-versão> <site-HTTPS> <privacidade-HTTPS>`.
 Use o ID do aplicativo registrado (`asdk_app_`, `connector_` ou `templated_apps_`),
 confirmado no conector. O ID `plugin_...` da URL da página identifica o pacote e
 é recusado em `.app.json`, conforme o [validador oficial](https://developers.openai.com/plugins/deploy/submission-errors#mcp-server-reference-errors).
+Para atualizar, leia o cadastro atual: preserve exatamente `name`, o apelido
+em `apps` e o vínculo obrigatório do aplicativo. `displayName` é o nome exibido
+e pode ser diferente do nome técnico gerado pelo cadastro. Não deduza `name`
+do título da página. A nova versão precisa diferir da cadastrada, conforme os
+[erros de atualização](https://developers.openai.com/plugins/deploy/submission-errors#zip-upload-errors-and-warnings).
 O comando prepara quatro arquivos em diretório privado novo: manifest, ligação
 `.app.json` ao aplicativo registrado, Skill e licença. A ligação reutiliza a conta
 OAuth existente; não cria outro servidor MCP nem copia perfil, dados ou tokens.
