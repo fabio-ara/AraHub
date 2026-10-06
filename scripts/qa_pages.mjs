@@ -166,7 +166,7 @@ try {
           publishableKey: "public-synthetic-key",
           canApproveActions: false,
           canConnectMoodle: true,
-          canConnectGoogle: false,
+          canConnectGoogle: true,
           canExtractPdf: true,
           synthetic: false,
         });
@@ -221,6 +221,15 @@ try {
         pdfCommits++;
         return reply({ memory: { complete: true } });
       }
+      if (request.url() === backend + "/api/connections/google/check") {
+        assert.equal(request.method(), "POST");
+        assert.deepEqual(request.postDataJSON(), { connection_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" });
+        return reply({ checks: [
+          { kind: "gmail_messages", coverage: "partial", items: 3, pages: 1, continuation: true },
+          { kind: "calendars", coverage: "denied", error_code: "scope_required" },
+          { kind: "drive_files", coverage: "complete", items: 1, pages: 1, continuation: false },
+        ], sources_unchanged: true });
+      }
       if (request.url() === backend + "/api/connections/moodle") {
         assert.equal(request.method(), "POST");
         const data = request.postDataJSON();
@@ -237,7 +246,11 @@ try {
             origin: data.origin,
             state: "connected",
           });
-        } else assert.equal(data.connection_id, id);
+        } else {
+          assert.equal(data.connection_id, id);
+          const desired = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/drive.readonly"];
+          connections.push({ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", provider: "google", label: "Google sintético", state: "connected", desired_scopes: desired, granted_scopes: [...desired.filter(s => !s.endsWith("calendar.readonly")), "https://www.googleapis.com/auth/gmail.modify"] });
+        }
         moodleRequests++;
         return reply({ id, renewed: moodleRequests > 1 });
       }
@@ -351,6 +364,10 @@ try {
     ).waitFor();
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
     assert.equal(moodleRequests, 2);
+    await page.getByRole("button", { name: "Verificar leituras", exact: true }).click();
+    await page.getByText("Gmail: parcial (3) · Calendar: sem permissão · Drive: concluído (1)", { exact: true }).waitFor();
+    await page.getByText("5 permissões concedidas de 6 solicitadas.", { exact: true }).waitFor();
+    await writeFile(new URL(`google-check-${viewport.width}.png`, folder), await page.screenshot({fullPage:true}));
     await page.locator("#pdf-setup > summary").click();
     await page.getByRole("button", { name: "Extrair texto", exact: true })
       .click();
@@ -426,6 +443,7 @@ try {
       privacy_link_and_return: true,
       password_hidden: true,
       moodle_https_connect_renew: moodleRequests === 2,
+      google_check_partial_and_denied: true,
       pdf_browser_worker: true,
       pdf_changed_hash_denied: true,
       pdf_cpu_cancel_termination: true,

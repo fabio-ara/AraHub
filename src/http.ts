@@ -7,6 +7,7 @@ import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { z } from "zod";
 import type { GoogleConnections } from "./google_connections.ts";
+import { GoogleReads } from "./google_reads.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 import { Materials } from "./materials.ts";
 
@@ -138,6 +139,15 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         }
         await config.actions.deny(p, input.action_id, { expectedHash: input.content_hash });
         return json({ state: "denied" });
+      }
+      if (
+        u.pathname === "/api/connections/google/check" && req.method === "POST" && config.google &&
+        !config.syntheticLogin
+      ) {
+        const p = await config.verify(req, false);
+        const input = z.object({ connection_id: z.string().uuid() }).strict()
+          .parse(JSON.parse(await boundedBody(req, 2048)));
+        return json(await new GoogleReads(hub, config.google).check(p, input.connection_id));
       }
       if (
         u.pathname === "/api/connections/google/start" && req.method === "POST" && config.google &&

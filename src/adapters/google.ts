@@ -504,6 +504,15 @@ export function googleOAuthConfig(input: {
 // Escopos
 // ---------------------------------------------------------------------------
 
+/** Google returns userinfo URLs for the equivalent OIDC email/profile scopes. */
+export function normalizeGoogleScopes(scopes: readonly string[]): string[] {
+  return [...new Set(scopes.map((scope) => {
+    if (scope === "https://www.googleapis.com/auth/userinfo.email") return "email";
+    if (scope === "https://www.googleapis.com/auth/userinfo.profile") return "profile";
+    return scope;
+  }))];
+}
+
 export const GOOGLE_SCOPE_SETS = {
   identity: ["openid", "email", "profile"],
   gmailRead: ["https://www.googleapis.com/auth/gmail.readonly"],
@@ -1107,7 +1116,7 @@ interface Paginated<T> {
 }
 
 async function paginate<T>(
-  fetchPage: (token: string | undefined) => Promise<PageSlice<T>>,
+  fetchPage: (token: string | undefined, remainingItems: number) => Promise<PageSlice<T>>,
   options: { readonly startToken?: string; readonly limits?: PaginationLimits },
 ): Promise<Paginated<T>> {
   const maxPages = options.limits?.maxPages ?? 25;
@@ -1120,7 +1129,7 @@ async function paginate<T>(
   let terminal: string | undefined;
   while (true) {
     pages++;
-    const slice = await fetchPage(token);
+    const slice = await fetchPage(token, maxItems - items.length);
     items.push(...slice.items);
     if (slice.terminal !== undefined) terminal = slice.terminal;
     nextPageToken = slice.nextPageToken;
@@ -1225,13 +1234,11 @@ export class GoogleReadClient {
       readonly limits?: PaginationLimits;
     } = {},
   ): Promise<BoundedPage<JsonObject>> {
-    const p = await paginate<JsonObject>(async (token) => {
+    const p = await paginate<JsonObject>(async (token, remaining) => {
       const url = new URL(this.#endpoints.gmail + "/users/me/messages");
       if (input.query) url.searchParams.set("q", input.query);
       for (const label of input.labelIds ?? []) url.searchParams.append("labelIds", label);
-      if (input.maxResults !== undefined) {
-        url.searchParams.set("maxResults", String(input.maxResults));
-      }
+      url.searchParams.set("maxResults", String(Math.min(input.maxResults ?? 100, remaining, 500)));
       if (token) url.searchParams.set("pageToken", token);
       const body = await this.#json(url) as { messages?: JsonObject[]; nextPageToken?: string };
       return { items: body.messages ?? [], nextPageToken: body.nextPageToken };
@@ -1322,14 +1329,15 @@ export class GoogleReadClient {
   // --- Calendar ----------------------------------------------------------
 
   async listCalendars(
-    input: { readonly limits?: PaginationLimits } = {},
+    input: { readonly limits?: PaginationLimits; readonly maxResults?: number; readonly pageToken?: string } = {},
   ): Promise<BoundedPage<JsonObject>> {
-    const p = await paginate<JsonObject>(async (token) => {
+    const p = await paginate<JsonObject>(async (token, remaining) => {
       const url = new URL(this.#endpoints.calendar + "/users/me/calendarList");
+      url.searchParams.set("maxResults", String(Math.min(input.maxResults ?? 100, remaining, 250)));
       if (token) url.searchParams.set("pageToken", token);
       const body = await this.#json(url) as { items?: JsonObject[]; nextPageToken?: string };
       return { items: body.items ?? [], nextPageToken: body.nextPageToken };
-    }, { limits: input.limits });
+    }, { startToken: input.pageToken, limits: input.limits });
     return p.complete
       ? completePage(p.items, p.pages)
       : partialPage(p.items, p.pages, p.nextPageToken);
@@ -1338,6 +1346,7 @@ export class GoogleReadClient {
   async listCalendarEvents(
     input: {
       readonly calendarId?: string;
+      readonly maxResults?: number;
       readonly syncToken?: string;
       readonly singleEvents?: boolean;
       readonly showDeleted?: boolean;
@@ -1351,11 +1360,12 @@ export class GoogleReadClient {
     const incremental = input.syncToken !== undefined;
     const singleEvents = input.singleEvents ?? true;
     try {
-      const p = await paginate<JsonObject>(async (token) => {
+      const p = await paginate<JsonObject>(async (token, remaining) => {
         const url = new URL(
           this.#endpoints.calendar + "/calendars/" + encodeURIComponent(calendarId) + "/events",
         );
         url.searchParams.set("singleEvents", String(singleEvents));
+        url.searchParams.set("maxResults", String(Math.min(input.maxResults ?? 250, remaining, 2500)));
         if (incremental) {
           url.searchParams.set("syncToken", input.syncToken as string);
           url.searchParams.set("showDeleted", "true");
@@ -1456,13 +1466,15 @@ export class GoogleReadClient {
   async listDriveFiles(
     input: {
       readonly query?: string;
+      readonly pageSize?: number;
       readonly pageToken?: string;
       readonly fields?: string;
       readonly limits?: PaginationLimits;
     } = {},
   ): Promise<BoundedPage<JsonObject>> {
-    const p = await paginate<JsonObject>(async (token) => {
+    const p = await paginate<JsonObject>(async (token, remaining) => {
       const url = new URL(this.#endpoints.drive + "/files");
+      url.searchParams.set("pageSize", String(Math.min(input.pageSize ?? 100, remaining, 1000)));
       if (input.query) url.searchParams.set("q", input.query);
       if (input.fields) url.searchParams.set("fields", input.fields);
       url.searchParams.set("supportsAllDrives", "true");

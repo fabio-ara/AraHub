@@ -413,6 +413,7 @@ async function render() {
             );
           });
           entry.append(renew);
+
         }
         if (cn.provider === "moodle" && cn.state === "connected") {
           const sync = document.createElement("button");
@@ -458,9 +459,35 @@ async function render() {
             }
           });
           entry.append(renew);
+          if (cn.state === "connected") {
+            const check = document.createElement("button");
+            check.className = "secondary";
+            setAction(check, "search", "Verificar leituras");
+            const checked = document.createElement("p");
+            checked.className = "note";
+            check.addEventListener("click", async () => {
+              check.disabled = true;
+              try {
+                const result = await post("/api/connections/google/check", { connection_id: cn.id });
+                const names: Record<string, string> = { gmail_messages: "Gmail", calendars: "Calendar", drive_files: "Drive" };
+                const states: Record<string, string> = { complete: "concluído", partial: "parcial", denied: "sem permissão", expired: "acesso expirado", timeout: "tempo esgotado" };
+                checked.textContent = result.checks.map((item: { kind: string; coverage: string; items?: number }) =>
+                  `${names[item.kind]}: ${states[item.coverage] ?? "indisponível"}${item.items === undefined ? "" : ` (${item.items})`}`
+                ).join(" · ");
+              } catch (error) {
+                checked.textContent = error instanceof Error ? error.message : "Não foi possível verificar.";
+              } finally {
+                check.disabled = false;
+              }
+            });
+            entry.append(check, checked);
+          }
           const scopes = document.createElement("p");
           scopes.className = "note";
-          scopes.textContent = `${cn.granted_scopes?.length ?? 0} permissões concedidas de ${
+          const grantedCount = (cn.desired_scopes ?? []).filter((scope: string) =>
+            (cn.granted_scopes ?? []).includes(scope)
+          ).length;
+          scopes.textContent = `${grantedCount} permissões concedidas de ${
             cn.desired_scopes?.length ?? 0
           } solicitadas.`;
           entry.append(scopes);

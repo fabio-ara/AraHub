@@ -582,6 +582,25 @@ function gmailClient(fetchImpl: FetchLike): GoogleReadClient {
   });
 }
 
+Deno.test("Gmail distribui orçamento de itens entre páginas sem perder continuação", async () => {
+  const sizes: number[] = [];
+  const client = gmailClient(routeFetch([
+    byPath("/gmail/v1/users/me/messages", (url) => {
+      sizes.push(Number(url.searchParams.get("maxResults")));
+      return url.searchParams.get("pageToken") === "p2"
+        ? jsonResponse({ messages: [{ id: "3" }], nextPageToken: "p3" })
+        : jsonResponse({ messages: [{ id: "1" }, { id: "2" }], nextPageToken: "p2" });
+    }),
+  ]));
+  const page = await client.listGmailMessages({ maxResults: 2, limits: { maxPages: 3, maxItems: 3 } });
+  assert.deepEqual(sizes, [2, 1]);
+  assert.equal(page.items.length, 3);
+  assert.equal(page.pages, 2);
+  assert.equal(page.coverage, "partial");
+  assert.equal(page.resumeCursor, "p3");
+  assert.equal(page.cursorAdvanced, false);
+});
+
 Deno.test("Gmail history parcial nao avanca o cursor", async () => {
   const client = gmailClient(routeFetch([
     byPath("/gmail/v1/users/me/history", (url) => {

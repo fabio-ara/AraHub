@@ -79,6 +79,12 @@ Deno.test("A02 A19 A21: HTTP sessão→OAuth Google sintético→leitura nativa 
       return Promise.resolve(Response.json({ startPageToken: "cursor-fixture" }));
     }
     if (url.pathname === "/drive/v3/files") {
+      if (url.searchParams.get("q") === "bounded-fixture") {
+        assert.equal(url.searchParams.get("pageSize"), "2");
+        return Promise.resolve(Response.json({
+          files: [{ id: "first" }, { id: "second" }], nextPageToken: "remaining-fixture",
+        }));
+      }
       return Promise.resolve(
         Response.json({
           files: [{ id: "file-fixture", name: "Arquivo de teste", mimeType: "text/plain" }],
@@ -182,6 +188,35 @@ Deno.test("A02 A19 A21: HTTP sessão→OAuth Google sintético→leitura nativa 
     assert.equal(denied.isError, true);
     assert.match(JSON.stringify(denied), /scope_required/);
     assert.equal(apiReads, 1);
+    const bounded = await client.callTool({
+      name: "hub_google_read",
+      arguments: { connection_id: start.connection_id, kind: "drive_files", query: "bounded-fixture", max_pages: 1, max_items: 2 },
+    });
+    assert.equal(bounded.isError, undefined);
+    assert.match(JSON.stringify(bounded), /remaining-fixture/);
+    assert.match(JSON.stringify(bounded), /partial/);
+    assert.equal(apiReads, 2);
+    const overBudget = await client.callTool({
+      name: "hub_google_read",
+      arguments: { connection_id: start.connection_id, kind: "drive_files", max_pages: 4 },
+    });
+    assert.equal(overBudget.isError, true);
+    assert.equal(apiReads, 2);
+    const checkInput = { connection_id: start.connection_id };
+    assert.equal((await post("/api/connections/google/check", mcp, checkInput)).status, 403);
+    const foreignCheck = await post("/api/connections/google/check", otherToken, checkInput);
+    assert.equal(foreignCheck.status, 404);
+    assert.equal(JSON.stringify(await foreignCheck.json()).includes("file-fixture"), false);
+    assert.equal(apiReads, 2);
+    const checkedResponse = await post("/api/connections/google/check", browser, checkInput);
+    assert.equal(checkedResponse.status, 200);
+    const checked = await checkedResponse.json();
+    assert.equal(checked.sources_unchanged, true);
+    assert.deepEqual(checked.checks.map((c: { coverage: string }) => c.coverage), ["denied", "denied", "complete"]);
+    assert.equal(checked.checks[2].items, 1);
+    assert.equal(JSON.stringify(checked).includes("file-fixture"), false);
+    assert.equal(JSON.stringify(checked).includes("synthetic-access-marker"), false);
+    assert.equal(apiReads, 3);
     const tools = await client.listTools();
     for (
       const name of [

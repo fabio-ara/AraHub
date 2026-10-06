@@ -47,6 +47,7 @@ import {
   type GoogleOAuthConfig,
   GoogleReadClient,
   handleAuthorizationCallback,
+  normalizeGoogleScopes,
   type PendingAuthorization,
   refreshStoredGoogleToken,
   sha256Hex,
@@ -187,7 +188,7 @@ export function resolveRequestedScopes(scopes: readonly string[]): readonly stri
 }
 
 function capabilityStatusFromScopes(granted: readonly string[]): Record<string, boolean> {
-  const set = new Set(granted);
+  const set = new Set(normalizeGoogleScopes(granted));
   const out: Record<string, boolean> = {};
   for (const [name, scopes] of Object.entries(GOOGLE_READ_CAPABILITIES)) {
     out[name] = scopes.every((scope) => set.has(scope));
@@ -497,7 +498,7 @@ export class GoogleConnections {
     const identity = result.identity;
     const origin = identity.hostedDomain ?? "personal";
     const grantedRaw = parseScopes(result.tokens.scope);
-    const granted = grantedRaw.length > 0 ? grantedRaw : [];
+    const granted = normalizeGoogleScopes(grantedRaw);
     const denied = desired.filter((scope) => !granted.includes(scope));
 
     const capabilities = {
@@ -512,6 +513,7 @@ export class GoogleConnections {
         desired.includes("https://www.googleapis.com/auth/drive.readonly"),
       desired_scopes: desired,
       granted_scopes: granted,
+      provider_granted_scopes: grantedRaw,
       denied_scopes: denied,
       scope_confirmed: grantedRaw.length > 0,
       content_is_untrusted_data: true,
@@ -721,7 +723,7 @@ export class GoogleConnections {
     );
     return rows.map((row) => {
       const desired = (row.desired_scopes ?? []) as string[];
-      const granted = (row.granted_scopes ?? []) as string[];
+      const granted = normalizeGoogleScopes((row.granted_scopes ?? []) as string[]);
       return {
         id: row.id as string,
         provider: "google" as const,
@@ -732,7 +734,12 @@ export class GoogleConnections {
         desired_scopes: desired,
         granted_scopes: granted,
         denied_scopes: desired.filter((scope) => !granted.includes(scope)),
-        capabilities: (row.capabilities ?? {}) as Record<string, unknown>,
+        capabilities: {
+          ...(row.capabilities ?? {}) as Record<string, unknown>,
+          reads: capabilityStatusFromScopes(granted),
+          denied_scopes: desired.filter((scope) => !granted.includes(scope)),
+          granted_scopes: granted,
+        },
       };
     });
   }

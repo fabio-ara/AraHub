@@ -341,6 +341,32 @@ Deno.test("callback conclui a conexao, persiste tokens selados e nao vaza segred
   }
 });
 
+Deno.test("Google reconhece aliases OIDC, preserva resposta e não oculta leitura negada", async () => {
+  const env = await makeEnv();
+  try {
+    const p = await newPrincipal(env.db);
+    const raw = "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+    const { view } = await authorize(env, p, { granted: raw });
+    assert.deepEqual(view.granted_scopes, ["openid", "email", "profile"]);
+    assert.deepEqual(view.denied_scopes, GOOGLE_READ_CAPABILITIES.gmail_read);
+    assert.equal((view.capabilities.reads as Record<string, boolean>).identity, true);
+    assert.equal((view.capabilities.reads as Record<string, boolean>).gmail_read, false);
+    assert.equal(view.capabilities.writes_enabled, false);
+    assert.deepEqual(view.capabilities.provider_granted_scopes, raw.split(" "));
+    // Existing rows with provider scope names also render correctly without reconsent.
+    await env.db.unsafe("update public.hub_connections set granted_scopes=$1 where id=$2", [raw.split(" "), view.id]);
+    const [listed] = await env.service.list(p);
+    assert.deepEqual(listed.granted_scopes, ["openid", "email", "profile"]);
+    assert.deepEqual(listed.denied_scopes, GOOGLE_READ_CAPABILITIES.gmail_read);
+    assert.equal((listed.capabilities.reads as Record<string, boolean>).identity, true);
+    const partial = await authorize(env, p, { sub: "no-profile", granted: "openid https://www.googleapis.com/auth/userinfo.email" });
+    assert.equal((partial.view.capabilities.reads as Record<string, boolean>).identity, false);
+    assert.ok(partial.view.denied_scopes.includes("profile"));
+  } finally {
+    await env.db.end();
+  }
+});
+
 Deno.test("callback e de uso unico", async () => {
   const env = await makeEnv();
   try {

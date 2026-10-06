@@ -487,6 +487,8 @@ export async function handleMcp(
           calendar_id: z.string().max(1000).optional(),
           page_token: z.string().max(4000).optional(),
           ranges: z.array(z.string().max(200)).max(20).optional(),
+          max_pages: z.number().int().min(1).max(3).optional(),
+          max_items: z.number().int().min(1).max(100).optional(),
         },
         annotations: { ...read, openWorldHint: true },
       },
