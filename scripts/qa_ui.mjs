@@ -9,6 +9,15 @@ await mkdir(folder, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const connectionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const googleConnectionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const googleReadScopes = [
+  "identity",
+  "gmail_read",
+  "calendar_read",
+  "drive_read",
+  "docs_read",
+  "slides_read",
+];
 const user = {
   id: owner,
   aud: "authenticated",
@@ -18,8 +27,7 @@ const user = {
   user_metadata: {},
   created_at: new Date().toISOString(),
 };
-const token =
-  Buffer.from(JSON.stringify({ alg: "ES256" })).toString("base64url") + "." +
+const token = Buffer.from(JSON.stringify({ alg: "ES256" })).toString("base64url") + "." +
   Buffer.from(
     JSON.stringify({ sub: owner, exp: Math.floor(Date.now() / 1000) + 3600 }),
   ).toString(
@@ -48,7 +56,7 @@ try {
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
-    let renewed = false, actionApproved = false;
+    let renewed = false, actionApproved = false, googleUpgraded = false;
     const additionalApproved = new Set();
     const actionId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
     const sheetId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -100,7 +108,33 @@ try {
             label: "Moodle de teste",
             origin: "https://moodle.fixture.invalid",
             state: "connected",
+          }, {
+            id: googleConnectionId,
+            provider: "google",
+            label: "Institucional",
+            origin: "edu.ulisboa.pt",
+            state: "connected",
+            desired_scopes: googleReadScopes,
+            granted_scopes: googleReadScopes,
           }],
+        });
+      }
+      if (url.pathname === "/api/connections/google/start") {
+        const input = request.postDataJSON();
+        assert.equal(input.connection_id, googleConnectionId);
+        assert.equal(input.label, "Institucional");
+        assert.deepEqual(
+          new Set(input.scopes),
+          new Set([...googleReadScopes, "docs_write", "sheets_write", "slides_write"]),
+        );
+        googleUpgraded = true;
+        return reply({ authorization_url: base + "/oauth/mock" });
+      }
+      if (url.pathname === "/oauth/mock") {
+        return route.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: "<!doctype html><title>OAuth fixture</title>",
         });
       }
       if (url.pathname === "/api/connections/moodle") {
@@ -169,11 +203,7 @@ try {
         assert.ok([actionId, sheetId, slideId].includes(input.action_id));
         assert.equal(
           input.content_hash,
-          (input.action_id === actionId
-            ? "a"
-            : input.action_id === sheetId
-            ? "b"
-            : "c").repeat(64),
+          (input.action_id === actionId ? "a" : input.action_id === sheetId ? "b" : "c").repeat(64),
         );
         if (input.action_id === actionId) actionApproved = true;
         else additionalApproved.add(input.action_id);
@@ -203,7 +233,7 @@ try {
     await page.locator("#workspace").waitFor({ state: "visible" });
     assert.equal(await page.locator("#password").inputValue(), "");
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
-    await page.getByRole("button", { name: "Renovar acesso", exact: true })
+    await page.getByRole("button", { name: "Renovar acesso", exact: true }).first()
       .click();
     assert.equal(
       await page.locator("#moodle-origin").inputValue(),
@@ -215,9 +245,7 @@ try {
     );
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
     assert.equal(
-      await page.evaluate(() =>
-        document.documentElement.scrollWidth <= innerWidth
-      ),
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       true,
     );
     const capture = await page.screenshot({
@@ -246,15 +274,11 @@ try {
     await page.locator("#google-setup > summary").click();
     await page.locator("#google-connect-form").scrollIntoViewIfNeeded();
     assert.equal(
-      await page.evaluate(() =>
-        document.documentElement.scrollWidth <= innerWidth
-      ),
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       true,
     );
     assert.ok(
-      await page.locator(".app-shell").evaluate((el) =>
-        el.getBoundingClientRect().width
-      ) <= 430,
+      await page.locator(".app-shell").evaluate((el) => el.getBoundingClientRect().width) <= 430,
     );
     assert.deepEqual(
       await page.locator("button:visible").evaluateAll((buttons) =>
@@ -326,9 +350,7 @@ try {
       }).click();
       await card.scrollIntoViewIfNeeded();
       assert.ok(
-        await page.evaluate(() =>
-          document.documentElement.scrollWidth <= innerWidth
-        ),
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       );
       assert.equal(
         await page.evaluate(() => window.__sourceExecuted),
@@ -367,6 +389,35 @@ try {
     await page.getByRole("button", { name: "Sair", exact: true }).click();
     await page.locator("#login").waitFor({ state: "visible" });
     assert.equal(await page.locator("#export-content").textContent(), "");
+    await page.locator("#email").fill("fixture@example.invalid");
+    await page.locator("#password").fill("synthetic-login-marker");
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await page.locator("#workspace").waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Conexões", exact: true }).click();
+    await page.getByRole("button", { name: "Ampliar permissões Google" }).click();
+    await page.getByRole("button", { name: "Solicitar permissões adicionais Google" }).click();
+    await page.getByText("Marque uma permissão adicional ou use Renovar acesso.", {
+      exact: true,
+    }).waitFor();
+    assert.equal(googleUpgraded, false);
+    await page.getByRole("button", { name: "Cancelar alteração de permissões" }).click();
+    assert.equal(await page.locator("#google-label").evaluate((el) => el.readOnly), false);
+    await page.getByRole("button", { name: "Ampliar permissões Google" }).click();
+    assert.equal(await page.locator("#google-label").inputValue(), "Institucional");
+    assert.equal(await page.locator("#google-label").evaluate((el) => el.readOnly), true);
+    assert.equal(await page.locator("#google-gmail").isDisabled(), true);
+    assert.equal(await page.locator("#google-drive-mode").isDisabled(), true);
+    for (const name of ["docs", "sheets", "slides"]) {
+      await page.locator(`#google-${name}-write`).check();
+    }
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await writeFile(
+      new URL(`google-upgrade-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true, animations: "disabled" }),
+    );
+    await page.getByRole("button", { name: "Solicitar permissões adicionais Google" }).click();
+    await page.waitForURL(base + "/oauth/mock");
+    assert.equal(googleUpgraded, true);
     receipts.push({
       viewport,
       login: "provider_stub",
@@ -375,6 +426,7 @@ try {
       typed_sheet_and_new_slide_review: "http_stub",
       hostile_text_not_executed: true,
       export_logout: true,
+      google_incremental_scopes: "http_stub",
       overflow: false,
       native_screenshot: true,
     });
