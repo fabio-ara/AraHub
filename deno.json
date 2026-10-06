@@ -1,4 +1,6 @@
 {
+  "workspace": ["web", "supabase/functions/arahub"],
+  "lock": { "path": "./deno.lock", "frozen": true },
   "imports": {
     "postgres": "npm:postgres@3.4.9",
     "jose": "npm:jose@6.2.12",

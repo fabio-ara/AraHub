@@ -31,7 +31,11 @@ aplicativo; o título exibido não determina esses campos. Confira o cadastro
 existente antes de gerar o pacote e use uma versão diferente da instalada.
 Não alterar configuração global de clientes, reiniciar o aplicativo ou publicar
 o plugin em catálogo/workspace por inferência. Não remover a conexão existente
-para tentar instalar a Skill.
+para tentar instalar a Skill. Depois de acrescentar ferramentas no backend, use
+“Atualizar ferramentas” no aplicativo AraHub existente e abra uma conversa nova
+se o cliente ainda listar o conjunto anterior. Isso atualiza descoberta; não
+concede novos escopos nem substitui consentimento de conta. Esse caminho foi
+operado no cliente pessoal antes de preservar Docs/Slides reais.
 
 Na integração inicial, uma conversa ChatGPT nova comprovou leituras Google reais
 e renovação automática. A interface na sessão titular também comprovou os estados
@@ -54,3 +58,11 @@ No celular, é necessário testar o cliente real: conversa nova usando AraHub,
 registro de um delta interno de teste em contexto separado e recuperação posterior
 pela web. Viewport móvel em Chrome prova layout e interação, não esse fluxo.
 Consulte `docs/ACEITE.md` antes de declarar o gate móvel encerrado.
+
+Busca e contexto têm continuação explícita: hub_search encontra títulos e
+registros; hub_context pagina contextos por offset/next_offset e deltas
+por delta_offset/deltas_next_offset. Para um contexto escolhido, hub_history
+permite aprofundar a cronologia sem colar o chat anterior.
+
+Pacotes de estudo usam offset/next_offset e preservam versões/direitos;
+consulte [o contrato do pacote](PACOTE-ESTUDO.md) antes de criar um curso.

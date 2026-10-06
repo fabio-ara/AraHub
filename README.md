@@ -42,12 +42,12 @@ proveniência; o parser não executa na thread da Edge Function.
 
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
 - [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
-- [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [PDF e páginas](docs/ARQUIVOS.md).
+- [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [arquivos e páginas](docs/ARQUIVOS.md), [pacote de estudo](docs/PACOTE-ESTUDO.md).
 - [Gate de implantação](docs/IMPLANTACAO.md), [clientes e primeiro uso](docs/CLIENTES.md), [plugin e Skill](plugin/README.md).
 - O bootstrap e todas as evidências pessoais ficam fora do Git. Consulte o bootstrap apenas na etapa pertinente.
 
 O AraHub não possui SQL/HTTP genérico exposto ao modelo, não captura passivamente o chat inteiro e não interpreta conteúdo recuperado como autorização. Um relato de entrega permanece distinto de submissão observada. Escritas externas e cron real precisam de autorização específica. Nenhuma implantação, publicação ou virada da memória deve ser inferida desta prova local.
 
-Verificações adicionais: `deno task edge:check`, `deno task validation:clean`, `deno task migration:validate` e `deno task backup:local`. Os dois últimos usam dados e artefatos privados disponíveis somente no workspace autorizado. A instalação limpa comprova o banco SQL local novo; não instala um ambiente hospedado nem testa um cache de dependências vazio.
+Verificações adicionais: `deno task edge:check`, `deno task validation:clean`, `deno task migration:validate` e `deno task backup:local`. Os dois últimos usam dados e artefatos privados disponíveis somente no workspace autorizado. validation:clean comprova o banco SQL local novo; validation:fresh acrescenta cache de dependências vazio e lock congelado. Nenhum dos dois instala um ambiente hospedado.
 
-Para QA visual isolado, instale a ferramenta apenas na pasta ignorada: `npm install --prefix .private/qa --save-exact playwright@1.63.0`. Com o servidor local ativo, execute `node scripts/qa_ui.mjs`. Após o build, `node scripts/qa_pages.mjs` opera o pacote Pages com subpath, callbacks físicos, acesso por link PKCE e consentimento. Ambos usam o Chrome instalado em perfil temporário, fixtures de HTTP/Auth e capturas nativas gravadas fora da interface; não operam contas reais nem comprovam hospedagem ou celular físico.
+Para QA visual isolado, instale a ferramenta apenas na pasta ignorada: `npm install --prefix .private/qa --save-exact playwright@1.63.0`. Após o build, execute `node scripts/qa_ui.mjs`. Após o build, `node scripts/qa_pages.mjs` opera o pacote Pages com subpath, callbacks físicos, acesso por link PKCE e consentimento. Ambos usam o Chrome instalado em perfil temporário, fixtures de HTTP/Auth e capturas nativas gravadas fora da interface; não operam contas reais nem comprovam hospedagem ou celular físico.

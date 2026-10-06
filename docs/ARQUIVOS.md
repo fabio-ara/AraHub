@@ -23,13 +23,18 @@ Arrays/texto paginam com offset/limit (máximo 100 elementos ou limite solicitad
 de 16.000 unidades UTF-16; a última unidade pode ser incluída para conservar um
 par de surrogate). A parte tem teto de
 128 KiB; resultados extensos retornam cobertura parcial e filhos para aprofundar.
+Listas de filhos também paginam: passe children_offset e siga children_next_offset;
+children_count informa o total, inclusive objetos com mais de cem chaves.
 O recibo distingue cobertura da parte e do snapshot. Conteúdo segue não confiável;
 versão observada não prova atualidade ou submissão.
 
 Prova local: dois testes SQL dirigidos com APIs sintéticas conservaram
 abas/tabelas/slides/fórmulas, seleção, retries/versões, recuperação offline,
 isolamento/hash, conexão alterada durante a leitura, partes extensas/Unicode e
-recusa de excesso. A prova Google real dessa preservação tem gate próprio.
+recusa de excesso. A continuação de 205 chaves recuperou todas as páginas sem perder
+localizadores escapados. Prova real dirigida: Docs/Slides preservados pelo MCP
+pessoal e recuperados por partes em conversa nova; recibos/hashes conferidos no
+banco e SHA dos binários verificado. Evidência privada separada das fixtures.
 
 ## PDFs
 
@@ -277,9 +282,10 @@ Rota suportada para PDF remoto:
 
 Evidência honesta: os testes locais provam `execution:"isolated_worker"` e
 `hard_timeout:true`; a simulação do runtime hospedado (sem `Worker` e com
-`EdgeRuntime` só com `waitUntil`) prova a recusa sem executar o PDF. **Não** foi
-executado na Edge hospedada: o projeto remoto não tem função implantada e a
-implantar exige autorização específica; não há, portanto, prova hospedada.
+`EdgeRuntime` só com `waitUntil`) prova a recusa sem executar o PDF. O backend está implantado; o parser continua recusado na thread da Edge.
+A rota cliente hospedada foi operada com PDF sintético, dois viewports e Auth
+nativo, gravação privada/recuperação MCP. Isso não comprova PDF acadêmico real
+na conta titular nem OCR; a prova acadêmica real disponível é local.
 
 ## Provas executadas
 

@@ -92,15 +92,47 @@ export async function executeAction(
     return { state: "uncertain" as const };
   }
 }
+export type StudyRole = "required" | "related" | "suggested";
+
+/** Arquivo/versão já preservado para uma entidade; o localizador prova o hash lido. */
+export interface StudyFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  sha256: string;
+  /** BIGINT do banco chega como string decimal; number só quando couber. */
+  bytes: number | string;
+  locator: string;
+  text_available: boolean;
+  text_length: number | null;
+  extraction: Record<string, unknown>;
+}
+
+/**
+ * Material do pacote: um por entidade relacionada. Quando a entidade tem mais
+ * de um arquivo/versão, `files` lista todos e `selection_required` pede
+ * escolha humana; nenhum arquivo é eleito por recência.
+ */
+export interface StudyMaterial {
+  id: string;
+  role: StudyRole | "reference";
+  locator: string;
+  rights: string;
+  readEvidence?: string;
+  title?: string;
+  relation_kinds?: string[];
+  rights_by_relation?: Record<string, string>;
+  rights_requires_review?: boolean;
+  coverage?: string | null;
+  provenance?: unknown;
+  observation?: unknown;
+  files?: StudyFile[];
+  file_count?: number;
+  selection_required?: boolean;
+}
 export function studyPackage(
   activity: { id: string; instruction: string },
-  materials: {
-    id: string;
-    role: "required" | "related" | "suggested";
-    locator: string;
-    rights: string;
-    readEvidence?: string;
-  }[],
+  materials: StudyMaterial[],
   goal: string,
 ) {
   return {
@@ -109,9 +141,26 @@ export function studyPackage(
     goal,
     source_contents_are_data: true,
     aralearn: { creation_authorized: false, privacy: "Keep private unless explicitly authorized" },
-    read_status: materials.map((m) => ({
-      id: m.id,
-      status: m.readEvidence ? "reported_read" : "available_not_confirmed_read",
-    })),
+    // Sem prova de leitura, cada arquivo disponível é apenas constatado, nunca confirmado.
+    read_status: materials.flatMap((m) => {
+      const files = m.files ?? [];
+      const status = m.readEvidence ? "reported_read" : "available_not_confirmed_read";
+      if (!files.length) {
+        return [{
+          id: m.id,
+          material_id: m.id,
+          locator: m.locator,
+          status,
+          basis: "entity_locator",
+        }];
+      }
+      return files.map((f) => ({
+        id: f.id,
+        material_id: m.id,
+        locator: f.locator,
+        status,
+        basis: "preserved_file",
+      }));
+    }),
   };
 }

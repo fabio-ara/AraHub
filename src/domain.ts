@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { studyPackage } from "./production.ts";
+import { type StudyFile, type StudyMaterial, studyPackage, type StudyRole } from "./production.ts";
 import { asOwner, type Db } from "./db.ts";
 import { type Delta, HubError, type Principal, type Provider } from "./contracts.ts";
 import { preferenceSchema, resolvePreferences } from "./preferences.ts";
@@ -50,7 +50,8 @@ export class Hub {
         coalesce(sum(octet_length(extracted_text)),0)::text as extracted_text_utf8_bytes
         from public.hub_files where owner_id=${p.ownerId}`;
       return {
-        observed_at: new Date().toISOString(), counts: { ...counts, files: files.files },
+        observed_at: new Date().toISOString(),
+        counts: { ...counts, files: files.files },
         storage: {
           declared_file_bytes: files.declared_file_bytes,
           preserved_binary_bytes: files.preserved_binary_bytes,
@@ -58,7 +59,8 @@ export class Hub {
           measurement: "owner_logical_bytes",
           byte_values: "decimal_strings",
         },
-        note: "Representações distintas do proprietário; não incluem índices, WAL, Auth, TOAST ou outros usuários. Não são tamanho físico/faturável do banco nem saldo de cota.",
+        note:
+          "Representações distintas do proprietário; não incluem índices, WAL, Auth, TOAST ou outros usuários. Não são tamanho físico/faturável do banco nem saldo de cota.",
       };
     });
   }
@@ -110,26 +112,36 @@ export class Hub {
       };
     }
   }
-  context(p: Principal, id?: string) {
+  context(p: Principal, id?: string, offset = 0, deltaOffset = 0) {
+    if (
+      !Number.isSafeInteger(offset) || offset < 0 ||
+      !Number.isSafeInteger(deltaOffset) || deltaOffset < 0 || (id && offset !== 0)
+    ) throw new HubError("invalid_offset", "Página de contexto inválida.");
     return asOwner(this.db, p, async (tx) => {
-      const contexts = id
+      const candidates = id
         ? await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} and id=${id}`
-        : await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} order by updated_at desc limit 20`;
+        : await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} order by updated_at desc,id limit 21 offset ${offset}`;
+      const contexts = candidates.slice(0, 20);
       if (id && !contexts.length) throw new HubError("not_found", "Registro não encontrado.", 404);
       const ids = contexts.map((c) => c.id as string);
       const deltas = ids.length
         ? await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and context_id in ${
           tx(ids)
-        } order by recorded_at desc limit 50`
+        } order by recorded_at desc,id limit 51 offset ${deltaOffset}`
         : [];
       const connections =
         await tx`select id,provider,label,origin,state,capabilities,desired_scopes,granted_scopes from public.hub_connections where owner_id=${p.ownerId}`;
       return {
         contexts,
-        deltas,
+        deltas: deltas.slice(0, 50),
+        next_offset: candidates.length > 20 ? offset + 20 : null,
+        deltas_next_offset: deltas.length > 50 ? deltaOffset + 50 : null,
+        history_tool: "hub_history",
         connections,
         coverage: {
           memory: "persisted",
+          contexts: candidates.length > 20 ? "partial" : "complete",
+          deltas: deltas.length > 50 ? "partial" : "complete",
           sources:
             "See connection state; a historical memory does not prove current source refresh.",
         },
@@ -145,10 +157,17 @@ export class Hub {
       const rows =
         await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version from public.hub_deltas where owner_id=${p.ownerId} and (to_tsvector('simple',content) @@ plainto_tsquery('simple',${query}) or content ilike ${
           "%" + query + "%"
-        }) order by recorded_at desc limit 21 offset ${offset}`;
+        }) order by recorded_at desc,id limit 21 offset ${offset}`;
+      const contexts =
+        await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} and title ilike ${
+          "%" + query + "%"
+        } order by updated_at desc,id limit 21 offset ${offset}`;
       return {
         records: rows.slice(0, 20),
-        next_offset: rows.length > 20 ? offset + 20 : null,
+        contexts: contexts.slice(0, 20),
+        next_offset: rows.length > 20 || contexts.length > 20 ? offset + 20 : null,
+        record_next_offset: rows.length > 20 ? offset + 20 : null,
+        context_next_offset: contexts.length > 20 ? offset + 20 : null,
         content_is_untrusted_data: true,
       };
     });
@@ -321,37 +340,240 @@ export class Hub {
       };
     });
   }
-  activityPackage(p: Principal, activityId: string, goal: string) {
+  activityPackage(p: Principal, activityId: string, goal: string, offset = 0) {
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new HubError("invalid_offset", "Página inválida.");
+    }
     return asOwner(this.db, p, async (tx) => {
       const activity =
         (await tx`select id,title,state from public.hub_entities where owner_id=${p.ownerId} and id=${activityId}`)[
           0
         ];
       if (!activity) throw new HubError("not_found", "Atividade não encontrada.", 404);
+      // Agrupa por entidade antes de paginar: uma entidade pode ter várias
+      // relações (tipos) e vários arquivos/versões, mas produz um só material.
       const related =
-        await tx`select e.id,e.title,r.kind,r.evidence,f.id as file_id,f.sha256 from public.hub_relations r join public.hub_entities e on e.owner_id=r.owner_id and e.id=r.to_id left join public.hub_files f on f.owner_id=e.owner_id and f.entity_id=e.id where r.owner_id=${p.ownerId} and r.from_id=${activityId} and r.kind in ('required','related','suggested','references') order by e.title limit 30`;
+        await tx`select e.id,e.title from public.hub_relations r join public.hub_entities e on e.owner_id=r.owner_id and e.id=r.to_id where r.owner_id=${p.ownerId} and r.from_id=${activityId} and r.kind in ('required','related','suggested','has_content','references') group by e.id,e.title order by e.title,e.id limit 21 offset ${offset}`;
+      const page = related.slice(0, 20);
+      const nextOffset = related.length > 20 ? offset + 20 : null;
+      const ids = page.map((e) => e.id as string);
+      type RelationRow = { entity_id: string; kind: string; evidence: Record<string, unknown> };
+      type ObservationRow = {
+        observation_id: string;
+        entity_id: string;
+        content_hash: string;
+        provenance: unknown;
+        coverage: string;
+        occurred_at: unknown;
+        source_modified_at: unknown;
+        observed_at: unknown;
+        recorded_at: unknown;
+      };
+      type FileRow = {
+        id: string;
+        entity_id: string;
+        name: string;
+        mime_type: string;
+        sha256: string;
+        bytes: number | string;
+        text_available: boolean;
+        text_length: number | null;
+        extraction: Record<string, unknown>;
+      };
+      const relations = (ids.length
+        ? await tx`select r.to_id as entity_id,r.kind,r.evidence from public.hub_relations r where r.owner_id=${p.ownerId} and r.from_id=${activityId} and r.kind in ('required','related','suggested','has_content','references') and r.to_id in ${
+          tx(ids)
+        } order by r.to_id,r.kind`
+        : []) as unknown as RelationRow[];
+      const observations = (ids.length
+        ? await tx`select distinct on (o.entity_id) o.id as observation_id,o.entity_id,o.content_hash,o.provenance,o.coverage,o.occurred_at,o.source_modified_at,o.observed_at,o.recorded_at from public.hub_observations o where o.owner_id=${p.ownerId} and o.entity_id in ${
+          tx(ids)
+        } order by o.entity_id,o.observed_at desc,o.recorded_at desc`
+        : []) as unknown as ObservationRow[];
+      const files = (ids.length
+        ? await tx`select f.id,f.entity_id,f.name,f.mime_type,f.sha256,f.bytes,(f.extracted_text is not null) as text_available,char_length(f.extracted_text) as text_length,jsonb_build_object('coverage',f.extraction->'coverage','page_count',f.extraction->'page_count','has_extraction',f.extraction <> '{}'::jsonb) as extraction from public.hub_files f where f.owner_id=${p.ownerId} and f.entity_id in ${
+          tx(ids)
+        } order by f.entity_id,f.name,f.id`
+        : []) as unknown as FileRow[];
+
+      // Precedência explícita: uma relação mais forte define o papel; o conjunto
+      // completo de tipos fica em relation_kinds para não perder proveniência.
+      // 'has_content' é vínculo estrutural do Sync (module→pages/book/assignment)
+      // e nunca vira 'required'.
+      const precedence: readonly string[] = [
+        "required",
+        "related",
+        "suggested",
+        "has_content",
+        "references",
+      ];
+      const roleOf = (kind: string | undefined): StudyRole | "reference" =>
+        kind === "required"
+          ? "required"
+          : kind === "suggested"
+          ? "suggested"
+          : kind === "references"
+          ? "reference"
+          : "related"; // related e has_content: material relacionado, nunca required.
+      const kinds = new Map<string, string[]>();
+      const rightsByRelation = new Map<string, Record<string, string>>();
+      for (const relation of relations) {
+        const entityId = relation.entity_id;
+        const list = kinds.get(entityId) ?? [];
+        if (!list.includes(relation.kind)) {
+          list.push(relation.kind);
+        }
+        kinds.set(entityId, list);
+        const evidence = relation.evidence ?? {};
+        if (typeof evidence.rights === "string") {
+          const declared = rightsByRelation.get(entityId) ?? {};
+          declared[relation.kind] = evidence.rights;
+          rightsByRelation.set(entityId, declared);
+        }
+      }
+      const observed = new Map<string, ObservationRow>();
+      for (const observation of observations) {
+        observed.set(observation.entity_id, observation);
+      }
+      const filesByEntity = new Map<string, FileRow[]>();
+      for (const file of files) {
+        const entityId = file.entity_id;
+        const list = filesByEntity.get(entityId) ?? [];
+        list.push(file);
+        filesByEntity.set(entityId, list);
+      }
+
+      const materials: StudyMaterial[] = [];
+      const references: StudyMaterial[] = [];
+      for (const entity of page) {
+        const entityId = entity.id as string;
+        const relationKinds = (kinds.get(entityId) ?? []).slice().sort(
+          (x, y) =>
+            precedence.indexOf(x) - precedence.indexOf(y),
+        );
+        const observation = observed.get(entityId) ?? null;
+        const studyFiles: StudyFile[] = (filesByEntity.get(entityId) ?? []).map((f) => ({
+          id: f.id,
+          name: f.name,
+          mime_type: f.mime_type,
+          sha256: f.sha256,
+          bytes: f.bytes,
+          locator: `hub:file:${f.id}#${f.sha256}`,
+          text_available: f.text_available === true,
+          text_length: f.text_length,
+          extraction: f.extraction ?? {},
+        }));
+        const selectionRequired = studyFiles.length > 1;
+        // Direitos podem divergir por tipo de relação: preserva o mapa e não
+        // escolhe silenciosamente; o fallback nega redistribuição até revisão.
+        const rightsByKind = rightsByRelation.get(entityId) ?? {};
+        // Direitos acompanham os tipos de relação de cada entrada; o mapa completo
+        // fica em rights_by_relation para revisão humana.
+        const rightsFor = (kindsForEntry: string[]) => {
+          const declared = new Set<string>();
+          for (const kind of kindsForEntry) {
+            const value = rightsByKind[kind];
+            if (typeof value === "string") {
+              declared.add(value);
+            }
+          }
+          const distinct = [...declared];
+          return {
+            rights: distinct.length === 1
+              ? distinct[0]
+              : "private source; redistribution not authorized",
+            rights_requires_review: distinct.length > 1,
+          };
+        };
+        // Cobertura agregada só existe com observação; com várias versões e sem
+        // observação, eleger a cobertura de um arquivo seria escolher versão.
+        const aggregatedCoverage = observation
+          ? observation.coverage as string
+          : selectionRequired
+          ? null
+          : (studyFiles[0]?.extraction.coverage as string | null | undefined) ?? null;
+        const entry: Omit<StudyMaterial, "role" | "rights" | "rights_requires_review"> = {
+          id: entityId,
+          title: entity.title as string,
+          // Só elege um arquivo quando existe exatamente um; com várias versões
+          // o localizador volta à entidade e selection_required pede a escolha.
+          locator: studyFiles.length === 1 ? studyFiles[0].locator : `hub:entity:${entityId}`,
+          rights_by_relation: rightsByKind,
+          relation_kinds: relationKinds,
+          coverage: aggregatedCoverage,
+          provenance: observation ? observation.provenance : null,
+          // Metadados da observação; o corpo fica recuperável por hub:entity:
+          // para o pacote não duplicar a fonte integral na resposta.
+          observation: observation
+            ? {
+              id: observation.observation_id,
+              content_hash: observation.content_hash,
+              provenance: observation.provenance,
+              coverage: observation.coverage,
+              occurred_at: observation.occurred_at,
+              source_modified_at: observation.source_modified_at,
+              observed_at: observation.observed_at,
+              recorded_at: observation.recorded_at,
+              locator: `hub:entity:${entityId}`,
+            }
+            : null,
+          files: studyFiles,
+          file_count: studyFiles.length,
+          selection_required: selectionRequired,
+        };
+        // Bibliografia preservada mesmo quando a mesma entidade também é material;
+        // material de has_content/related/suggested continua disponível sem 'required'.
+        if (relationKinds.includes("references")) {
+          references.push({ ...entry, ...rightsFor(["references"]), role: "reference" });
+        }
+        const materialKinds: string[] = [];
+        for (const kind of relationKinds) {
+          if (kind !== "references") {
+            materialKinds.push(kind);
+          }
+        }
+        if (materialKinds.length) {
+          materials.push({
+            ...entry,
+            ...rightsFor(materialKinds),
+            role: roleOf(materialKinds[0]),
+          });
+        }
+      }
+
       const instruction = typeof activity.state.instruction === "string"
         ? activity.state.instruction
         : null;
-      const materials = related.map((r) => ({
-        id: r.id,
-        role: r.kind === "required"
-          ? "required" as const
-          : r.kind === "suggested"
-          ? "suggested" as const
-          : "related" as const,
-        locator: r.file_id ? `hub:file:${r.file_id}#${r.sha256}` : `hub:entity:${r.id}`,
-        rights: typeof r.evidence.rights === "string"
-          ? r.evidence.rights
-          : "private source; redistribution not authorized",
-      }));
+      // O enunciado nativo do Moodle vem em state.provider_record.intro (HTML).
+      // É exposto como descrição da fonte (dado bruto, sem executar) e nunca
+      // promovido automaticamente a enunciado explícito.
+      const providerRecord = activity.state.provider_record;
+      const intro = providerRecord && typeof providerRecord === "object" &&
+          typeof (providerRecord as Record<string, unknown>).intro === "string"
+        ? (providerRecord as Record<string, string>).intro
+        : null;
+      const sourceDescription = intro === null ? null : {
+        format: "html" as const,
+        text: intro,
+        origin: `hub:entity:${activityId}`,
+        field: "provider_record.intro",
+        content_is_untrusted_data: true,
+      };
+      const instructionGap = sourceDescription
+        ? "Enunciado explícito não preservado; a descrição da fonte é dado bruto, não executado."
+        : "Enunciado ainda não preservado. Consulte a fonte antes de produzir o trabalho.";
       return {
         ...studyPackage({ id: activityId, instruction: instruction ?? "" }, materials, goal),
         title: activity.title,
-        gaps: instruction
-          ? []
-          : ["Enunciado ainda não preservado. Consulte a fonte antes de produzir o trabalho."],
-        truncated: related.length === 30,
+        references,
+        source_description: sourceDescription,
+        page: { offset, limit: 20, next_offset: nextOffset },
+        next_offset: nextOffset,
+        gaps: instruction ? [] : [instructionGap],
+        limitations: [
+          "Material de seção e relatos de links usam vínculos próprios (has_module/has_content); o pacote não infere relações além das preservadas.",
+        ],
+        truncated: nextOffset !== null,
       };
     });
   }

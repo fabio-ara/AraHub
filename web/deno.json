@@ -8,6 +8,5 @@
       "dom.iterable",
       "esnext"
     ]
-  },
-  "lock": "../deno.lock"
+  }
 }

@@ -211,6 +211,7 @@ Deno.test("A05 A23: partes nativas extensas paginam sem corte silencioso; bytes,
     documentId: "large-doc",
     title: "Grande sintético",
     emoji: "😀a",
+    namedRanges: {} as Record<string, { text: string }>,
     body: {
       content: Array.from({ length: 20 }, (_, index) => ({ index, text: "x".repeat(14000) })),
     },
@@ -298,6 +299,47 @@ Deno.test("A05 A23: partes nativas extensas paginam sem corte silencioso; bytes,
         .result,
       "x".repeat(20),
     );
+    native.namedRanges = Object.fromEntries(
+      Array.from({ length: 205 }, (_, index) => [
+        "range/" + index,
+        { text: "x".repeat(1000) },
+      ]),
+    );
+    const manyKeys = (await material.preserve(owner, connection.id, {
+      kind: "document",
+      resource_id: "large-doc",
+    })).memory_commit;
+    const keys: string[] = [];
+    let childOffset: number | null = 0;
+    while (childOffset !== null) {
+      const part = await offline.read(
+        owner,
+        manyKeys.id,
+        manyKeys.sha256,
+        "/namedRanges",
+        0,
+        undefined,
+        childOffset,
+      );
+      assert.equal(part.result, null);
+      assert.equal(part.children_count, 205);
+      keys.push(...part.children);
+      childOffset = part.children_next_offset;
+    }
+    assert.deepEqual(keys, Object.keys(native.namedRanges));
+    assert.equal(
+      (await offline.read(owner, manyKeys.id, manyKeys.sha256, "/namedRanges/range~1204/text"))
+        .result,
+      "x".repeat(1000),
+    );
+    await assert.rejects(
+      offline.read(owner, manyKeys.id, manyKeys.sha256, "/namedRanges", 0, undefined, 206),
+      /filhos disponíveis/,
+    );
+    await assert.rejects(
+      offline.read(owner, manyKeys.id, manyKeys.sha256, "/emoji", 0, undefined, 1),
+      /filhos disponíveis/,
+    );
     native.body.content[0].text = "x".repeat(8 * 1024 * 1024);
     await assert.rejects(
       material.preserve(owner, connection.id, { kind: "document", resource_id: "large-doc" }),
@@ -305,7 +347,7 @@ Deno.test("A05 A23: partes nativas extensas paginam sem corte silencioso; bytes,
     );
     const [count] =
       await db`select count(*)::integer as files from public.hub_files where owner_id=${owner.ownerId}`;
-    assert.equal(count.files, 2);
+    assert.equal(count.files, 3);
   } finally {
     await db.end();
   }

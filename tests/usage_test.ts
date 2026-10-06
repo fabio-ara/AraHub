@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
-import { createDb } from "../src/db.ts";
+import { asOwner, createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
 import { handleMcp } from "../src/mcp.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -22,6 +22,12 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
           Promise.resolve({
             documentId: "usage-doc",
             title: "Documento SDK sintético",
+            namedRanges: Object.fromEntries(
+              Array.from({ length: 205 }, (_, index) => [
+                "range-" + index,
+                { content: "x".repeat(1000) },
+              ]),
+            ),
             body: {
               content: [{
                 paragraph: { elements: [{ textRun: { content: "Conteúdo nativo persistido" } }] },
@@ -123,6 +129,60 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
       });
       assert.equal(part.isError, undefined);
       assert.ok(JSON.stringify(part.content).includes("Conteúdo nativo persistido"));
+      const children = await client.callTool({
+        name: "hub_read_google_material",
+        arguments: {
+          file_id: receipt.id,
+          sha256: receipt.sha256,
+          pointer: "/namedRanges",
+          children_offset: 100,
+        },
+      });
+      assert.equal(children.isError, undefined);
+      const childPage = JSON.parse((children.content as { text: string }[])[0].text);
+      assert.equal(childPage.children_count, 205);
+      assert.equal(childPage.children_offset, 100);
+      assert.equal(childPage.children_next_offset, 200);
+      assert.equal(childPage.children[0], "range-100");
+      assert.equal(childPage.children.at(-1), "range-199");
+      const principal = { ownerId };
+      const activity = await hub.entity(
+        principal,
+        connections.get(ownerId)!,
+        "activity",
+        "sdk-activity",
+        "Atividade SDK",
+        { instruction: "Estudar o material preservado sintético." },
+      );
+      await asOwner(
+        db,
+        principal,
+        (tx) =>
+          tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence)
+          values(${ownerId},${activity.id},${receipt.entity_id},'required',${
+            tx.json({ rights: "fixture private" })
+          })`,
+      );
+      const packageResult = await client.callTool({
+        name: "hub_study_package",
+        arguments: { activity_id: activity.id, goal: "Estudar", offset: 0 },
+      });
+      assert.equal(packageResult.isError, undefined);
+      const pack = JSON.parse((packageResult.content as { text: string }[])[0].text);
+      assert.equal(pack.materials[0].id, receipt.entity_id);
+      assert.equal(pack.materials[0].files[0].sha256, receipt.sha256);
+      assert.equal(pack.materials[0].selection_required, false);
+      assert.equal(pack.aralearn.creation_authorized, false);
+      assert.equal(pack.read_status[0].status, "available_not_confirmed_read");
+      const nextResult = await client.callTool({
+        name: "hub_study_package",
+        arguments: { activity_id: activity.id, goal: "Estudar", offset: 1 },
+      });
+      assert.equal(nextResult.isError, undefined);
+      assert.deepEqual(
+        JSON.parse((nextResult.content as { text: string }[])[0].text).materials,
+        [],
+      );
     }
   } finally {
     for (const client of clients) await client.close();

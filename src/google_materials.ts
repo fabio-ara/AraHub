@@ -136,11 +136,20 @@ export class GoogleMaterials {
     };
   }
 
-  async read(p: Principal, fileId: string, hash: string, pointer = "", offset = 0, limit?: number) {
+  async read(
+    p: Principal,
+    fileId: string,
+    hash: string,
+    pointer = "",
+    offset = 0,
+    limit?: number,
+    childrenOffset = 0,
+  ) {
     if (
       pointer.length > 2000 || (pointer !== "" && !pointer.startsWith("/")) ||
       /~(?![01])/.test(pointer) || !Number.isSafeInteger(offset) || offset < 0 ||
-      (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 16000))
+      (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 16000)) ||
+      !Number.isSafeInteger(childrenOffset) || childrenOffset < 0
     ) throw new HubError("invalid_locator", "Localizador, offset ou limite inválido.", 400);
     const [file] = await asOwner(
       this.hub.db,
@@ -199,11 +208,18 @@ export class GoogleMaterials {
       throw new HubError("invalid_offset", "Offset aplica-se somente a arrays ou texto.", 400);
     }
     const tooLarge = new TextEncoder().encode(JSON.stringify(result)).length > MAX_PART_BYTES;
-    const children = tooLarge && result !== null && typeof result === "object"
-      ? Object.keys(result).slice(0, 100).map((key) =>
-        Array.isArray(result) ? String(offset + Number(key)) : key
-      )
+    const childKeys = tooLarge && result !== null && typeof result === "object"
+      ? Object.keys(result)
       : [];
+    if (childrenOffset > childKeys.length) {
+      throw new HubError("invalid_offset", "Offset além dos filhos disponíveis.", 400);
+    }
+    const children = childKeys.slice(childrenOffset, childrenOffset + 100).map((key) =>
+      Array.isArray(result) ? String(offset + Number(key)) : key
+    );
+    const childrenNextOffset = childrenOffset + children.length < childKeys.length
+      ? childrenOffset + children.length
+      : null;
     return {
       file_id: fileId,
       sha256: hash,
@@ -216,8 +232,10 @@ export class GoogleMaterials {
       snapshot_coverage: file.extraction.coverage,
       provenance: file.extraction.provenance,
       children,
-      children_truncated: tooLarge && result !== null && typeof result === "object" &&
-        Object.keys(result).length > 100,
+      children_offset: childrenOffset,
+      children_next_offset: childrenNextOffset,
+      children_count: childKeys.length,
+      children_truncated: childrenNextOffset !== null,
       note: tooLarge
         ? "Aprofunde o JSON Pointer pelos filhos; a parte excede 128 KiB. Nenhum conteúdo foi truncado silenciosamente."
         : "Parte da observação preservada, sem consultar a fonte; não prova atualidade, interpretação de imagem ou entrega.",

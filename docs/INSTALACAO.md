@@ -103,3 +103,17 @@ acesso de rede ao registro npm. Sem rede, o cache vazio não pode ser preenchido
 o `--frozen` deve falhar, o que é o comportamento desejado. A atualização de
 `STATUS.md` e da matriz de aceite após este gate é responsabilidade do
 responsável pela etapa.
+
+## Um lock para as configurações do projeto
+
+Raiz, web e Edge são membros do mesmo workspace Deno; imports existentes
+continuam nas versões fixadas e o lock é congelado na raiz. Isso impede que
+um check da Edge remova as dependências da interface, ou vice-versa.
+Checks/builds dos três alvos passaram sem alterar o hash do lock; os bundles
+da interface e do worker conservaram seus hashes. O lock acrescentou apenas
+metadados dos membros, sem trocar pacotes ou integridades.
+
+A configuração segue o [contrato oficial de workspaces Deno](https://docs.deno.com/runtime/fundamentals/workspaces/),
+com lock somente na raiz. Para mudar dependências deliberadamente, atualize
+as versões e inicialize o novo lock com --frozen=false, revise o diff e
+volte aos gates congelados. Não desabilite o lock em implantação.
