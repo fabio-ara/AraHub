@@ -11,12 +11,12 @@ const owner = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const connectionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const googleConnectionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const googleReadScopes = [
-  "identity",
-  "gmail_read",
-  "calendar_read",
-  "drive_read",
-  "docs_read",
-  "slides_read",
+  "openid",
+  "email",
+  "profile",
+  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar.readonly",
 ];
 const user = {
   id: owner,
@@ -406,7 +406,9 @@ try {
     assert.equal(await page.locator("#google-label").inputValue(), "Institucional");
     assert.equal(await page.locator("#google-label").evaluate((el) => el.readOnly), true);
     assert.equal(await page.locator("#google-gmail").isDisabled(), true);
+    assert.equal(await page.locator("#google-gmail").isChecked(), true);
     assert.equal(await page.locator("#google-drive-mode").isDisabled(), true);
+    assert.equal(await page.locator("#google-drive-mode").inputValue(), "drive_read");
     for (const name of ["docs", "sheets", "slides"]) {
       await page.locator(`#google-${name}-write`).check();
     }

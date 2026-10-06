@@ -113,6 +113,15 @@ let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthe
 let renewingMoodle: string | null = null;
 let moodleSubmitting = false;
 let upgradingGoogle: { id: string; desiredScopes: string[] } | null = null;
+const googleScopeUri: Record<string, string> = {
+  drive_read: "https://www.googleapis.com/auth/drive.readonly",
+  selected_files: "https://www.googleapis.com/auth/drive.file",
+  gmail_read: "https://www.googleapis.com/auth/gmail.readonly",
+  calendar_read: "https://www.googleapis.com/auth/calendar.readonly",
+  docs_write: "https://www.googleapis.com/auth/documents",
+  sheets_write: "https://www.googleapis.com/auth/spreadsheets",
+  slides_write: "https://www.googleapis.com/auth/presentations",
+};
 let pdfCursor: string | null = null;
 let pdfLoading = false;
 let pdfJob: AbortController | null = null;
@@ -492,13 +501,15 @@ async function render() {
                 : [];
               upgradingGoogle = { id: cn.id, desiredScopes };
               const current = new Set(desiredScopes);
+              const hasScope = (capability: string) =>
+                current.has(capability) || current.has(googleScopeUri[capability]);
               const label = el("google-label") as HTMLInputElement;
               label.value = cn.label;
               label.readOnly = true;
               const drive = el("google-drive-mode") as HTMLSelectElement;
-              drive.value = current.has("drive_read")
+              drive.value = hasScope("drive_read")
                 ? "drive_read"
-                : current.has("selected_files")
+                : hasScope("selected_files")
                 ? "selected_files"
                 : "identity";
               drive.disabled = true;
@@ -512,8 +523,8 @@ async function render() {
                 ]
               ) {
                 const input = el(id) as HTMLInputElement;
-                input.checked = current.has(scope);
-                input.disabled = current.has(scope) || !scope.endsWith("_write");
+                input.checked = hasScope(scope);
+                input.disabled = hasScope(scope) || !scope.endsWith("_write");
               }
               el("google-upgrade-note").hidden = false;
               el("google-selection-note").hidden = true;
