@@ -26,6 +26,11 @@ Para modo configurado, copie apenas os nomes de `.env.example` para um arquivo i
 
 ## Documentação por etapa
 
+PDFs preservados podem ser extraídos em Conexões → PDFs, no worker terminável
+do navegador, sem OCR. Texto e páginas ficam vinculados ao hash e podem ser
+recuperados pelo MCP. O backend Supabase recebe os resultados e conserva sua
+proveniência; o parser não executa na thread da Edge Function.
+
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
 - [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
 - [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [PDF e páginas](docs/ARQUIVOS.md).

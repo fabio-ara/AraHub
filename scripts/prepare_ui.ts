@@ -64,7 +64,10 @@ export type UiPackageResult = {
 const encoder = new TextEncoder();
 const encode = (text: string) => encoder.encode(text);
 const escapeAttribute = (value: string) =>
-  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;")
+  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll(
+    "<",
+    "&lt;",
+  )
     .replaceAll(">", "&gt;");
 
 function parseIdentity(identityBase: string): string {
@@ -74,7 +77,10 @@ function parseIdentity(identityBase: string): string {
   } catch {
     throw new Error("Supabase exige origem HTTPS exata, sem credenciais.");
   }
-  if (url.protocol !== "https:" || url.origin !== identityBase || url.username || url.password) {
+  if (
+    url.protocol !== "https:" || url.origin !== identityBase || url.username ||
+    url.password
+  ) {
     throw new Error("Supabase exige origem HTTPS exata, sem credenciais.");
   }
   return url.origin;
@@ -91,20 +97,34 @@ function parseUi(uiOrigin: string): { origin: string; basePath: string } {
   try {
     url = new URL(uiOrigin);
   } catch {
-    throw new Error("A interface exige URL HTTPS de diretório, sem credenciais.");
+    throw new Error(
+      "A interface exige URL HTTPS de diretório, sem credenciais.",
+    );
   }
-  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
-    throw new Error("A interface exige URL HTTPS de diretório, sem credenciais.");
+  if (
+    url.protocol !== "https:" || url.username || url.password || url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      "A interface exige URL HTTPS de diretório, sem credenciais.",
+    );
   }
   const basePath = url.pathname.replace(/\/+$/, "");
   const segment = basePath.split("/").at(-1) ?? "";
-  if (basePath.includes("..") || basePath.includes("//") || segment.includes(".")) {
-    throw new Error("O subpath da interface deve ser um diretório, não um arquivo.");
+  if (
+    basePath.includes("..") || basePath.includes("//") || segment.includes(".")
+  ) {
+    throw new Error(
+      "O subpath da interface deve ser um diretório, não um arquivo.",
+    );
   }
   return { origin: url.origin, basePath };
 }
 
-function contentSecurityPolicy(backendOrigin: string, identityOrigin: string): string {
+function contentSecurityPolicy(
+  backendOrigin: string,
+  identityOrigin: string,
+): string {
   // Sem `frame-ancestors`: o navegador ignora esse diretivo em CSP via `<meta>` e o
   // GitHub Pages não permite cabeçalhos; a defesa de enquadramento é o frameguard do app.
   return [
@@ -114,6 +134,7 @@ function contentSecurityPolicy(backendOrigin: string, identityOrigin: string): s
     "form-action 'self'",
     "script-src 'self'",
     "style-src 'self'",
+    "worker-src 'self'",
     "img-src 'self'",
     "font-src 'self'",
     `connect-src 'self' ${backendOrigin} ${identityOrigin}`,
@@ -136,7 +157,9 @@ function buildIndex(
   ];
   for (const [label, needle] of markers) {
     if (html.split(needle).length !== 2) {
-      throw new Error(`Marcador ${label} ausente ou duplicado em web/index.html.`);
+      throw new Error(
+        `Marcador ${label} ausente ou duplicado em web/index.html.`,
+      );
     }
   }
   const head = [
@@ -155,21 +178,31 @@ function buildIndex(
 }
 
 /** Gera o pacote estático novo e devolve caminhos e manifesto; não contata rede. */
-export async function prepareUiPackage(options: UiPackageOptions): Promise<UiPackageResult> {
+export async function prepareUiPackage(
+  options: UiPackageOptions,
+): Promise<UiPackageResult> {
   const identityOrigin = parseIdentity(options.identityBase);
   const backendOrigin = parseBackend(options.apiBase);
   const ui = parseUi(options.uiOrigin);
   const source = options.source ?? new URL("../web/", import.meta.url);
-  const deployRoot = options.deployRoot ?? new URL("../.private/deploy/", import.meta.url);
+  const deployRoot = options.deployRoot ??
+    new URL("../.private/deploy/", import.meta.url);
 
-  const html = buildIndex(await Deno.readTextFile(new URL("index.html", source)), {
-    apiBase: options.apiBase,
-    assetPrefix: ui.basePath,
-    csp: contentSecurityPolicy(backendOrigin, identityOrigin),
-  });
+  const html = buildIndex(
+    await Deno.readTextFile(new URL("index.html", source)),
+    {
+      apiBase: options.apiBase,
+      assetPrefix: ui.basePath,
+      csp: contentSecurityPolicy(backendOrigin, identityOrigin),
+    },
+  );
   const files: [string, Uint8Array][] = [
     ["index.html", html],
     ["ui/app.js", await Deno.readFile(new URL("app.js", source))],
+    [
+      "ui/pdf-parser.worker.js",
+      await Deno.readFile(new URL("pdf-parser.worker.js", source)),
+    ],
     ["ui/style.css", await Deno.readFile(new URL("style.css", source))],
     [".nojekyll", new Uint8Array(0)],
     ["oauth/consent/index.html", html],
@@ -179,7 +212,9 @@ export async function prepareUiPackage(options: UiPackageOptions): Promise<UiPac
       "LICENSE.txt",
       encode((await Promise.all([
         Deno.readTextFile(new URL("../LICENSE", import.meta.url)),
-        Deno.readTextFile(new URL("../THIRD_PARTY_NOTICES.md", import.meta.url)),
+        Deno.readTextFile(
+          new URL("../THIRD_PARTY_NOTICES.md", import.meta.url),
+        ),
       ])).join("\n\n")),
     ],
   ];
@@ -191,7 +226,11 @@ export async function prepareUiPackage(options: UiPackageOptions): Promise<UiPac
   await Deno.mkdir(root, { recursive: true });
   for (const [path, bytes] of files) {
     const slash = path.lastIndexOf("/");
-    if (slash >= 0) await Deno.mkdir(new URL(path.slice(0, slash + 1), root), { recursive: true });
+    if (slash >= 0) {
+      await Deno.mkdir(new URL(path.slice(0, slash + 1), root), {
+        recursive: true,
+      });
+    }
     await Deno.writeFile(new URL(path, root), bytes, { createNew: true });
   }
   const manifest: UiPackageManifest = {
@@ -212,9 +251,13 @@ export async function prepareUiPackage(options: UiPackageOptions): Promise<UiPac
       })),
     ),
   };
-  await Deno.writeTextFile(manifestUrl, JSON.stringify(manifest, null, 2) + "\n", {
-    createNew: true,
-  });
+  await Deno.writeTextFile(
+    manifestUrl,
+    JSON.stringify(manifest, null, 2) + "\n",
+    {
+      createNew: true,
+    },
+  );
   return { directory: root.href, manifestPath: manifestUrl.href, manifest };
 }
 

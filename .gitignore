@@ -36,5 +36,6 @@ build/
 .DS_Store
 Thumbs.db
 /web/app.js
+/web/pdf-parser.worker.js
 
 # Não ignorar migrations SQL, schemas, manifests ou fixtures sintéticas úteis.

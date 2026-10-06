@@ -70,7 +70,7 @@ const MAIN_THREAD_NOTE =
  * Fontes primárias e rota local/cliente em docs/ARQUIVOS.md.
  */
 const HOSTED_UNAVAILABLE_NOTE =
-  "Rota hospedada (Supabase Edge): Web Worker API indisponível e sem isolamento terminável acessível pelo código da função; os limites do provedor encerram o isolate em vez de devolver resultado controlado. Extraia em runtime local (worker terminável) ou no cliente; não habilite execução na thread principal por variável de ambiente.";
+  "Rota hospedada (Supabase Edge): Web Worker API indisponível e sem isolamento terminável acessível pelo código da função; os limites do provedor encerram o isolate em vez de devolver resultado controlado. Na interface, abra Conexões → PDFs para extrair no worker terminável do navegador. Também existe o runtime local; não habilite execução na thread principal por variável de ambiente.";
 
 /**
  * Bootstrap do worker isolado. Neutraliza Worker para forçar o pdf.js ao
@@ -167,6 +167,8 @@ export interface PdfTextExtraction {
 
 export interface PdfExtractionOptions {
   maxBytes?: number;
+  /** One-based start of this bounded batch. */
+  startPage?: number;
   maxPages?: number;
   maxPageChars?: number;
   maxTotalChars?: number;
@@ -187,6 +189,7 @@ class PdfWorkerError extends Error {}
 
 interface ResolvedPdfOptions {
   maxBytes: number;
+  startPage: number;
   maxPages: number;
   maxPageChars: number;
   maxTotalChars: number;
@@ -298,8 +301,21 @@ function boundedInt(
 
 function resolvePdfOptions(options: PdfExtractionOptions): ResolvedPdfOptions {
   return {
-    maxBytes: boundedInt("maxBytes", options.maxBytes, DEFAULT_PDF_MAX_BYTES, 1, MAX_PDF_MAX_BYTES),
-    maxPages: boundedInt("maxPages", options.maxPages, DEFAULT_PDF_MAX_PAGES, 1, MAX_PDF_MAX_PAGES),
+    maxBytes: boundedInt(
+      "maxBytes",
+      options.maxBytes,
+      DEFAULT_PDF_MAX_BYTES,
+      1,
+      MAX_PDF_MAX_BYTES,
+    ),
+    startPage: boundedInt("startPage", options.startPage, 1, 1, 10_000),
+    maxPages: boundedInt(
+      "maxPages",
+      options.maxPages,
+      DEFAULT_PDF_MAX_PAGES,
+      1,
+      MAX_PDF_MAX_PAGES,
+    ),
     maxPageChars: boundedInt(
       "maxPageChars",
       options.maxPageChars,
@@ -329,7 +345,7 @@ function baseLimits(options: ResolvedPdfOptions, byteLength: number): string[] {
   return [
     "Somente texto por página; sem OCR e sem interpretação de imagens, assinaturas, anexos ou fórmulas.",
     `Bytes: limite ${options.maxBytes}, recebidos ${byteLength}.`,
-    `Páginas: limite ${options.maxPages}.`,
+    `Páginas: lote de até ${options.maxPages}, a partir da página ${options.startPage}.`,
     `Caracteres: ${options.maxPageChars} por página e ${options.maxTotalChars} no total.`,
     `Tempo: ${options.timeoutMs} ms com folga de ${HARD_TIMEOUT_GRACE_MS} ms antes da terminação forçada.`,
   ];
@@ -341,7 +357,10 @@ function sanitizeText(text: string): string {
     .replace(/\r\n?/g, "\n");
 }
 
-function checkInterruption(signal: AbortSignal | undefined, deadlineAt: number): void {
+function checkInterruption(
+  signal: AbortSignal | undefined,
+  deadlineAt: number,
+): void {
   if (signal?.aborted) throw new PdfAbortError();
   if (performance.now() >= deadlineAt) throw new PdfDeadlineError();
 }
@@ -356,7 +375,10 @@ async function withDeadline<T>(
   let onAbort: (() => void) | undefined;
   const gate = new Promise<never>((_resolve, reject) => {
     const remaining = deadlineAt - performance.now();
-    timer = setTimeout(() => reject(new PdfDeadlineError()), Math.max(1, remaining));
+    timer = setTimeout(
+      () => reject(new PdfDeadlineError()),
+      Math.max(1, remaining),
+    );
     if (signal) {
       if (signal.aborted) {
         reject(new PdfAbortError());
@@ -438,6 +460,7 @@ export function pdfExtractionToText(result: PdfTextExtraction): string {
 async function extractPdfBytesInThread(
   input: Uint8Array,
   options: ResolvedPdfOptions,
+  providedLib?: PdfLib,
 ): Promise<PdfTextExtraction> {
   const startedAt = performance.now();
   const deadlineAt = startedAt + options.timeoutMs;
@@ -465,7 +488,7 @@ async function extractPdfBytesInThread(
     );
   }
 
-  const lib = await loadPdfLib();
+  const lib = providedLib ?? await loadPdfLib();
   if (!lib) {
     return emptyResult(
       "pdf_runtime_unavailable",
@@ -497,6 +520,7 @@ async function extractPdfBytesInThread(
       useWorkerFetch: false,
       useWasm: false,
       disableFontFace: true,
+      enableXfa: false,
       stopAtErrors: false,
       verbosity: 0,
     });
@@ -505,7 +529,7 @@ async function extractPdfBytesInThread(
     limits.push(`Documento: ${pageCount} páginas declaradas.`);
 
     for (let number = 1; number <= doc.numPages; number++) {
-      if (number > options.maxPages) {
+      if (number < options.startPage || number >= options.startPage + options.maxPages) {
         omitted.add(number);
         continue;
       }
@@ -515,15 +539,27 @@ async function extractPdfBytesInThread(
       }
       try {
         checkInterruption(options.signal, deadlineAt);
-        const page = await withDeadline(doc.getPage(number), deadlineAt, options.signal);
+        const page = await withDeadline(
+          doc.getPage(number),
+          deadlineAt,
+          options.signal,
+        );
         const viewport = page.getViewport({ scale: 1 }) as {
           width: number;
           height: number;
           rotate?: number;
         };
-        const content = await withDeadline(page.getTextContent(), deadlineAt, options.signal);
+        const content = await withDeadline(
+          page.getTextContent(),
+          deadlineAt,
+          options.signal,
+        );
         let text = "";
-        for (const item of content.items as Array<{ str?: string; hasEOL?: boolean }>) {
+        for (
+          const item of content.items as Array<
+            { str?: string; hasEOL?: boolean }
+          >
+        ) {
           if (typeof item.str === "string") text += item.str;
           if (item.hasEOL) text += "\n";
         }
@@ -531,10 +567,18 @@ async function extractPdfBytesInThread(
 
         let imageCount = 0;
         try {
-          const operators = await withDeadline(page.getOperatorList(), deadlineAt, options.signal);
-          for (const fn of operators.fnArray) if (imageOps.has(fn)) imageCount++;
+          const operators = await withDeadline(
+            page.getOperatorList(),
+            deadlineAt,
+            options.signal,
+          );
+          for (const fn of operators.fnArray) {
+            if (imageOps.has(fn)) imageCount++;
+          }
         } catch (error) {
-          if (error instanceof PdfDeadlineError || error instanceof PdfAbortError) throw error;
+          if (
+            error instanceof PdfDeadlineError || error instanceof PdfAbortError
+          ) throw error;
           issues.push({
             scope: "page",
             page: number,
@@ -575,7 +619,9 @@ async function extractPdfBytesInThread(
           },
         });
       } catch (error) {
-        if (error instanceof PdfDeadlineError || error instanceof PdfAbortError) {
+        if (
+          error instanceof PdfDeadlineError || error instanceof PdfAbortError
+        ) {
           issues.push({
             scope: "page",
             page: number,
@@ -585,7 +631,9 @@ async function extractPdfBytesInThread(
               : "Tempo limite de extração excedido.",
           });
           omitted.add(number);
-          for (let rest = number + 1; rest <= doc.numPages; rest++) omitted.add(rest);
+          for (let rest = number + 1; rest <= doc.numPages; rest++) {
+            omitted.add(rest);
+          }
           interruptedCode = error instanceof PdfAbortError ? "aborted" : "timeout";
           break;
         }
@@ -618,7 +666,9 @@ async function extractPdfBytesInThread(
       code = "timeout";
       coverage = "timeout";
       message = "Tempo limite de extração excedido.";
-    } else if (name === "MissingPDFException" || name === "UnexpectedResponseException") {
+    } else if (
+      name === "MissingPDFException" || name === "UnexpectedResponseException"
+    ) {
       code = "unreadable";
       coverage = "unavailable";
       message = "PDF não pôde ser aberto.";
@@ -682,8 +732,13 @@ async function extractPdfBytesInThread(
 export async function runPdfExtractionInThread(
   input: Uint8Array,
   options: PdfExtractionOptions = {},
+  providedLib?: PdfLib,
 ): Promise<PdfTextExtraction> {
-  return await extractPdfBytesInThread(input, resolvePdfOptions(options));
+  return await extractPdfBytesInThread(
+    input,
+    resolvePdfOptions(options),
+    providedLib,
+  );
 }
 
 async function extractIsolated(
@@ -710,12 +765,17 @@ async function extractIsolated(
   const reply = new Promise<IsolatedReply>((resolve, reject) => {
     handle.worker.onmessage = (event) => resolve(event.data as IsolatedReply);
     handle.worker.onerror = (event) =>
-      reject(new PdfWorkerError(String((event as ErrorEvent).message ?? "worker error")));
+      reject(
+        new PdfWorkerError(
+          String((event as ErrorEvent).message ?? "worker error"),
+        ),
+      );
     handle.worker.postMessage({
       moduleUrl: new URL("./pdf_text.ts", import.meta.url).href,
       options: {
         maxBytes: options.maxBytes,
         maxPages: options.maxPages,
+        startPage: options.startPage,
         maxPageChars: options.maxPageChars,
         maxTotalChars: options.maxTotalChars,
         timeoutMs: options.timeoutMs,
@@ -784,7 +844,9 @@ async function extractIsolated(
     );
   } finally {
     if (timer !== undefined) clearTimeout(timer);
-    if (options.signal && onAbort) options.signal.removeEventListener("abort", onAbort);
+    if (options.signal && onAbort) {
+      options.signal.removeEventListener("abort", onAbort);
+    }
   }
 }
 
@@ -816,7 +878,12 @@ export async function extractPdfText(
   };
 
   if (input.byteLength === 0) {
-    return emptyResult("empty_input", "parsing_error", "Entrada vazia.", preflight);
+    return emptyResult(
+      "empty_input",
+      "parsing_error",
+      "Entrada vazia.",
+      preflight,
+    );
   }
   if (input.byteLength > resolved.maxBytes) {
     return emptyResult(
@@ -842,7 +909,11 @@ export async function extractPdfText(
         "worker_unavailable",
         "unavailable",
         "Extração exige worker terminável, indisponível neste runtime; a rota hospedada (Supabase Edge) não expõe Web Worker API nem isolamento terminável à função, então a extração remota é recusada. allowMainThreadFallback só vale em runtime local sob limite externo próprio.",
-        { ...preflight, execution: "main_thread", limits: [...limits, MAIN_THREAD_NOTE] },
+        {
+          ...preflight,
+          execution: "main_thread",
+          limits: [...limits, MAIN_THREAD_NOTE],
+        },
         [HOSTED_UNAVAILABLE_NOTE],
       );
     }

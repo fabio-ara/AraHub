@@ -11,7 +11,10 @@ const required = (name: string) => {
   if (!v) throw new Error(`Configuração ausente: ${name}`);
   return v;
 };
-const db = createDb(required("DATABASE_URL")), hub = new Hub(db);
+// Supabase injects the database URL into the function's protected environment.
+// An explicit URL still supports a chosen pooler; never expose either value.
+const databaseUrl = Deno.env.get("DATABASE_URL") || required("SUPABASE_DB_URL");
+const db = createDb(databaseUrl), hub = new Hub(db);
 const issuer = required("AUTH_ISSUER"), base = required("PUBLIC_URL");
 const uiOrigin = required("UI_ORIGIN");
 const uiBase = new URL(required("UI_URL"));

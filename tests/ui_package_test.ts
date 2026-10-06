@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { prepareUiPackage, type UiPackageManifest } from "../scripts/prepare_ui.ts";
 
 const allowedDeployRoot = new URL("../.private/deploy/", import.meta.url);
-const deployRoot = new URL(`test-ui-${crypto.randomUUID()}/`, allowedDeployRoot);
+const deployRoot = new URL(
+  `test-ui-${crypto.randomUUID()}/`,
+  allowedDeployRoot,
+);
 const API_BASE = "https://api.invalid/functions/v1/arahub";
 const IDENTITY = "https://proj.invalid";
 const UI_URL = "https://usuario.github.io/AraHub/";
@@ -14,6 +17,7 @@ const EXPECTED_FILES = [
   "oauth/consent/index.html",
   "oauth/google/callback/index.html",
   "ui/app.js",
+  "ui/pdf-parser.worker.js",
   "ui/style.css",
 ];
 
@@ -21,7 +25,9 @@ const EXPECTED_FILES = [
 async function sha256(bytes: Uint8Array): Promise<string> {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", copy.buffer));
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", copy.buffer),
+  );
   return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -30,7 +36,10 @@ async function listFiles(directory: URL, prefix = ""): Promise<string[]> {
   for await (const entry of Deno.readDir(directory)) {
     if (entry.isDirectory) {
       found.push(
-        ...await listFiles(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`),
+        ...await listFiles(
+          new URL(`${entry.name}/`, directory),
+          `${prefix}${entry.name}/`,
+        ),
       );
     } else {
       found.push(`${prefix}${entry.name}`);
@@ -65,7 +74,11 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
       uiOrigin: UI_URL,
       deployRoot,
     });
-    assert.notEqual(first.directory, second.directory, "cada chamada cria um pacote novo");
+    assert.notEqual(
+      first.directory,
+      second.directory,
+      "cada chamada cria um pacote novo",
+    );
 
     const directory = new URL(first.directory);
     assert.ok(
@@ -93,8 +106,14 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
 
     const declared = onDisk.files.map((file) => file.path).sort();
     assert.deepEqual(declared, EXPECTED_FILES);
-    assert.deepEqual(await listFiles(directory), declared, "nenhum arquivo fora do manifesto");
-    assert.ok(!declared.includes("_headers") && !declared.includes("_redirects"));
+    assert.deepEqual(
+      await listFiles(directory),
+      declared,
+      "nenhum arquivo fora do manifesto",
+    );
+    assert.ok(
+      !declared.includes("_headers") && !declared.includes("_redirects"),
+    );
 
     for (const file of onDisk.files) {
       const bytes = await Deno.readFile(new URL(file.path, directory));
@@ -107,14 +126,29 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
       index,
       /name="arahub-api-base" content="https:\/\/api\.invalid\/functions\/v1\/arahub"/,
     );
-    assert.ok(index.includes('href="/AraHub/ui/style.css"'), "CSS absoluto com prefixo");
-    assert.ok(index.includes('src="/AraHub/ui/app.js"'), "bundle absoluto com prefixo");
-    assert.ok(index.includes('http-equiv="Content-Security-Policy"'), "CSP por meta");
     assert.ok(
-      index.includes("connect-src 'self' https://api.invalid https://proj.invalid"),
+      index.includes('href="/AraHub/ui/style.css"'),
+      "CSS absoluto com prefixo",
+    );
+    assert.ok(
+      index.includes('src="/AraHub/ui/app.js"'),
+      "bundle absoluto com prefixo",
+    );
+    assert.ok(
+      index.includes('http-equiv="Content-Security-Policy"'),
+      "CSP por meta",
+    );
+    assert.ok(
+      index.includes(
+        "connect-src 'self' https://api.invalid https://proj.invalid",
+      ),
       "CSP libera apenas o backend e a identidade escolhidos",
     );
-    assert.doesNotMatch(index, /frame-ancestors/, "frame-ancestors não se aplica por meta");
+    assert.doesNotMatch(
+      index,
+      /frame-ancestors/,
+      "frame-ancestors não se aplica por meta",
+    );
     assert.ok(index.includes('<meta name="referrer" content="no-referrer">'));
 
     const copies = await Promise.all(
@@ -125,7 +159,11 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
       ].map((path) => Deno.readFile(new URL(path, directory))),
     );
     for (const copy of copies) {
-      assert.deepEqual(copy, new TextEncoder().encode(index), "rota SPA idêntica ao index");
+      assert.deepEqual(
+        copy,
+        new TextEncoder().encode(index),
+        "rota SPA idêntica ao index",
+      );
     }
     const nojekyll = await Deno.readFile(new URL(".nojekyll", directory));
     assert.equal(nojekyll.byteLength, 0);
@@ -143,7 +181,9 @@ Deno.test("raiz sem subpath mantém caminhos absolutos simples", async () => {
       deployRoot,
     });
     assert.equal(result.manifest.ui_base_path, "/");
-    const index = await Deno.readTextFile(new URL("index.html", new URL(result.directory)));
+    const index = await Deno.readTextFile(
+      new URL("index.html", new URL(result.directory)),
+    );
     assert.ok(index.includes('href="/ui/style.css"'));
     assert.ok(index.includes('src="/ui/app.js"'));
     assert.ok(!index.includes("/AraHub/"));
@@ -153,17 +193,28 @@ Deno.test("raiz sem subpath mantém caminhos absolutos simples", async () => {
 });
 
 Deno.test("configuração insegura é recusada antes de escrever qualquer asset", async () => {
-  const base = { apiBase: API_BASE, identityBase: IDENTITY, uiOrigin: UI_URL, deployRoot };
+  const base = {
+    apiBase: API_BASE,
+    identityBase: IDENTITY,
+    uiOrigin: UI_URL,
+    deployRoot,
+  };
   await assert.rejects(
     prepareUiPackage({ ...base, uiOrigin: "http://usuario.github.io/AraHub/" }),
     /HTTPS/,
   );
   await assert.rejects(
-    prepareUiPackage({ ...base, uiOrigin: "https://usuario.github.io/AraHub/index.html" }),
+    prepareUiPackage({
+      ...base,
+      uiOrigin: "https://usuario.github.io/AraHub/index.html",
+    }),
     /diretório/,
   );
   await assert.rejects(
-    prepareUiPackage({ ...base, uiOrigin: "https://usuario:token@usuario.github.io/AraHub/" }),
+    prepareUiPackage({
+      ...base,
+      uiOrigin: "https://usuario:token@usuario.github.io/AraHub/",
+    }),
     /credenciais/,
   );
   await assert.rejects(
@@ -171,8 +222,14 @@ Deno.test("configuração insegura é recusada antes de escrever qualquer asset"
     /HTTPS/,
   );
   await assert.rejects(
-    prepareUiPackage({ ...base, apiBase: "http://api.invalid/functions/v1/arahub" }),
+    prepareUiPackage({
+      ...base,
+      apiBase: "http://api.invalid/functions/v1/arahub",
+    }),
     /Base pública da API inválida/,
   );
-  await assert.rejects(prepareUiPackage({ ...base, apiBase: "" }), /obrigatória/);
+  await assert.rejects(
+    prepareUiPackage({ ...base, apiBase: "" }),
+    /obrigatória/,
+  );
 });

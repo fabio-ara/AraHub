@@ -11,8 +11,10 @@ import { createHandler } from "../src/http.ts";
 import { createVerifier } from "../src/auth.ts";
 import { sha256Hex } from "../src/migration.ts";
 
-if (Deno.args.length !== 2) {
-  throw new Error("Uso: validate_pdf_real.ts <PDF privado> <URL pública da fonte>");
+if (![2, 3].includes(Deno.args.length)) {
+  throw new Error(
+    "Uso: validate_pdf_real.ts <PDF privado> <URL pública da fonte> [resultado privado do cliente]",
+  );
 }
 const source = new URL(Deno.args[1]);
 if (
@@ -25,6 +27,8 @@ if (bytes.length > 20 * 1024 * 1024 || new TextDecoder().decode(bytes.slice(0, 5
   throw new Error("Arquivo não é um PDF dentro do limite.");
 }
 const hash = await sha256Hex(bytes);
+const browserResult = Deno.args[2] ? JSON.parse(await Deno.readTextFile(Deno.args[2])) : null;
+if (browserResult) assert.equal(browserResult.sha256, hash);
 const db = createDb("postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub");
 const owner = crypto.randomUUID(), other = crypto.randomUUID(), session = crypto.randomUUID();
 const base = "http://127.0.0.1:8789";
@@ -83,6 +87,37 @@ try {
     await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content) values(${owner},${entity.id},'academic-probe.pdf','application/pdf',${hash},${bytes.length},${
       Buffer.from(bytes)
     }) returning id`;
+  if (browserResult) {
+    const workerAsset = await fetch(base + "/ui/pdf-parser.worker.js");
+    assert.equal(workerAsset.status, 200);
+    assert.equal(workerAsset.headers.get("Content-Type"), "text/javascript; charset=utf-8");
+    assert.equal(
+      await sha256Hex(new Uint8Array(await workerAsset.arrayBuffer())),
+      await sha256Hex(await Deno.readFile("web/pdf-parser.worker.js")),
+    );
+    const personalToken = await new SignJWT({ role: "authenticated", session_id: session })
+      .setProtectedHeader({ alg: "ES256", kid: "probe" }).setSubject(owner).setIssuer(issuer)
+      .setAudience(auth.audience).setIssuedAt().setExpirationTime("10m").sign(privateKey);
+    const request = async (path: string, data: unknown) =>
+      await fetch(base + path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${personalToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    const downloaded = await request("/api/pdf/bytes", { file_id: file.id, sha256: hash });
+    assert.equal(downloaded.status, 200);
+    assert.equal(await sha256Hex(new Uint8Array(await downloaded.arrayBuffer())), hash);
+    const committed = await request("/api/pdf/commit", {
+      file_id: file.id,
+      sha256: hash,
+      extraction: browserResult.extraction,
+    });
+    assert.equal(committed.status, 200);
+    const result = await committed.json();
+    assert.equal(result.memory.complete, true);
+    assert.equal(result.provenance.verified, false);
+    assert.equal(result.extraction_origin, "browser_client");
+  }
   const first = await connect();
   const limited = payload(
     await first.callTool({
@@ -90,8 +125,8 @@ try {
       arguments: { file_id: file.id, sha256: hash, max_pages: 2 },
     }),
   );
-  assert.equal(limited.memory.pages, 2);
-  assert.equal(limited.memory.complete, false);
+  assert.equal(limited.memory.pages, browserResult ? browserResult.extraction.page_count : 2);
+  assert.equal(limited.memory.complete, !!browserResult);
   await first.close();
   const resumed = await connect();
   const page = payload(
@@ -141,6 +176,10 @@ try {
         real_pdf: true,
         real_sql: true,
         real_http_sdk: true,
+        client_result_received: !!browserResult,
+        client_result_sha256: browserResult
+          ? await sha256Hex(new TextEncoder().encode(JSON.stringify(browserResult)))
+          : null,
         synthetic_identity: true,
         partial_then_complete: true,
         new_client_retrieval: true,

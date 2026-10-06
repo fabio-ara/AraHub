@@ -1,17 +1,24 @@
 import { createClient } from "@supabase/supabase-js";
 import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
+import { extractClientPdf, PDF_CLIENT_MAX_BYTES } from "./pdf_client.ts";
 const siteBase = new URL("../", import.meta.url).href;
 const route = (path: string) => sitePath(siteBase, path);
-const localCredentialEntry = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-const moodleCredentialEntry = localCredentialEntry || location.protocol === "https:";
+const localCredentialEntry = ["localhost", "127.0.0.1", "[::1]"].includes(
+  location.hostname,
+);
+const moodleCredentialEntry = localCredentialEntry ||
+  location.protocol === "https:";
 if (window.top !== window.self) {
   document.documentElement.hidden = true;
-  throw new Error("Abra o AraHub em sua própria janela para autorizar alterações.");
+  throw new Error(
+    "Abra o AraHub em sua própria janela para autorizar alterações.",
+  );
 }
 const endpoint = (path: string) =>
   apiEndpoint(
-    document.querySelector<HTMLMetaElement>('meta[name="arahub-api-base"]')?.content ?? "",
+    document.querySelector<HTMLMetaElement>('meta[name="arahub-api-base"]')
+      ?.content ?? "",
     path,
   );
 const el = (id: string) => document.getElementById(id)!;
@@ -35,16 +42,20 @@ for (
     ["google-connect", "account-add", "Conectar outra conta Google"],
     ["approve", "ready-state", "Permitir"],
     ["deny", "remove-state", "Recusar"],
+    ["pdf-more", "book-open", "Mais PDFs"],
   ]
 ) setAction(el(id), icon, label);
 const mediaTheme = matchMedia("(prefers-color-scheme: dark)");
 let themePreference = "system";
 try {
   const savedTheme = localStorage.getItem("arahub.ui.theme");
-  if (savedTheme && ["system", "light", "dark"].includes(savedTheme)) themePreference = savedTheme;
+  if (savedTheme && ["system", "light", "dark"].includes(savedTheme)) {
+    themePreference = savedTheme;
+  }
 } catch { /* A blocked storage must not prevent configuration. */ }
 function applyTheme() {
-  const dark = themePreference === "dark" || themePreference === "system" && mediaTheme.matches;
+  const dark = themePreference === "dark" ||
+    themePreference === "system" && mediaTheme.matches;
   document.documentElement.dataset.colorMode = dark ? "dark" : "light";
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
     "content",
@@ -79,7 +90,9 @@ const pendingGoogle = callbackUrl.pathname.replace(/\/+$/, "") === route("/oauth
     error: callbackUrl.searchParams.get("error") ?? undefined,
   }
   : null;
-if (pendingGoogle) history.replaceState({}, "", route("/oauth/google/callback"));
+if (pendingGoogle) {
+  history.replaceState({}, "", route("/oauth/google/callback"));
+}
 let googleCallbackHandled = false;
 const msg = (s: string) => {
   el("message").textContent = s;
@@ -96,6 +109,9 @@ const supabase = cfg.supabaseUrl && cfg.publishableKey
 let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthetic-token") : null;
 let renewingMoodle: string | null = null;
 let moodleSubmitting = false;
+let pdfCursor: string | null = null;
+let pdfLoading = false;
+let pdfJob: AbortController | null = null;
 function resetMoodleForm() {
   renewingMoodle = null;
   (el("moodle-connect-form") as HTMLFormElement).reset();
@@ -104,9 +120,12 @@ function resetMoodleForm() {
   setAction(el("moodle-submit"), "key", "Conectar Moodle");
 }
 el("synthetic-login").hidden = !cfg.synthetic;
-el("moodle-connect-form").hidden = !cfg.canConnectMoodle || !moodleCredentialEntry;
-el("moodle-protected-note").hidden = moodleCredentialEntry || !cfg.canConnectMoodle;
+el("moodle-connect-form").hidden = !cfg.canConnectMoodle ||
+  !moodleCredentialEntry;
+el("moodle-protected-note").hidden = moodleCredentialEntry ||
+  !cfg.canConnectMoodle;
 el("google-connect-form").hidden = !cfg.canConnectGoogle;
+el("pdf-setup").hidden = !cfg.canExtractPdf;
 if (!supabase) {
   el("login-form").hidden = true;
   el("setup-note").hidden = false;
@@ -159,6 +178,136 @@ async function googleCallback() {
     );
   }
 }
+async function loadPdfs(append = false) {
+  if (!token || pdfLoading || !cfg.canExtractPdf) return;
+  pdfLoading = true;
+  const sessionToken = token;
+  try {
+    const page = await post(
+      "/api/pdf/list",
+      append && pdfCursor ? { after: pdfCursor } : {},
+    );
+    if (token !== sessionToken) return;
+    const list = el("pdf-list");
+    if (!append) list.replaceChildren();
+    pdfCursor = page.next_id;
+    el("pdf-more").hidden = !pdfCursor;
+    for (const file of page.files) {
+      const entry = card(
+        file.name,
+        file.coverage === "complete" ? "Texto preservado" : "Texto incompleto",
+      );
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const extract = document.createElement("button");
+      setAction(extract, "book-text", "Extrair texto");
+      extract.disabled = file.coverage === "complete";
+      const cancel = document.createElement("button");
+      setAction(cancel, "remove-state", "Cancelar extração");
+      cancel.hidden = true;
+      cancel.addEventListener("click", () => pdfJob?.abort());
+      extract.addEventListener("click", async () => {
+        if (pdfJob) return;
+        const job = new AbortController();
+        pdfJob = job;
+        extract.disabled = true;
+        cancel.hidden = false;
+        msg("Extraindo texto neste dispositivo…");
+        try {
+          const response = await fetch(endpoint("/api/pdf/bytes"), {
+            method: "POST",
+            signal: job.signal,
+            headers: {
+              Authorization: `Bearer ${sessionToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ file_id: file.id, sha256: file.sha256 }),
+          });
+          if (!response.ok) {
+            throw new Error("O arquivo está indisponível. Atualize a lista.");
+          }
+          if (
+            response.headers.get("Content-Type")?.split(";")[0] !==
+              "application/pdf"
+          ) {
+            throw new Error("O arquivo não é um PDF.");
+          }
+          // Streaming limit applies even when Content-Length is absent or incorrect.
+          const reader = response.body!.getReader();
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              size += value.length;
+              if (size > PDF_CLIENT_MAX_BYTES) {
+                throw new Error("PDF acima do limite.");
+              }
+              chunks.push(value);
+            }
+          } finally {
+            await reader.cancel();
+          }
+          const bytes = new Uint8Array(size);
+          let offset = 0;
+          for (const chunk of chunks) {
+            bytes.set(chunk, offset);
+            offset += chunk.length;
+          }
+          const extraction = await extractClientPdf(
+            bytes,
+            file.sha256,
+            500,
+            job.signal,
+            file.next_page ?? 1,
+          );
+          if (job.signal.aborted || token !== sessionToken) {
+            throw new Error("Extração cancelada.");
+          }
+          const result = await post("/api/pdf/commit", {
+            file_id: file.id,
+            sha256: file.sha256,
+            extraction,
+          });
+          msg(
+            result.memory.complete
+              ? "Texto preservado por página, sem OCR."
+              : result.memory.pages > 0
+              ? "Texto parcial preservado; algumas páginas não puderam ser extraídas."
+              : "Nenhuma página pôde ser extraída. O PDF preservado continua disponível.",
+          );
+          if (result.memory.complete) extract.disabled = true;
+          else extract.disabled = false;
+          entry.querySelector("p")!.textContent = result.memory.complete
+            ? "Texto preservado"
+            : "Texto incompleto";
+          await loadPdfs(); // Reload the durable next page before a continuation.
+        } catch (e) {
+          extract.disabled = false;
+          msg(
+            e instanceof Error ? e.message : "Não foi possível extrair o PDF.",
+          );
+        } finally {
+          cancel.hidden = true;
+          if (pdfJob === job) pdfJob = null;
+        }
+      });
+      actions.append(extract, cancel);
+      entry.append(actions);
+      list.append(entry);
+    }
+    if (!list.childElementCount) list.textContent = "Nenhum PDF preservado.";
+  } catch (e) {
+    msg(e instanceof Error ? e.message : "PDFs indisponíveis.");
+  } finally {
+    pdfLoading = false;
+  }
+}
+el("pdf-setup").addEventListener("toggle", () => {
+  if ((el("pdf-setup") as HTMLDetailsElement).open) void loadPdfs();
+});
+el("pdf-more").addEventListener("click", () => void loadPdfs(true));
 function card(title: string, detail: string) {
   const card = document.createElement("article");
   card.className = "panel";
@@ -238,7 +387,10 @@ async function render() {
           }
         });
         entry.append(disconnect);
-        if (cn.provider === "moodle" && cfg.canConnectMoodle && moodleCredentialEntry) {
+        if (
+          cn.provider === "moodle" && cfg.canConnectMoodle &&
+          moodleCredentialEntry
+        ) {
           const renew = document.createElement("button");
           renew.className = "secondary";
           setAction(renew, "key", "Renovar acesso");
@@ -315,7 +467,9 @@ async function render() {
       }
       const controls = document.createElement("div");
       controls.className = "actions";
-      for (const button of Array.from(entry.querySelectorAll("button"))) controls.append(button);
+      for (const button of Array.from(entry.querySelectorAll("button"))) {
+        controls.append(button);
+      }
       if (controls.childElementCount) entry.append(controls);
       connections.append(entry);
     }
@@ -358,7 +512,11 @@ async function renderActions(connections: { id: string; label: string }[]) {
     }
     const content = document.createElement("pre");
     const proposed = action.content;
-    if (["docs_create", "sheets_create", "slides_create"].includes(action.operation)) {
+    if (
+      ["docs_create", "sheets_create", "slides_create"].includes(
+        action.operation,
+      )
+    ) {
       content.textContent = `Nome: ${proposed.title}`;
     } else if (action.operation === "docs_insert_text") {
       content.textContent = proposed.text;
@@ -402,14 +560,23 @@ async function renderActions(connections: { id: string; label: string }[]) {
       check.type = "checkbox";
       const label = document.createElement("label");
       label.className = "check-label";
-      label.append(check, document.createTextNode("Revisei a conta, o destino e o conteúdo."));
-      const approve = document.createElement("button"), deny = document.createElement("button");
+      label.append(
+        check,
+        document.createTextNode("Revisei a conta, o destino e o conteúdo."),
+      );
+      const approve = document.createElement("button"),
+        deny = document.createElement("button");
       setAction(approve, "ready-state", "Autorizar esta versão");
       approve.disabled = true;
       check.addEventListener("change", () => approve.disabled = !check.checked);
       setAction(deny, "remove-state", "Recusar alteração");
       deny.classList.add("quiet");
-      for (const [button, decision] of [[approve, "approve"], [deny, "deny"]] as const) {
+      for (
+        const [button, decision] of [[approve, "approve"], [
+          deny,
+          "deny",
+        ]] as const
+      ) {
         button.addEventListener("click", async () => {
           approve.disabled = true;
           deny.disabled = true;
@@ -427,7 +594,9 @@ async function renderActions(connections: { id: string; label: string }[]) {
           } catch (e) {
             approve.disabled = !check.checked;
             deny.disabled = false;
-            msg(e instanceof Error ? e.message : "Não foi possível registrar sua decisão.");
+            msg(
+              e instanceof Error ? e.message : "Não foi possível registrar sua decisão.",
+            );
           }
         });
       }
@@ -483,6 +652,7 @@ el("synthetic-login").addEventListener("click", async () => {
 if (supabase) (el("signin") as HTMLButtonElement).disabled = false;
 el("refresh").addEventListener("click", () => void render());
 el("logout").addEventListener("click", async () => {
+  pdfJob?.abort();
   token = null;
   sessionStorage.removeItem("arahub-synthetic-token");
   await supabase?.auth.signOut();
@@ -575,6 +745,9 @@ if (supabase) {
       }, 0);
     }
     if (!token) {
+      pdfJob?.abort();
+      el("pdf-list").replaceChildren();
+      pdfCursor = null;
       resetMoodleForm();
       el("context-list").replaceChildren();
       el("connection-list").replaceChildren();
@@ -595,7 +768,10 @@ await googleCallback();
 
 el("moodle-connect-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (moodleSubmitting || !token || !cfg.canConnectMoodle || !moodleCredentialEntry) return;
+  if (
+    moodleSubmitting || !token || !cfg.canConnectMoodle ||
+    !moodleCredentialEntry
+  ) return;
   moodleSubmitting = true;
   const button = el("moodle-submit") as HTMLButtonElement;
   button.disabled = true;

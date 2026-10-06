@@ -8,6 +8,7 @@ import { Sync } from "./sync.ts";
 import { z } from "zod";
 import type { GoogleConnections } from "./google_connections.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
+import { Materials } from "./materials.ts";
 
 interface HttpConfig {
   auth: Pick<AuthConfig, "resource" | "issuer">;
@@ -52,6 +53,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           canConnectMoodle: !!config.connections && !config.syntheticLogin,
           canConnectGoogle: !!config.google && !config.syntheticLogin,
           canApproveActions: !!config.actions && !config.syntheticLogin,
+          canExtractPdf: !config.syntheticLogin,
         });
       }
       if (u.pathname === "/api/synthetic-login" && req.method === "POST" && config.syntheticLogin) {
@@ -73,8 +75,8 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           },
         );
       }
-      if (u.pathname === "/ui/app.js" || u.pathname === "/ui/style.css") {
-        const name = u.pathname.endsWith(".js") ? "app.js" : "style.css";
+      if (["/ui/app.js", "/ui/style.css", "/ui/pdf-parser.worker.js"].includes(u.pathname)) {
+        const name = u.pathname.slice("/ui/".length);
         return new Response(await Deno.readFile(new URL(`../web/${name}`, import.meta.url)), {
           headers: {
             ...safeHeaders,
@@ -216,6 +218,44 @@ export function createHandler(hub: Hub, config: HttpConfig) {
       }
       if (u.pathname === "/api/export" && req.method === "GET") {
         return json(await hub.exportMemory(await config.verify(req, false)));
+      }
+      if (u.pathname === "/api/pdf/list" && req.method === "POST") {
+        const p = await config.verify(req, false);
+        const input = z.object({ after: z.string().uuid().optional() }).strict().parse(
+          JSON.parse(await boundedBody(req, 2048)),
+        );
+        return json(await new Materials(hub, config.connections).listPdf(p, input.after));
+      }
+      if (u.pathname === "/api/pdf/bytes" && req.method === "POST") {
+        const p = await config.verify(req, false);
+        const input = z.object({
+          file_id: z.string().uuid(),
+          sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        }).strict().parse(JSON.parse(await boundedBody(req, 2048)));
+        const file = await new Materials(hub, config.connections).readPdf(
+          p,
+          input.file_id,
+          input.sha256,
+        );
+        return new Response(file.bytes, {
+          headers: { ...safeHeaders, "Content-Type": "application/pdf" },
+        });
+      }
+      if (u.pathname === "/api/pdf/commit" && req.method === "POST") {
+        const p = await config.verify(req, false);
+        const input = z.object({
+          file_id: z.string().uuid(),
+          sha256: z.string().regex(/^[a-f0-9]{64}$/),
+          extraction: z.unknown(),
+        }).strict().parse(JSON.parse(await boundedBody(req, 6 * 1024 * 1024)));
+        return json(
+          await new Materials(hub, config.connections).commitClientPdf(
+            p,
+            input.file_id,
+            input.sha256,
+            input.extraction,
+          ),
+        );
       }
       return json({ code: "not_found" }, 404);
     } catch (e) {

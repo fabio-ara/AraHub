@@ -207,6 +207,11 @@ Deno.test("A23: limites de páginas e de caracteres declaram omissão e cobertur
   assert.equal(limited.page_bounds.last_page, 2);
   assert.equal(limited.page_bounds.pages_in_document, 4);
 
+  const resumed = await extractPdfText(bytes, { startPage: 3, maxPages: 2 });
+  assert.deepEqual(resumed.pages.map((page) => page.page), [3, 4]);
+  assert.deepEqual(resumed.omitted_pages, [1, 2]);
+  assert.equal(resumed.coverage, "partial");
+
   const truncated = await extractPdfText(bytes, { maxPageChars: 12 });
   assert.equal(truncated.pages[0].char_count, 12);
   assert.equal(truncated.pages[0].text.length, 12);

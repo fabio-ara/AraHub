@@ -24,6 +24,7 @@ import { extractPdfText, pdfExtractionToText, pdfPageLocator } from "./pdf_text.
 
 extractPdfText(input: Uint8Array, options?: {
   maxBytes?: number;      // padrão 20 MiB, teto 64 MiB
+  startPage?: number;     // início do lote, padrão 1, teto 10 000
   maxPages?: number;      // padrão 50, teto 500
   maxPageChars?: number;  // padrão 20 000, teto 100 000
   maxTotalChars?: number; // padrão 400 000, teto 1 000 000
@@ -110,11 +111,8 @@ hospedada; a recusa e a rota suportada estão em "Disponibilidade hospedada".
   `PDFJS_VERSION`; o `workerSrc` é o caminho relativo `./pdf.worker.mjs`,
   resolvido a partir do próprio `pdf.mjs` (não dependemos de
   `import.meta.resolve` para especificadores npm).
-- O specifier `npm:` é inline, então não é preciso editar `deno.json` para
-  compilar. O root ainda deve **integrar a configuração**: registrar a
-  dependência no `deno.lock` (basta um `deno check`/`deno test` sem
-  `--no-lock`, ou um `deno cache` antes do gate) e, se desejar, mapear
-  `"pdfjs-dist": "npm:pdfjs-dist@6.4.299"` em `imports`.
+- O specifier `npm:` é inline e a dependência está fixada no `deno.lock`.
+  O navegador usa o build padrão do mesmo pacote; o Deno local usa o legado.
 - Primeira execução baixa do registro npm; esse download **não** é bloqueado por
   `--allow-net`, então `deno task test` funciona com cache frio.
 - Permissões: leitura de módulos já é coberta por `--allow-read`. O worker é um
@@ -175,11 +173,10 @@ todas as permissões, então use apenas em máquina local):
 deno eval --no-lock 'const m = await import("./src/pdf_text.ts"); const b = await Deno.readFile(Deno.args[0]); const r = await m.extractPdfText(b); console.log(JSON.stringify({ ok: r.ok, coverage: r.coverage, execution: r.execution, hard_timeout: r.hard_timeout, pages: r.page_count, omitidas: r.omitted_pages.length, primeira: r.pages[0]?.text.slice(0, 60) }));' caminho\arquivo.pdf
 ```
 
-Recomendação para o root: expor `deno task pdf:extract` apontando para um CLI
-fino (`deno run --allow-read --allow-env scripts/pdf_extract.ts`) que apenas
-chama `extractPdfText` e imprime o JSON. O isolamento já está dentro da função,
-então o CLI não precisa criar worker próprio; para um limite externo adicional,
-execute o CLI sob um subprocesso com timeout e kill.
+`scripts/validate_pdf_real.ts` opera um PDF privado preservado, o banco local e
+um cliente MCP sobre HTTP. Um terceiro argumento opcional recebe o resultado
+privado extraído pelo navegador, para provar sua gravação e recuperação pelo
+mesmo caminho autenticado. Não imprime texto do documento nem tokens.
 
 ## Disponibilidade hospedada (Supabase Edge)
 
@@ -222,13 +219,28 @@ Rota suportada para PDF remoto:
    terminável, sobre os bytes preservados (RLS por dono), e grava a memória
    (ver "Integração com Materials/MCP"). É o caminho usado pelos testes de
    `materials`/MCP.
-2. **Cliente (recomendada, pendente).** A UI é um navegador, onde a Web Worker
-   API existe: o PDF pode ser extraído no cliente com um worker real e o texto
-   enviado de volta. Bloqueio concreto: a implementação vive em `web/` e exige
-   um caminho de escrita no backend (autoridade/consentimento), fora desta
-   entrega; além disso, o worker atual resolve o módulo por
-   `new URL("./pdf_text.ts", import.meta.url)`, que não existe num bundle de
-   navegador — o cliente precisa do próprio carregador de worker.
+2. **Cliente.** Em Conexões → PDFs, o botão de extração recebe os bytes
+   preservados do dono e confere o SHA-256 antes de iniciar um módulo Worker
+   da mesma origem. `web/pdf_worker.ts` inclui o parser Mozilla fixado, sem
+   CDN nem credenciais na thread. O parser interno roda dentro desse worker
+   descartável; cancelamento, sucesso, falha e o limite de 18 segundos sempre
+   encerram a thread. Nenhum PDF é aberto ou renderizado pela interface.
+
+   O lote tem até 500 páginas e 400.000 caracteres, começando na página
+   indicada pelo checkpoint. `startPage` permite continuar após o orçamento;
+   páginas anteriores permanecem na memória. A lista usa cursor de arquivo.
+   Texto em imagem continua com lacuna explícita, sem OCR.
+
+   As rotas pessoais `/api/pdf/list`, `/api/pdf/bytes` e `/api/pdf/commit`
+   exigem sessão ativa, dono e hash; uma sessão MCP não pode se passar pelo
+   navegador. O servidor limita e normaliza o relato, deriva a cobertura e
+   mescla sob lock. A origem fica `browser_client`, não corroborada pelo
+   servidor: o texto é dado não confiável, vinculado ao arquivo preservado.
+   Receber texto de uma sessão pessoal não autoriza operações externas.
+
+   O pacote Pages inclui `ui/pdf-parser.worker.js`, com `worker-src 'self'`
+   e licença Apache-2.0 do pdf.js nas atribuições. O código próprio continua
+   MIT. O backend Edge recebe a extração, sem executar o parser na sua thread.
 
 Evidência honesta: os testes locais provam `execution:"isolated_worker"` e
 `hard_timeout:true`; a simulação do runtime hospedado (sem `Worker` e com
@@ -237,6 +249,21 @@ executado na Edge hospedada: o projeto remoto não tem função implantada e a
 implantar exige autorização específica; não há, portanto, prova hospedada.
 
 ## Provas executadas
+
+- `tests/pdf_client_test.ts`: dez provas SQL/HTTP de dono, sessão pessoal,
+  hash/tamanho, formato hostil, contagem de páginas forjada, normalização,
+  idempotência, retomada e preservação de extração anterior melhor. O digest
+  dos bytes é conferido sob o mesmo lock da gravação. A listagem projeta
+  somente números/estados de página, sem carregar texto de todos os PDFs.
+- `scripts/qa_pages.mjs`: Chrome em 390×844 e 1280×900 extraiu o PDF
+  acadêmico público real em worker da mesma origem, sem violações CSP. Hash
+  adulterado não chegou à gravação. Cancelamento e timeout encerraram um
+  worker com CPU síncrona infinita; a UI continuou utilizável. HTTP/Auth foram
+  simulados nessa prova. Nenhuma imagem foi salva pela interface.
+- O resultado privado desse worker, fixado ao SHA-256 do PDF, passou depois
+  pelas rotas pessoais HTTP reais no banco local. Um cliente MCP novo
+  recuperou as páginas; dono distinto e hash alterado foram recusados. A
+  identidade foi sintética, sem implantação, conta real ou OCR.
 
 - `deno check src/pdf_text.ts tests/pdf_text_test.ts` — sem erros.
 - `deno test --allow-env --allow-read tests/pdf_text_test.ts` — 9 aprovados,

@@ -59,6 +59,14 @@
               <div id="connections-view" hidden>
                 <h2>Conexões</h2>
                 <div id="connection-list" class="grid"></div>
+                <details class="panel" id="pdf-setup" hidden>
+                  <summary>PDFs</summary>
+                  <p
+                    class="note">Texto por página, sem OCR. A extração acontece neste dispositivo.</p>
+                  <div id="pdf-list" class="grid"></div>
+                  <div
+                    class="actions"><button id="pdf-more" class="icon-ghost" aria-label="Mais PDFs" title="Mais PDFs" hidden></button></div>
+                </details>
                 <details class="panel" id="moodle-setup">
                   <summary>Moodle</summary>
                   <form id="moodle-connect-form" hidden>
