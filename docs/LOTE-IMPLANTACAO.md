@@ -1,6 +1,6 @@
 # Lote proposto de hospedagem
 
-Este documento prepara a autorização específica exigida pelo mandato. Não registra implantação executada.
+Lote aprovado pelo usuário em 2026-10-05 com a resposta “Aprovo”. A autorização cobre os alvos e limites abaixo; execução e provas ficam registradas no STATUS.
 
 Alvos concretos conferidos: projeto Supabase AraHub existente em São Paulo na nova conta; repositório candidato público MIT `fabio-ara/AraHub` e interface `https://fabio-ara.github.io/AraHub/`. Código privado, memória, evidências, ZIP e bootstrap continuam excluídos. A matriz exige autorização para criar/enviar o remoto e iniciar hosting; este lote cobre esses dois passos junto do backend, sem importação privada, cron, app Google ou escritas acadêmicas.
 
@@ -18,6 +18,6 @@ Automação preparada: `.github/workflows/pages.yml`, somente `workflow_dispatch
 
 Atualização SQL: `scripts/prepare_cloud_update.ts` confere que o registro remoto é prefixo exato das migrations locais e gera diretório novo com somente as pendentes. A transação trava o registro e reconfere hashes antes de alterar; replay/drift recusados. Registro remoto com oito hashes reconferido pelo CLI após login; lote de duas migrations preparado privadamente e ensaiado em banco local novo. Não usar o bundle inicial para atualização.
 
-O lote proposto inclui criar/enviar o repositório público indicado e hospedar a interface; depende de autorização específica. Inclui o worker PDF na interface e as rotas pessoais de gravação; o parser não executa na Edge. Não inclui importar memória privada, ativar recorrência, configurar app Google ou escrever em contas acadêmicas. Login/MFA e entrada de credenciais usam superfícies protegidas e participação humana quando necessária, sem segredos no chat.
+O lote proposto inclui criar/enviar o repositório público indicado e hospedar a interface; tem autorização específica registrada. Inclui o worker PDF na interface e as rotas pessoais de gravação; o parser não executa na Edge. Não inclui importar memória privada, ativar recorrência, configurar app Google ou escrever em contas acadêmicas. Login/MFA e entrada de credenciais usam superfícies protegidas e participação humana quando necessária, sem segredos no chat.
 
 Distribuição: `LICENSE.txt` acompanha os assets com a licença MIT do AraHub e as atribuições/licenças do AraLearn das nove dependências fixadas do app e do pdf.js Apache-2.0 no worker. O pacote tem nove arquivos; nenhum manifesto privado é distribuído. Código-fonte completo MIT deve ficar no repositório público pretendido, com revisão de índice/histórico antes do envio. O alvo GitHub candidato é o repositório `AraHub` na conta autenticada do titular; conferir inexistência/visibilidade e autorização específica antes da criação. A escolha do provedor e a licença não constituem evidência de publicação executada.
