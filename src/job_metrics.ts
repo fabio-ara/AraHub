@@ -18,9 +18,9 @@
  */
 
 export interface JobMemorySample {
-  readonly rss_bytes: number;
-  readonly heap_used_bytes: number;
-  readonly heap_total_bytes: number;
+  readonly rss_bytes: number | null;
+  readonly heap_used_bytes: number | null;
+  readonly heap_total_bytes: number | null;
   readonly sampled_at: string;
 }
 
@@ -63,10 +63,14 @@ function denoMemoryUsage(): DenoMemoryUsage | null {
 function sampleMemory(): JobMemorySample | null {
   const usage = denoMemoryUsage();
   if (!usage) return null;
+  // Hosted isolates may expose zero for unsupported RSS. A running JS heap
+  // cannot establish physical zero-byte usage: report that field unavailable.
+  const available = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
   return {
-    rss_bytes: usage.rss,
-    heap_used_bytes: usage.heapUsed,
-    heap_total_bytes: typeof usage.heapTotal === "number" ? usage.heapTotal : 0,
+    rss_bytes: available(usage.rss),
+    heap_used_bytes: available(usage.heapUsed),
+    heap_total_bytes: available(usage.heapTotal),
     sampled_at: new Date().toISOString(),
   };
 }

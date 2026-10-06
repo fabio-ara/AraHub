@@ -19,6 +19,8 @@ e fecha um relatório com:
 - `memory`: duas amostras (`start` e `end`) de `rss_bytes`/`heap_used_bytes`/ `heap_total_bytes` do
   processo/isolate **compartilhado**. Não é memória exclusiva do lote nem pico garantido; em runtime
   sem `Deno.memoryUsage` a amostra é `null`.
+  Campo não positivo ou não finito também vira `null`: no runtime hospedado o RSS
+  retornou zero, que não estabelece consumo físico nulo. Heap amostrado é separado.
 - `started_at`/`finished_at`: marcas de parede para correlação.
 
 O relatório carrega apenas números, tempos e o escopo da amostra de memória (`process_shared`). URL,
