@@ -86,6 +86,7 @@ try {
     }]
   ) {
     let otp = 0,
+      confirmation = 0,
       exchange = 0,
       approved = 0,
       unavailable = false,
@@ -252,6 +253,18 @@ try {
           assert.ok(data.code_challenge);
           assert.equal(data.password, undefined);
           otp++;
+          if (otp === 1) return reply({ code: "signup_disabled", message: "Signups disabled" }, 422);
+          return reply({});
+        }
+        if (url.pathname.endsWith("/resend")) {
+          const data = request.postDataJSON();
+          assert.equal(data.email, user.email);
+          assert.equal(data.type, "signup");
+          assert.equal(url.searchParams.get("redirect_to"), site + "oauth/callback");
+          assert.equal(data.code_challenge_method, "s256");
+          assert.ok(data.code_challenge);
+          assert.equal(data.password, undefined);
+          confirmation++;
           return reply({});
         }
         if (url.pathname.endsWith("/token")) {
@@ -294,6 +307,7 @@ try {
       },
     ).waitFor();
     assert.equal(otp, 1);
+    assert.equal(confirmation, 1);
     await page.goto(site + "oauth/callback/?code=synthetic-code");
     await page.locator("#workspace").waitFor({ state: "visible" });
     assert.equal(exchange, 1);

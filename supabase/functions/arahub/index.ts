@@ -1,6 +1,6 @@
 import { createDb } from "../../../src/db.ts";
 import { Hub } from "../../../src/domain.ts";
-import { createEdgeHandler } from "../../../src/edge.ts";
+import { createEdgeHandler, createSupabaseGatewayHandler } from "../../../src/edge.ts";
 import { ConnectionService } from "../../../src/connections.ts";
 import { TokenVault } from "../../../src/adapters/token_vault.ts";
 import { GoogleConnections } from "../../../src/google_connections.ts";
@@ -56,9 +56,10 @@ const google = vault && googleClient && googleSecret && googleRedirect
 if (google && googleRedirect !== new URL("oauth/google/callback", uiBase).href) {
   throw new Error("GOOGLE_REDIRECT_URI deve corresponder à interface autorizada.");
 }
-Deno.serve(createEdgeHandler(hub, auth, base, connections, google, {
+const edgeHandler = createEdgeHandler(hub, auth, base, connections, google, {
   origin: uiOrigin,
   supabaseUrl: required("SUPABASE_URL"),
   publishableKey: required("ARAHUB_PUBLISHABLE_KEY"),
   actions: new PersistentActionStore(db, { sessionActive: auth.sessionActive }),
-}));
+});
+Deno.serve(createSupabaseGatewayHandler(edgeHandler, base));

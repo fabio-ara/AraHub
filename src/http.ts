@@ -37,8 +37,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
       if (u.pathname === "/health") {
         return json({
           product: "AraHub",
-          state: "local_available",
-          external_deployment: "not_verified",
+          state: "service_available",
         });
       }
       if (

@@ -613,13 +613,24 @@ el("login-form").addEventListener("submit", async (e) => {
   if (!supabase) return;
   el("signin").setAttribute("disabled", "");
   if (!localCredentialEntry) {
-    const { error } = await supabase.auth.signInWithOtp({
-      email: (el("email") as HTMLInputElement).value,
+    const email = (el("email") as HTMLInputElement).value;
+    const emailRedirectTo = new URL(route("/oauth/callback"), location.origin).href;
+    let { error } = await supabase.auth.signInWithOtp({
+      email,
       options: {
-        emailRedirectTo: new URL(route("/oauth/callback"), location.origin).href,
+        emailRedirectTo,
         shouldCreateUser: false,
       },
     });
+    // An administrator-provisioned account still needs email confirmation.
+    // Resend verifies that account through native PKCE; it never enables signups.
+    if (error?.code === "signup_disabled") {
+      ({ error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo },
+      }));
+    }
     el("signin").removeAttribute("disabled");
     msg(
       error

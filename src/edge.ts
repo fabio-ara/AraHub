@@ -5,6 +5,43 @@ import type { ConnectionService } from "./connections.ts";
 import type { GoogleConnections } from "./google_connections.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 
+/** Supabase terminates TLS and forwards /<function>/... over HTTP to the runtime. */
+export function createSupabaseGatewayHandler(
+  handler: (req: Request) => Promise<Response>,
+  publicUrl: string,
+) {
+  const base = new URL(publicUrl);
+  if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) {
+    throw new Error("Base Supabase inválida.");
+  }
+  const publicPrefix = base.pathname.replace(/\/+$/, "");
+  if (!/^\/functions\/v1\/[a-z][a-z0-9_-]*$/.test(publicPrefix)) {
+    throw new Error("Prefixo Supabase inválido.");
+  }
+  const runtimePrefix = "/" + publicPrefix.split("/").at(-1);
+  const internalOrigin = "http://" + base.host;
+  return (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+    if (
+      url.origin === base.origin &&
+      (url.pathname === publicPrefix || url.pathname.startsWith(publicPrefix + "/"))
+    ) {
+      return handler(req);
+    }
+    // Match the configured gateway host/path; never trust caller-supplied forwarded headers.
+    if (
+      url.origin !== internalOrigin ||
+      !(url.pathname === runtimePrefix || url.pathname.startsWith(runtimePrefix + "/"))
+    ) {
+      return Promise.resolve(Response.json({ code: "not_found" }, { status: 404 }));
+    }
+    const canonical = new URL(base);
+    canonical.pathname = publicPrefix + url.pathname.slice(runtimePrefix.length);
+    canonical.search = url.search;
+    return handler(new Request(canonical, req));
+  };
+}
+
 /** Function gateway adapter; PUBLIC_URL is the exact authorized function base. */
 export function createEdgeHandler(
   hub: Hub,

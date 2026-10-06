@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
-import { createEdgeHandler } from "../src/edge.ts";
+import { createEdgeHandler, createSupabaseGatewayHandler } from "../src/edge.ts";
 
 Deno.test("A02 A28: prefixo Edge, discovery e sessão revogada por cliente SDK sintético", async () => {
   const db = createDb("postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub");
@@ -36,6 +36,30 @@ Deno.test("A02 A28: prefixo Edge, discovery e sessão revogada por cliente SDK s
     const metadata = await handler(new Request(`${base}/.well-known/oauth-protected-resource`));
     assert.equal(metadata.status, 200);
     assert.equal((await metadata.json()).resource, auth.resource);
+    const gateway = createSupabaseGatewayHandler(handler, base);
+    const forwarded = await gateway(
+      new Request("http://fixture.invalid/arahub/.well-known/oauth-protected-resource"),
+    );
+    assert.equal(forwarded.status, 200);
+    assert.equal((await forwarded.json()).resource, auth.resource);
+    assert.equal((await gateway(new Request(auth.resource))).status, 401);
+    for (
+      const url of [
+        "http://attacker.invalid/arahub/mcp",
+        "http://fixture.invalid/arahub-evil/mcp",
+        "http://fixture.invalid/mcp",
+        "https://fixture.invalid/arahub/mcp",
+      ]
+    ) {
+      assert.equal(
+        (await gateway(
+          new Request(url, {
+            headers: { "x-forwarded-host": "fixture.invalid", "x-forwarded-proto": "https" },
+          }),
+        )).status,
+        404,
+      );
+    }
     const noToken = await handler(new Request(auth.resource, { method: "POST" }));
     assert.equal(noToken.status, 401);
     assert.equal(
