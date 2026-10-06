@@ -15,7 +15,13 @@ Arquivos:
 - supabase/migrations/20261005223942_google_oauth_pending.sql — pendencia OAuth privada (CLI).
 - supabase/migrations/20261005224459_google_oauth_epoch.sql — epoch fence (oauth_epoch).
 
-Sem OAuth real, sem criacao de app Google e sem qualquer escrita externa nesta etapa.
+Os testes desta etapa foram locais, sem OAuth real ou escrita externa. Depois,
+o app Google próprio foi configurado, a conta institucional conectada e leituras
+nativas realizadas; o OAuth incremental Docs/Sheets/Slides de escrita também
+concluiu. O lote sintético de cinco operações foi autorizado, mas as três
+criações apenas foram preparadas para revisão por versão na interface. Nenhuma
+escrita Google foi executada neste checkpoint. Ver STATUS.md e
+docs/LOTE-GOOGLE-ESCRITA.md para o estado de produção.
 
 ## OAuth 2.0 / OpenID Connect
 

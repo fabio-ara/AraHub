@@ -1,14 +1,19 @@
 # Prova delimitada de produção Google
 
-Estado: **preparado, não autorizado e não executado**. A autorização vigente cobre
-aplicativo e leitura. Implementação e testes sintéticos não autorizam criar estes
-recursos na conta Google. O titular pode aprovar este lote quando retornar; login,
-consentimento incremental e revisão de cada versão são atos distintos.
+Estado em 2026-10-06: **lote autorizado, OAuth incremental concluído, nenhuma escrita
+Google executada**. O titular autorizou somente os três recursos sintéticos e as
+cinco operações abaixo. A conexão institucional retornou do callback Google com
+nove permissões solicitadas/concedidas e uma pendência OAuth consumida. As três
+criações estão preparadas no AraHub e aguardam aprovação individual da versão na
+interface confiável. Consentimento OAuth, aprovação de lote e revisão de cada versão
+são atos distintos; sem o recibo de cada versão, não executar a operação.
 
-Destino proposto: a conexão institucional já vinculada ao próprio usuário AraHub,
+Destino: a conexão institucional já vinculada ao próprio usuário AraHub,
 no aplicativo Google exclusivo existente. Conferir conta, plano e cotas antes da
 execução: custo adicional máximo zero, sem faturamento, cartão, trial ou aumento
 de permissões administrativas. Identificadores reais e recibos ficam privados.
+
+Conferência de 2026-10-06: as páginas oficiais de [Docs](https://developers.google.com/workspace/docs/api/limits), [Sheets](https://developers.google.com/workspace/sheets/api/limits) e [Slides](https://developers.google.com/workspace/slides/api/limits) indicam uso padrão sem custo adicional e limite de 60 escritas/minuto por usuário/projeto para cada API. O lote prevê cinco operações, abaixo desses limites. A evidência privada anterior do projeto registrou faturamento desvinculado; o painel Cloud não pôde ser reconferido nesta sessão sem novo login institucional. Nenhum faturamento, trial ou aumento foi ativado.
 
 Permissões incrementais necessárias: `documents`, `spreadsheets` e `presentations`
 sob `https://www.googleapis.com/auth/`. Não pedir escrita ampla de Drive, Gmail
@@ -38,7 +43,7 @@ ou executar em outro recurso. Aprovação expirada exige nova revisão.
 
 ## Conferência e limites
 
-Executar via cliente MCP real, recuperar cada recibo e ler os três recursos pelas
+Após as aprovações por versão, executar via cliente MCP real, recuperar cada recibo e ler os três recursos pelas
 APIs nativas. Conferir texto e IDs, valor/fórmula/valor calculado 5 da célula A4,
 texto literal B1, tipos das células e slide/caixa/geometria. Repetir a invocação do
 mesmo action_id comprova ausência de reenvio; não autoriza uma ação equivalente
