@@ -52,10 +52,10 @@ Deno.test("A02 A03 A06–09: SQL real, RLS, idempotência e concorrência", asyn
     assert.equal(commit.source_refresh.status, "failed");
     assert.ok(commit.memory_commit.id);
     assert.equal((await hub.preferences(a, { genre: "article" })).applicable.length, 0);
-    assert.equal(
-      (await hub.preferences(a, { genre: "forum", institution: "synthetic" })).applicable.length,
-      3,
-    );
+    const legacy = await hub.preferences(a, { genre: "forum", institution: "synthetic" });
+    assert.equal(legacy.applicable.length, 0);
+    assert.equal(legacy.review_required.length, 3);
+    assert.equal(legacy.history.length, 3);
     assert.equal((await hub.search(b, "Trabalho")).records.length, 0);
     const directOAuth = await db.begin(async (tx) => {
       await tx`select set_config('request.jwt.claim.sub',${a.ownerId},true)`;

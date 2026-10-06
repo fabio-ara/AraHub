@@ -88,12 +88,9 @@ export function resolvePreferences(rows: Row[], at: string) {
   }
   return {
     at,
-    applicable: complete
-      ? [
-        ...maximal.filter((r) => !conflicted.has(String(r.id))),
-        ...statuses.filter((r) => r.status === "legacy_requires_review"),
-      ]
-      : [],
+    // Legacy free text may describe a dated goal, a scoped example or a
+    // security boundary. Requiring review cannot also assert applicability.
+    applicable: complete ? maximal.filter((r) => !conflicted.has(String(r.id))) : [],
     history: statuses,
     contextual_overrides: [...dominated],
     conflicts,

@@ -207,3 +207,29 @@ Deno.test("A09: escopos incomparáveis conflitam; cobertura parcial nunca confir
   assert.equal(partial.coverage, "partial");
   assert.equal(partial.applicable.length, 0);
 });
+
+Deno.test("A09: legado sem política conserva fontes para revisão sem afirmar aplicação atual", () => {
+  const legacy = {
+    id: "historical-goal",
+    scope: {},
+    evidence_kind: "user_report",
+    content: "Objetivo e exemplo históricos; vigência atual não confirmada.",
+    recorded_at: "2026-01-01T00:00:00Z",
+    preference: null,
+    provenance: [{ system: "fixture", locator: "private-source:12" }],
+  };
+  const explicit = {
+    ...legacy,
+    id: "explicit-scoped",
+    scope: { genre: "forum" },
+    preference: { key: "writing.style", state: "active", supersedes: [] },
+  };
+  const result = resolvePreferences([legacy, explicit], "2026-10-06T00:00:00Z");
+  assert.deepEqual(result.applicable.map((r) => r.id), [explicit.id]);
+  assert.deepEqual(result.review_required.map((r) => r.id), [legacy.id]);
+  const retained = result.history.find((r) => r.id === legacy.id)!;
+  assert.equal(retained.status, "legacy_requires_review");
+  assert.equal(retained.content, legacy.content);
+  assert.deepEqual(retained.provenance, legacy.provenance);
+  assert.equal(result.history_tool, "hub_history");
+});
