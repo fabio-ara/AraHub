@@ -75,6 +75,16 @@ Deno.test("A02 A19 A21: HTTP sessão→OAuth Google sintético→leitura nativa 
         }),
       );
     }
+    if (url.pathname === "/drive/v3/changes/startPageToken") {
+      return Promise.resolve(Response.json({ startPageToken: "cursor-fixture" }));
+    }
+    if (url.pathname === "/drive/v3/files") {
+      return Promise.resolve(
+        Response.json({
+          files: [{ id: "file-fixture", name: "Arquivo de teste", mimeType: "text/plain" }],
+        }),
+      );
+    }
     throw new Error("Rota de fixture não prevista.");
   };
   const vault = await TokenVault.fromRawKeys([{
@@ -172,6 +182,30 @@ Deno.test("A02 A19 A21: HTTP sessão→OAuth Google sintético→leitura nativa 
     assert.equal(denied.isError, true);
     assert.match(JSON.stringify(denied), /scope_required/);
     assert.equal(apiReads, 1);
+    const tools = await client.listTools();
+    for (
+      const name of [
+        "hub_google_sync_drive",
+        "hub_google_sync_gmail",
+        "hub_google_sync_calendar",
+        "hub_google_run_sync",
+        "hub_pdf_page",
+        "hub_extract_pdf",
+      ]
+    ) assert.ok(tools.tools.some((t: { name: string }) => t.name === name));
+    const sync = await client.callTool({
+      name: "hub_google_sync_drive",
+      arguments: { connection_id: start.connection_id, selection_query: "trashed = false" },
+    });
+    assert.equal(sync.isError, undefined);
+    assert.match(JSON.stringify(sync), /Arquivo de teste|complete/);
+    const checkpoint = await client.callTool({
+      name: "hub_google_sync_state",
+      arguments: { connection_id: start.connection_id },
+    });
+    assert.equal(checkpoint.isError, undefined, JSON.stringify(checkpoint));
+    assert.match(JSON.stringify(checkpoint), /cursor-fixture/);
+    assert.equal(JSON.stringify(checkpoint).includes("synthetic-access-marker"), false);
   } finally {
     await client.close();
     await db.end();

@@ -15,7 +15,6 @@ Deno.test("A09: vigência, superação e retirada preservam história sem ressus
   try {
     await db`insert into auth.users(id) values(${a.ownerId}),(${b.ownerId})`;
     const c = await hub.createContext(a, "Preferências sintéticas");
-    const now = new Date().toISOString();
     const later = new Date(Date.now() + 3_600_000).toISOString();
     const after = new Date(Date.now() + 7_200_000).toISOString();
     let version = 0;
@@ -149,10 +148,44 @@ Deno.test("A09: vigência, superação e retirada preservam história sem ressus
         version + 1
       },${tx.json({ key: "style", state: "active", supersedes: [first.receipt.id] })})`;
     }));
-    assert.equal((await hub.preferences(a, {}, now)).applicable.length, 0);
+    // The SQL clock can be a millisecond behind the application clock; pin the
+    // historical instant to the first persisted event rather than wall time.
+    const firstEvent = await asOwner(
+      db,
+      a,
+      async (tx) =>
+        (await tx`select recorded_at from public.hub_deltas where id=${first.receipt.id}`)[0],
+    );
+    const beforeFirst = new Date(new Date(firstEvent.recorded_at).getTime() - 1).toISOString();
+    assert.equal((await hub.preferences(a, {}, beforeFirst)).applicable.length, 0);
   } finally {
     await db.end();
   }
+});
+
+Deno.test("A09: datas SQL preservam milissegundos na consulta histórica e na superação", () => {
+  const first = {
+    id: "first",
+    scope: {},
+    recorded_at: new Date("2026-10-05T12:00:00.123Z"),
+    evidence_kind: "user_report",
+    preference: { key: "style", state: "active", supersedes: [] },
+  };
+  const replacement = {
+    ...first,
+    id: "replacement",
+    recorded_at: new Date("2026-10-05T12:00:00.456Z"),
+    preference: { key: "style", state: "active", supersedes: ["first"] },
+  };
+  const rows = [replacement, first];
+  assert.equal(resolvePreferences(rows, "2026-10-05T12:00:00.122Z").applicable.length, 0);
+  assert.deepEqual(
+    resolvePreferences(rows, "2026-10-05T12:00:00.123Z").applicable.map((r) => r.id),
+    ["first"],
+  );
+  const after = resolvePreferences(rows, "2026-10-05T12:00:00.456Z");
+  assert.deepEqual(after.applicable.map((r) => r.id), ["replacement"]);
+  assert.equal(after.history.find((r) => r.id === "first")?.status, "superseded");
 });
 
 Deno.test("A09: escopos incomparáveis conflitam; cobertura parcial nunca confirma vigência", () => {

@@ -6,7 +6,9 @@ Fonte técnica Moodle: commit `5669eee7072e6833cd3ee5f25ac63c463d7fdfbd`, árvor
 
 Memória de origem fixada e evidenciada exclusivamente em `.private/`; não há modificação da origem. Inventário e curadoria têm localizadores de origem, hash, commit e linhas; links não contam como destinos lidos.
 
-Ferramentas observadas: Deno 2.9.3, Node 24.14.0, Docker Server 29.8.2, GitHub CLI autenticado; Supabase CLI 2.119.0 invocado com versão exata. Nenhum recurso remoto criado. SDK MCP 1.31.0 fixado: a 1.32.1 foi recusada pela proteção de idade das dependências, que permanece ativa.
+Ferramentas observadas: Deno 2.9.3, Node 24.14.0, Docker Server 29.8.2, GitHub CLI autenticado; Supabase CLI 2.119.0 invocado com versão exata. Projeto Supabase separado criado no lote autorizado, conforme STATUS. SDK MCP 1.31.0 fixado: a 1.32.1 foi recusada pela proteção de idade das dependências, que permanece ativa.
+
+Design AraLearn: fonte irmã MIT, snapshot `97923a6390e082e0fa8292c93c78f680cc665cee`, árvore limpa e acesso somente leitura. Renderizador de ícones, tokens e estrutura móvel adaptados para AraHub por solicitação expressa do usuário. Atribuição e licença integral em `THIRD_PARTY_NOTICES.md`; fontes de sistema, sem dependência em download de fontes. Interface auxiliar com coluna máxima de 430 px, temas claro/escuro e botões somente com ícones, mantendo nomes acessíveis e informações indispensáveis ao consentimento.
 
 Fontes primárias revalidadas:
 

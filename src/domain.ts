@@ -339,6 +339,7 @@ export class Hub {
         "hub_relations",
         "hub_files",
         "hub_jobs",
+        "hub_context_targets",
       ] as const;
       const result: Record<string, unknown> = { format: "arahub-export-v1", owner_id: p.ownerId };
       for (const name of tables) {

@@ -5,6 +5,7 @@ import { ConnectionService } from "../../../src/connections.ts";
 import { TokenVault } from "../../../src/adapters/token_vault.ts";
 import { GoogleConnections } from "../../../src/google_connections.ts";
 import { googleOAuthConfig } from "../../../src/adapters/google.ts";
+import { PersistentActionStore } from "../../../src/approval_store.ts";
 const required = (name: string) => {
   const v = Deno.env.get(name);
   if (!v) throw new Error(`Configuração ausente: ${name}`);
@@ -12,6 +13,16 @@ const required = (name: string) => {
 };
 const db = createDb(required("DATABASE_URL")), hub = new Hub(db);
 const issuer = required("AUTH_ISSUER"), base = required("PUBLIC_URL");
+const uiOrigin = required("UI_ORIGIN");
+const uiBase = new URL(required("UI_URL"));
+if (
+  uiBase.protocol !== "https:" || uiBase.origin !== uiOrigin || uiBase.username ||
+  uiBase.password || uiBase.search || uiBase.hash || !uiBase.pathname.endsWith("/")
+) {
+  throw new Error(
+    "UI_URL deve ser a base HTTPS da interface na origem autorizada, terminada em /.",
+  );
+}
 const auth = {
   issuer,
   audience: Deno.env.get("AUTH_AUDIENCE") ?? "authenticated",
@@ -39,4 +50,12 @@ const google = vault && googleClient && googleSecret && googleRedirect
     { sessionActive: auth.sessionActive },
   )
   : undefined;
-Deno.serve(createEdgeHandler(hub, auth, base, connections, google));
+if (google && googleRedirect !== new URL("oauth/google/callback", uiBase).href) {
+  throw new Error("GOOGLE_REDIRECT_URI deve corresponder à interface autorizada.");
+}
+Deno.serve(createEdgeHandler(hub, auth, base, connections, google, {
+  origin: uiOrigin,
+  supabaseUrl: required("SUPABASE_URL"),
+  publishableKey: required("ARAHUB_PUBLISHABLE_KEY"),
+  actions: new PersistentActionStore(db, { sessionActive: auth.sessionActive }),
+}));

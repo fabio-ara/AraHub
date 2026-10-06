@@ -1,28 +1,35 @@
-# Checkpoint de validação local
+# Checkpoint de validação
 
-Data: 2026-10-05. Código anterior: `d3dba5f`; integração anterior: `f11125e`; fundação anterior: `b6d28a7`. Commits somente locais, sem remoto Git configurado ou publicação. Resultado é uma etapa de implementação; A01–A30 não estão concluídos.
+Data: 2026-10-05. Commits somente locais, sem remoto Git configurado ou publicação. Este checkpoint substitui o diário de execução. Produto completo A01–A30 ainda não entregue; pendências em STATUS e na matriz de aceite.
 
 | Verificação executada | Resultado | Limite da evidência |
 |---|---|---|
-| `deno task check`, `edge:check`, `web:check` | Aprovados | TypeScript não comprova runtime hospedado |
-| `deno task web:build` | Bundle de 226,12 KiB gerado | Saída ignorada; bundler Deno ainda experimental |
-| `deno task test` | 125 aprovados, 0 falhas | Postgres/HTTP/SDK reais locais; identidades e provedores sintéticos salvo provas separadas |
-| `deno fmt --check` em código/scripts/testes/web/entry Edge | 54 arquivos aprovados | Formatação sem mudança de comportamento |
-| `deno task validation:clean` | 8 migrations em banco novo; dois donos/RLS/retry | SQL local limpo; cache de dependências e implantação limpa não testados |
-| Regressão privada A26 | 4 aprovados, 0 falhas; 10 cenários ancorados nas fontes | Não é avaliação completa da qualidade semântica das respostas |
-| `deno task migration:import` repetido | 57 arquivos; 0 registros novos, 109 reutilizados | Staging/destino privado local; sem virada |
-| `deno task migration:validate` | 109 registros/trechos/commit recuperados por cliente MCP novo; documento bruto legível | Dados reais privados, OAuth/transportes locais sintéticos |
-| `deno task backup:local` | 11 tabelas, binários, políticas RLS e grants conferidos após restore; dump 932.555 bytes | Banco novo no container exclusivo; chaves do cofre têm backup separado |
-| Leitura Moodle com transporte fixado | Conta/instância reais, 16 funções permitidas; arquivo de 22.077 bytes | Somente leitura; IP hospedado e segundo Moodle não comprovados |
-| Serviço/material/SDK Moodle | JPEG real de 52.017 bytes preservado, retry/id/sha/isolamento; credencial de prova revogada | Não extraiu texto da imagem, não comprovou PDF ou leitura de binário pelo assistente |
-| UI local | Base desktop/viewport móvel inspecionada; entrada/exportação/saída operadas; sem overflow 390×844 | Novos formulários só DOM/layout medido: captura sem retorno/raiz recusada, controle alternativo indisponível; smartphone pendente |
-| Skill e manifesto | Validador da Skill aprovado; propriedades dos schemas oficiais conferidas | Plugin não instalado nem chamado em conversa real |
-| Git/exclusões | ZIP/bootstrap/dados/credenciais ignorados; scan do índice/histórico: 0 achados heurísticos | Revisão manual pública feita; heurística não equivale a auditoria completa de segredos |
+| TypeScript raiz/Edge/web | Aprovados | Não comprova runtime hospedado |
+| Build UI | Bundle gerado e operado em Chrome | Saída ignorada; bundler experimental |
+| Suíte completa | 183 aprovados/0 falhas, 2m29s; regressão temporal corrigida e incluída | Postgres/HTTP/SDK locais; identidade/provedores sintéticos salvo provas separadas |
+| Preferências SQL/tempo | Três testes dirigidos aprovados; regressão de milissegundos | Datas do driver SQL e strings ISO; conversa real pendente |
+| Formatação | 72 arquivos aprovados após a correção temporal | Não comprova comportamento |
+| Instalação limpa | Dez migrations em banco novo; dois donos/RLS/idempotência | SQL local; cache vazio e implantação limpa não testados |
+| Contexto/autoria | Três testes SQL dirigidos aprovados | Alvo versionado, relato idempotente e observação qualificada; conta real pendente |
+| Google sync | 15 testes dirigidos e MCP SDK aprovados | Paginação, expiração, checkpoints e historyId exato; APIs simuladas |
+| Moodle sync | Quatro testes dirigidos aprovados | Páginas/posts/reinício/job esgotado; provedor simulado, SQL real; teto de fóruns e lease por curso pendentes |
+| Aprovação persistente | 13 testes SQL dirigidos aprovados | Snapshot/hash/expiração/consumo único/isolamento/Data API; nenhuma escrita externa |
+| Executor Google | Teste SQL/fetch dirigido aprovado | Criar Docs/Sheets/Slides e editar Docs/Slides; edição de células Sheets e OAuth real pendentes |
+| PDF/material/MCP | Dez testes dirigidos aprovados; cliente novo/merge concorrente | PDF sintético, parser/SQL/SDK locais; PDF acadêmico/OCR/Worker hospedado não comprovados |
+| UI AraLearn | Dois cenários Chrome: 1280×900 e 390×844; entrada, renovação, aprovação, temas, exportação e saída operados; capturas nativas inspecionadas | Design MIT copiado, coluna até 430 px, ícones; HTTP/Auth fixtures, smartphone físico pendente |
+| Pacote Pages | Três testes de empacotamento; dois cenários Chrome PKCE/consentimento/CSP/falha aprovados | Oito arquivos/atribuições/subpath/callbacks físicos; rede simulada, sem email enviado/hosting |
+| Regressão privada A26 | Quatro aprovados; dez cenários ancorados nas fontes | Não é avaliação semântica completa |
+| Migração privada | 57 arquivos brutos/109 registros curados; retry sem duplicar | Staging/destino locais; sem virada/importação hospedada |
+| Recuperação privada | Cliente MCP novo recuperou 109 registros com fontes e texto bruto | Dados reais privados; identidade/transportes locais sintéticos |
+| Backup/restore | 14 tabelas/binários/RLS/grants conferidos; dump de 1.190.181 bytes | Banco novo exclusivo; chaves do cofre têm backup separado |
+| Moodle real fixado | Conta/instância reais, 16 funções permitidas; arquivo de 22.077 bytes | Somente leitura; IP remoto e segundo Moodle não comprovados |
+| Material/SDK Moodle real | JPEG de 52.017 bytes preservado, retry/id/hash/isolamento; credencial de prova revogada | Sem OCR; renovação real e PDF pelo cliente pendentes |
+| Supabase hospedado | Oito hashes canônicos; RLS ativo/forçado, dois donos sintéticos e rollback aprovados | Zero usuários/contextos ao concluir; claims sintéticos, não Auth/MCP real; duas migrations novas locais |
+| Skill/manifesto | Validador aprovado; schemas oficiais conferidos | Plugin não instalado/chamado em conversa real |
+| Git/exclusões/licenças | 114 arquivos indexados, zero achados heurísticos; revisão manual/atribuições AraLearn e dependências feitas; diff sem erros de whitespace | Scan não equivale a auditoria completa |
 
-O projeto AraHub Free foi criado no alvo autorizado, com schema instalado; nenhuma conta OAuth Google, hosting da aplicação, cron, escrita acadêmica ou API faturada foi criada/ativada. Fontes privadas e repositório técnico permanecem limpos e somente de leitura. O contrato completo, pendências locais e aprovações indispensáveis continuam em `STATUS.md`, `docs/ACEITE.md` e `docs/IMPLANTACAO.md`.
+O projeto remoto AraHub Free existe, com schema anterior instalado. Aplicação, Pages, OAuth Google, cron, escritas acadêmicas e APIs faturadas não foram ativados. O conector não acessa a nova conta. Login CLI protegido solicitado, resposta pendente; login não amplia o lote de escrita autorizado.
 
-Evidências privadas: `.private/evidence/clean-install.json`, `import-retrieval.json`, `moodle-real-pinned.json`, `read_material_real.json`, relatórios da migração e manifestos em `.private/backups/`. Não enviar esses arquivos para Git/CI público. Bancos de instalação/restore foram criados com nomes únicos e preservados; nenhum alvo foi sobrescrito.
+O design do AraLearn foi auditado e copiado somente por leitura de snapshot MIT identificado em THIRD_PARTY_NOTICES. Nenhuma escrita em projetos irmãos foi executada. O estado vivo do irmão pode conter trabalho independente: não reverter nem incorporar alterações sem auditar a fonte necessária.
 
-Etapa adicional: A09 passou com vigência, retirada, escopos incomparáveis, hipótese, idempotência e alvos estrangeiros; o cliente MCP SDK registra/consulta/retira preferências. `cloud:prove` passou em banco novo, conferindo oito hashes e recusa de reaplicação. No Supabase efetivo, os oito hashes canônicos coincidiram; RLS ativo/forçado e `verify_cloud_sql.sql` com dois donos sintéticos, FKs/cofre/anon/fronteira OAuth e rollback passaram. Prova hospedada somente SQL com claims sintéticos, sem cliente Auth/MCP real. Evidência em `.private/cloud/hosted-schema-evidence.json`; alvo privado não entra no Git.
-
-Renovação Moodle: a prova HTTP/SQL com provedor sintético preservou conexão/histórico/cofre, recusou outra conta/origem e renewal em voo após desconexão. Data API não pode alterar identidade/origem/escopos/epoch da conexão; migration `20261005234111` aplicada localmente e no projeto autorizado, com hash conferido. Uma negação de callback Google antigo não invalida pendência mais recente. O gate completo passou com 125 testes; novas mudanças no formulário têm TypeScript/bundle aprovados, mas operação e QA visual/real permanecem pendentes.
+Evidências privadas em .private/evidence/, .private/cloud/, manifestos em .private/backups/ e artefatos em .private/deploy/. Capturas nativas foram gravadas diretamente dos bytes, sem download/Salvar como pela interface. Não enviar evidências pessoais, dumps ou esses artefatos para Git/CI público. Bancos de instalação/restore têm nomes únicos e foram preservados.

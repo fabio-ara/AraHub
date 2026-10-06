@@ -20,7 +20,9 @@ export const preferenceSchema = z.object({
 
 type Row = Record<string, unknown>;
 type Policy = z.infer<typeof preferenceSchema>;
-const start = (r: Row, p: Policy | null) => Date.parse(p?.valid_from ?? String(r.recorded_at));
+const timestamp = (value: unknown) =>
+  value instanceof Date ? value.getTime() : Date.parse(String(value));
+const start = (r: Row, p: Policy | null) => timestamp(p?.valid_from ?? r.recorded_at);
 const contains = (a: Record<string, string>, b: Record<string, string>) =>
   Object.entries(b).every(([key, value]) => a[key] === value);
 
@@ -37,14 +39,14 @@ export function resolvePreferences(rows: Row[], at: string) {
     // A supersession remains in the history even after its replacement expires.
     if (
       p && r.evidence_kind === "user_report" && start(r, p) <= instant &&
-      Date.parse(String(r.recorded_at)) <= instant
+      timestamp(r.recorded_at) <= instant
     ) {
       p.supersedes.forEach((id) => superseded.add(id));
     }
   }
   const statuses: (Row & { status: string })[] = history.map((r) => {
     const p = policies.get(String(r.id)) ?? null;
-    const status = Date.parse(String(r.recorded_at)) > instant || start(r, p) > instant
+    const status = timestamp(r.recorded_at) > instant || start(r, p) > instant
       ? "future"
       : superseded.has(String(r.id))
       ? "superseded"

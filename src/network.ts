@@ -1,6 +1,6 @@
 import { HubError } from "./contracts.ts";
 export async function boundedBody(
-  req: Request,
+  req: Request | Response,
   maxBytes: number,
   timeoutMs = 10_000,
 ): Promise<string> {

@@ -12,7 +12,7 @@
  * Fronteiras:
  * - Exige navegador: principal sem clientId (MCP/OAuth de cliente nao inicia consentimento)
  *   e sessionId verificado.
- * - Escopos somente de leitura, por allowlist de capacidades; nada arbitrario e nada de escrita.
+ * - Escopos por allowlist; edição nativa exige capacidade explícita e aprovação por ação.
  * - Pendencias e tokens ficam em arahub_private, cifrados pelo cofre; retornos publicos nao
  *   carregam access/refresh token.
  * - Contas institucional e pessoal ficam separadas (origin = dominio ou "personal").
@@ -53,7 +53,7 @@ import {
 } from "./adapters/google.ts";
 
 /**
- * Capacidades de leitura permitidas. Escrita e escopos arbitrarios ficam de fora.
+ * Capacidades de leitura permitidas. Escrita nativa tem allowlist separada.
  *
  * selected_files mapeia drive.file. O Google concede a esse escopo escrita implicita sobre
  * arquivos escolhidos/criados pelo app; o AraHub NAO usa essa escrita (implicit_write=false,
@@ -72,9 +72,17 @@ export const GOOGLE_READ_CAPABILITIES = {
 } as const;
 
 export type GoogleReadCapability = keyof typeof GOOGLE_READ_CAPABILITIES;
+export const GOOGLE_WRITE_CAPABILITIES = {
+  docs_write: GOOGLE_SCOPE_SETS.docsWrite,
+  sheets_write: GOOGLE_SCOPE_SETS.sheetsWrite,
+  slides_write: GOOGLE_SCOPE_SETS.slidesWrite,
+} as const;
 
 const READ_SCOPE_ALLOWLIST: ReadonlySet<string> = new Set(
-  Object.values(GOOGLE_READ_CAPABILITIES).flat(),
+  [
+    ...Object.values(GOOGLE_READ_CAPABILITIES).flat(),
+    ...Object.values(GOOGLE_WRITE_CAPABILITIES).flat(),
+  ],
 );
 
 export const PENDING_TTL_MS = 10 * 60 * 1000;
@@ -140,17 +148,25 @@ interface PendingMetadata {
   readonly desired_scopes: string[];
 }
 
-/** Resolve capacidades/escopos pedidos contra a allowlist de leitura. */
+/** Resolve only explicit capabilities. Write grants are separate from per-action human approval. */
 export function resolveRequestedScopes(scopes: readonly string[]): readonly string[] {
   if (!Array.isArray(scopes) || scopes.length === 0) {
     throw new HubError(
       "invalid_scope",
-      "Informe ao menos uma capacidade de leitura do Google.",
+      "Informe ao menos uma capacidade do Google.",
       400,
     );
   }
   const out: string[] = [...GOOGLE_SCOPE_SETS.identity];
   for (const entry of scopes) {
+    if (Object.prototype.hasOwnProperty.call(GOOGLE_WRITE_CAPABILITIES, entry)) {
+      for (
+        const scope of GOOGLE_WRITE_CAPABILITIES[entry as keyof typeof GOOGLE_WRITE_CAPABILITIES]
+      ) {
+        if (!out.includes(scope)) out.push(scope);
+      }
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(GOOGLE_READ_CAPABILITIES, entry)) {
       for (const scope of GOOGLE_READ_CAPABILITIES[entry as GoogleReadCapability]) {
         if (!out.includes(scope)) out.push(scope);
@@ -163,7 +179,7 @@ export function resolveRequestedScopes(scopes: readonly string[]): readonly stri
     }
     throw new HubError(
       "invalid_scope",
-      "Escopo nao permitido: somente leitura do Google e aceita.",
+      "Escopo não permitido. Escolha uma capacidade oferecida pela interface.",
       400,
     );
   }
@@ -488,7 +504,9 @@ export class GoogleConnections {
       reads: capabilityStatusFromScopes(granted),
       // drive.file concede escrita implicita no Google; o AraHub nao a usa e nao tem executor.
       selected_files_implicit_write: false,
-      writes_enabled: false,
+      writes_enabled: Object.values(GOOGLE_WRITE_CAPABILITIES).flat().some((scope) =>
+        desired.includes(scope) && granted.includes(scope)
+      ),
       picker_implemented: false,
       drive_wide_discovery: granted.includes("https://www.googleapis.com/auth/drive.readonly") &&
         desired.includes("https://www.googleapis.com/auth/drive.readonly"),

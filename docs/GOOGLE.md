@@ -201,17 +201,18 @@ devolvido sem reenvio; uma falha do executor vira estado incerto e nunca dispara
 O recibo precisa ter a marca trusted_ui e casar com preparedId, payloadHash, alvo, ownerId e
 connectionId, alem de nao estar expirado.
 
-Sem WriteApprovalAuthority ou sem WriteExecutor configurados, a execucao permanece bloqueada
-(kind=denied, reason=approval_authority_missing). Isso e intencional: a interface espelha a
-semantica de src/production.ts (ApprovalAuthority: consume, persistResult, result) e pode ser ligada
-a ela por um adaptador futuro. A prova real de escrita (A22) continua pendente, nao concluida.
+O caminho integrado usa `PersistentActionStore` (`src/approval_store.ts`) como autoridade durável e `GoogleWrites` (`src/google_writes.ts`) como executor de operações nativas fixas. O MCP prepara; somente uma sessão humana na interface pode revisar e autorizar a versão. A Data API concede apenas SELECT nas tabelas de ações: nem navegador nem cliente OAuth podem fabricar uma aprovação ou um resultado. Hash/revisão são conferidos após o lock; aprovação expira, é consumida uma única vez e o estado incerto é persistido antes do envio. Sem store configurado, as ferramentas de produção não são registradas.
+
+Operações implementadas: criar Docs, Sheets e Slides; inserir texto em posição/aba explícitas de Docs; substituir texto exato em slides selecionados. Docs/Slides fixam `revisionId` e enviam `requiredRevisionId` no batchUpdate. Nenhuma ferramenta aceita requests arbitrários, envio de e-mail ou compartilhamento. Edição de células Sheets continua pendente: a [API REST estável](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate) não oferece precondição atômica de revisão. Essa lacuna não encerra A21. [Docs writeControl](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate) e [Slides writeControl](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/batchUpdate).
+
+Prova local: 13 testes de autoridade com Postgres real e teste de executor com fetch sintético, revisão obsoleta, corrida de envio, aprovação divergente e timeout sem reenvio. A prova em conta/área reais permanece pendente.
 
 ## Conexoes persistentes (GoogleConnections)
 
 Servico: src/google_connections.ts — GoogleConnections(hub, vault, config, deps).
 
 - start(p, { label, scopes, connection_id? }): exige navegador (p.clientId ausente) e sessionId
-  verificado; resolve escopos por allowlist de leitura; grava a pendencia privada e devolve a URL de
+  verificado; resolve escopos por allowlist explícita; grava a pendencia privada e devolve a URL de
   autorizacao e o state.
 - callback(p, { code?, state, error? }): consome a pendencia atomicamente e valida code/id_token
   pelo adaptador. Owner, conexao e alvo vem da pendencia, nunca dos argumentos do callback.
@@ -223,13 +224,11 @@ Pendencia em arahub_private.oauth_pending: one-use, amarrada a owner + session +
 expira em 10 minutos; nonce, code_verifier e metadados ficam cifrados pelo cofre. O state bruto nao
 e gravado, apenas o hash. A tabela nao recebe grant de Data API.
 
-Escopos: allowlist de leitura (identity, gmail_read, calendar_read, selected_files, drive_read,
-docs_read, sheets_read, slides_read). Escrita (gmail.modify, calendar.events, drive, documents,
-spreadsheets, presentations) e qualquer escopo arbitrario sao recusados.
+Escopos: capacidades de leitura identity, gmail_read, calendar_read, selected_files, drive_read, docs_read, sheets_read, slides_read. Capacidades incrementais de produção docs_write, sheets_write e slides_write são escolhas separadas na interface; precisam estar desejadas e concedidas. gmail.modify, calendar.events, drive amplo e escopos arbitrários continuam recusados. Conceder uma capacidade não aprova nenhum conteúdo.
 
 selected_files mapeia drive.file. O Google concede a esse escopo escrita implicita sobre arquivos
 escolhidos/criados pelo app; o AraHub NAO usa essa escrita
-(capabilities.selected_files_implicit_write = false, writes_enabled = false, sem executor). Isso nao
+(capabilities.selected_files_implicit_write = false; writes_enabled depende das capacidades de produção explícitas). Isso nao
 significa acesso ao Drive inteiro (drive_wide_discovery = false) nem Picker implementado
 (picker_implemented = false).
 
@@ -277,7 +276,7 @@ fora do Google, e o fluxo de escrita (payload mutado, recibo divergente, trusted
 incerto anterior, falha do executor).
 
 Servico persistente: deno test --allow-net=127.0.0.1:55432 --allow-env
-tests/google_connections_test.ts — 21 testes, 21 aprovados, 0 falhas, contra o Postgres local.
+tests/google_connections_test.ts — 22 testes, 22 aprovados, 0 falhas, contra o Postgres local.
 Cobrem guarda de navegador/sessao, allowlist de escopos, pendencia one-use amarrada a owner+sessao,
 callback feliz sem vazamento de segredos, uso unico, erro do provedor consumindo a pendencia,
 vinculo de conta e separacao institucional/pessoal, preservacao de refresh na reconexao, leitura
@@ -290,9 +289,7 @@ conectada, callback superado (authorization_stale) e disconnect concorrente sem 
 - Nenhum OAuth real foi executado e nenhum app Google foi criado. Testes usam id_token assinado
   localmente e fetch injetado; isso nao comprova aceitacao do tenant real.
 - As referências primárias de [Docs](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/get), [Sheets](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get) e [Slides](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/get) foram conferidas. O MCP pede conteúdo de todas as abas do Docs e grid data no Sheets; as respostas permanecem nativas. A prova em conta real continua pendente.
-- WriteApprovalAuthority e WriteExecutor nao possuem implementacao confiavel nesta etapa, entao a
-  execucao de escrita fica bloqueada. A interface espelha src/production.ts e sera ligada por
-  adaptador; a prova real de A22 continua pendente.
+- Autoridade e executor integrados foram testados localmente com provedores sintéticos; a prova real de A22 continua pendente. Nenhuma autorização de capacidade foi exercida em conta real.
 - Calendar nao expande semanticamente recorrencia nem converte prazos; apenas preserva o JSON. A
   interpretacao de dia inteiro e fusos e responsabilidade da camada de dominio.
 - Testar escrita real exige area de teste explicitamente autorizada e o store de aprovacao; sem isso

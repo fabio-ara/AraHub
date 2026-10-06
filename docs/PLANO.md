@@ -7,7 +7,7 @@ Mandato de 2026-10-05. O pacote privado foi verificado (20 hashes). Consultar a 
 3. Adaptadores: Moodle generalizado com interseção da allowlist auditada e capacidades da instalação; Google próprio com OAuth incremental, múltiplas contas e cursores. Escritas exigem aprovação por superfície confiável.
 4. Memória: contexto de trabalho, eventos/proveniência, revisões concorrentes, preferências contextuais, reconciliação por dimensões e datas IANA. Busca textual antes de vetores.
 5. Migração: snapshot privado fixado, inventário/hashes, preservação bruta, curadoria com trechos, staging retomável, regressões semânticas e restore. A origem permanece somente leitura.
-6. Produto: UI responsiva para login/consentimento/conexões, arquivos/pacotes de estudo, jobs/freshness, Skill/plugin conforme formato oficial.
+6. Produto: interface auxiliar mínima para acesso/conexões/consentimento e revisão, com design MIT do AraLearn reproduzido, coluna até 430 px em todas as telas e botões somente com ícones/nome acessível. GitHub Pages hospeda os arquivos públicos; Supabase fornece Auth/banco/API. Arquivos/pacotes de estudo, jobs/freshness e Skill/plugin conforme formato oficial continuam no escopo completo.
 7. Gate externo: aprovar projeto separado, OAuth/contas/escopos; validar isolamento hospedado antes de importação; testar MCP real e novas invocações mobile/web; reconciliação final e virada reversível.
 
 Critério de encerramento da auditoria inicial: versões/estado das fontes fixados, limites/licenças identificados e contratos suficientes para a prova vertical. Incertezas de conta são bloqueios, não hipóteses aprovadas.

@@ -1282,6 +1282,7 @@ export class GoogleReadClient {
   async listGmailHistory(input: {
     readonly startHistoryId: string;
     readonly historyTypes?: readonly string[];
+    readonly pageToken?: string;
     readonly limits?: PaginationLimits;
   }): Promise<BoundedPage<JsonObject>> {
     try {
@@ -1300,7 +1301,7 @@ export class GoogleReadClient {
           nextPageToken: body.nextPageToken,
           terminal: body.historyId,
         };
-      }, { limits: input.limits });
+      }, { startToken: input.pageToken, limits: input.limits });
       return p.complete
         ? completePage(p.items, p.pages, p.terminal)
         : partialPage(p.items, p.pages, p.nextPageToken);
@@ -1342,6 +1343,7 @@ export class GoogleReadClient {
       readonly showDeleted?: boolean;
       readonly timeMin?: string;
       readonly timeMax?: string;
+      readonly pageToken?: string;
       readonly limits?: PaginationLimits;
     } = {},
   ): Promise<BoundedPage<JsonObject>> {
@@ -1373,7 +1375,7 @@ export class GoogleReadClient {
           nextPageToken: body.nextPageToken,
           terminal: body.nextSyncToken,
         };
-      }, { limits: input.limits });
+      }, { startToken: input.pageToken, limits: input.limits });
       return p.complete
         ? completePage(p.items, p.pages, p.terminal)
         : partialPage(p.items, p.pages, p.nextPageToken);

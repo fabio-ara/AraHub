@@ -28,9 +28,9 @@ const allowed: Record<GoogleReadKind, string[]> = {
   calendars: [prefix + "calendar.readonly"],
   calendar_events: [prefix + "calendar.readonly"],
   drive_files: nativeScopes,
-  document: [prefix + "documents.readonly", ...nativeScopes],
-  spreadsheet: [prefix + "spreadsheets.readonly", ...nativeScopes],
-  presentation: [prefix + "presentations.readonly", ...nativeScopes],
+  document: [prefix + "documents.readonly", prefix + "documents", ...nativeScopes],
+  spreadsheet: [prefix + "spreadsheets.readonly", prefix + "spreadsheets", ...nativeScopes],
+  presentation: [prefix + "presentations.readonly", prefix + "presentations", ...nativeScopes],
 };
 
 /** Operational allowlist is narrower than the full OAuth token; no arbitrary API or writes. */

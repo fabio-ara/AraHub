@@ -50,6 +50,55 @@ Deno.test("A02 A28: prefixo Edge, discovery e sessão revogada por cliente SDK s
         "https://attacker.invalid/functions/v1/arahub/mcp",
       ]
     ) assert.equal((await handler(new Request(url))).status, 404);
+    const uiOrigin = "https://ui.fixture.invalid";
+    const browserHandler = createEdgeHandler(new Hub(db), auth, base, undefined, undefined, {
+      origin: uiOrigin,
+      supabaseUrl: "https://identity.invalid",
+      publishableKey: "public-fixture",
+    });
+    const options = (origin: string, headers = "authorization, content-type") =>
+      new Request(`${base}/api/context`, {
+        method: "OPTIONS",
+        headers: {
+          Origin: origin,
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": headers,
+        },
+      });
+    const preflight = await browserHandler(options(uiOrigin));
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), uiOrigin);
+    assert.equal(preflight.headers.get("access-control-allow-credentials"), null);
+    assert.equal((await browserHandler(options("https://evil.invalid"))).status, 403);
+    assert.equal((await browserHandler(options(uiOrigin, "x-unapproved"))).status, 403);
+    const browserToken = await new SignJWT({ role: "authenticated", session_id: sid })
+      .setProtectedHeader({ alg: "ES256", kid: "fixture" }).setSubject(owner).setIssuer(auth.issuer)
+      .setAudience(auth.audience).setIssuedAt().setExpirationTime("10m").sign(privateKey);
+    const browserContext = await browserHandler(
+      new Request(`${base}/api/context`, {
+        headers: { Origin: uiOrigin, Authorization: `Bearer ${browserToken}` },
+      }),
+    );
+    assert.equal(browserContext.status, 200);
+    assert.equal(browserContext.headers.get("access-control-allow-origin"), uiOrigin);
+    assert.equal((await browserContext.json()).contexts.length, 0);
+    const browserConfig = await browserHandler(new Request(`${base}/api/config`));
+    assert.equal((await browserConfig.json()).publishableKey, "public-fixture");
+    const rejected = await browserHandler(
+      new Request(`${base}/api/context`, { headers: { Origin: uiOrigin } }),
+    );
+    assert.equal(rejected.status, 401);
+    assert.equal(
+      rejected.headers.get("www-authenticate"),
+      `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"`,
+    );
+    assert.throws(
+      () =>
+        createEdgeHandler(new Hub(db), auth, base, undefined, undefined, {
+          origin: uiOrigin + "/",
+        }),
+      /origem/,
+    );
     await client.connect(
       new StreamableHTTPClientTransport(new URL(auth.resource), {
         requestInit: { headers: { Authorization: `Bearer ${token}` } },

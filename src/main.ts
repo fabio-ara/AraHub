@@ -7,6 +7,7 @@ import { TokenVault } from "./adapters/token_vault.ts";
 import { GoogleConnections } from "./google_connections.ts";
 import { googleOAuthConfig } from "./adapters/google.ts";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
+import { PersistentActionStore } from "./approval_store.ts";
 
 const mode = Deno.env.get("APP_MODE") ?? "configured";
 const synthetic = mode === "synthetic";
@@ -84,6 +85,9 @@ const handler = createHandler(hub, {
   syntheticLogin,
   connections: vault ? new ConnectionService(hub, vault) : undefined,
   google,
+  actions: synthetic
+    ? undefined
+    : new PersistentActionStore(db, { sessionActive: auth.sessionActive }),
 });
 const server = Deno.serve({
   hostname: "127.0.0.1",

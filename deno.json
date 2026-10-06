@@ -22,6 +22,7 @@
     "backup:local": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read=.private --allow-write=.private --allow-run=docker scripts/backup_local.ts",
     "edge:check": "deno check --config supabase/functions/arahub/deno.json supabase/functions/arahub/index.ts",
     "cloud:prepare": "deno run --allow-read=supabase/migrations --allow-write=.private/cloud scripts/prepare_cloud_schema.ts",
+    "ui:prepare": "deno run --allow-read=web,LICENSE,THIRD_PARTY_NOTICES.md --allow-write=.private/deploy scripts/prepare_ui.ts",
     "cloud:prove": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read=scripts/local_identity.sql,scripts/verify_cloud_sql.sql,.private/cloud --allow-write=.private/evidence scripts/prove_cloud_bundle.ts"
   },
   "fmt": {

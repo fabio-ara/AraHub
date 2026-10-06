@@ -1,19 +1,92 @@
 import { createClient } from "@supabase/supabase-js";
+import { apiEndpoint, sitePath } from "./endpoint.ts";
+import { renderUiIcon } from "./icons.ts";
+const siteBase = new URL("../", import.meta.url).href;
+const route = (path: string) => sitePath(siteBase, path);
+const localCredentialEntry = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+if (window.top !== window.self) {
+  document.documentElement.hidden = true;
+  throw new Error("Abra o AraHub em sua própria janela para autorizar alterações.");
+}
+const endpoint = (path: string) =>
+  apiEndpoint(
+    document.querySelector<HTMLMetaElement>('meta[name="arahub-api-base"]')?.content ?? "",
+    path,
+  );
 const el = (id: string) => document.getElementById(id)!;
+function setAction(button: HTMLElement, icon: string, label: string) {
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.classList.add("icon-ghost");
+  button.innerHTML = renderUiIcon(icon); // fixed icon names/markup only, never source content
+}
+for (
+  const [id, icon, label] of [
+    ["logout", "sign-out", "Sair"],
+    ["signin", "sign-in", "Entrar"],
+    ["synthetic-login", "experiment", "Explorar ambiente sintético local"],
+    ["memory-tab", "folder", "Contextos"],
+    ["connections-tab", "account", "Conexões"],
+    ["refresh", "rotate", "Atualizar visão"],
+    ["export", "download", "Preparar exportação privada"],
+    ["moodle-submit", "key", "Conectar Moodle"],
+    ["moodle-cancel-renewal", "remove-state", "Cancelar renovação"],
+    ["google-connect", "account-add", "Conectar outra conta Google"],
+    ["approve", "ready-state", "Permitir"],
+    ["deny", "remove-state", "Recusar"],
+  ]
+) setAction(el(id), icon, label);
+const mediaTheme = matchMedia("(prefers-color-scheme: dark)");
+let themePreference = "system";
+try {
+  const savedTheme = localStorage.getItem("arahub.ui.theme");
+  if (savedTheme && ["system", "light", "dark"].includes(savedTheme)) themePreference = savedTheme;
+} catch { /* A blocked storage must not prevent configuration. */ }
+function applyTheme() {
+  const dark = themePreference === "dark" || themePreference === "system" && mediaTheme.matches;
+  document.documentElement.dataset.colorMode = dark ? "dark" : "light";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute(
+    "content",
+    dark ? "#111418" : "#f7f8fa",
+  );
+  setAction(
+    el("theme"),
+    `theme-${themePreference}`,
+    `Mudar tema: ${
+      themePreference === "system" ? "sistema" : themePreference === "dark" ? "escuro" : "claro"
+    }`,
+  );
+}
+applyTheme();
+mediaTheme.addEventListener("change", applyTheme);
+el("theme").addEventListener("click", () => {
+  themePreference = themePreference === "system"
+    ? "light"
+    : themePreference === "light"
+    ? "dark"
+    : "system";
+  try {
+    localStorage.setItem("arahub.ui.theme", themePreference);
+  } catch { /* Session-only theme. */ }
+  applyTheme();
+});
 const callbackUrl = new URL(location.href);
-const pendingGoogle = callbackUrl.pathname === "/oauth/google/callback"
+const pendingGoogle = callbackUrl.pathname.replace(/\/+$/, "") === route("/oauth/google/callback")
   ? {
     state: callbackUrl.searchParams.get("state"),
     code: callbackUrl.searchParams.get("code") ?? undefined,
     error: callbackUrl.searchParams.get("error") ?? undefined,
   }
   : null;
-if (pendingGoogle) history.replaceState({}, "", "/oauth/google/callback");
+if (pendingGoogle) history.replaceState({}, "", route("/oauth/google/callback"));
 let googleCallbackHandled = false;
 const msg = (s: string) => {
   el("message").textContent = s;
 };
-const cfg = await fetch("/api/config").then((r) => r.json());
+const cfg = await fetch(endpoint("/api/config")).then((r) => {
+  if (!r.ok) throw new Error("Configuração de acesso indisponível.");
+  return r.json();
+}).catch(() => ({ unavailable: true }));
 const supabase = cfg.supabaseUrl && cfg.publishableKey
   ? createClient(cfg.supabaseUrl, cfg.publishableKey, {
     auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true },
@@ -27,17 +100,26 @@ function resetMoodleForm() {
   (el("moodle-connect-form") as HTMLFormElement).reset();
   (el("moodle-origin") as HTMLInputElement).readOnly = false;
   el("moodle-cancel-renewal").hidden = true;
-  el("moodle-submit").textContent = "Conectar Moodle";
+  setAction(el("moodle-submit"), "key", "Conectar Moodle");
 }
 el("synthetic-login").hidden = !cfg.synthetic;
-el("moodle-connect-form").hidden = !cfg.canConnectMoodle;
+el("moodle-connect-form").hidden = !cfg.canConnectMoodle || !localCredentialEntry;
+el("moodle-protected-note").hidden = localCredentialEntry;
 el("google-connect-form").hidden = !cfg.canConnectGoogle;
 if (!supabase) {
   el("login-form").hidden = true;
   el("setup-note").hidden = false;
+  if (cfg.unavailable) {
+    el("setup-note").textContent = "Acesso indisponível no momento. Tente novamente mais tarde.";
+  }
 }
+if (!localCredentialEntry) {
+  el("password-label").hidden = true;
+  (el("password") as HTMLInputElement).required = false;
+  setAction(el("signin"), "mail", "Receber link de acesso");
+} else el("password-label").hidden = false;
 const api = async (path: string) => {
-  const r = await fetch(path, {
+  const r = await fetch(endpoint(path), {
     headers: { Authorization: `Bearer ${token}` },
   });
   const result = await r.json();
@@ -45,7 +127,7 @@ const api = async (path: string) => {
   return result;
 };
 async function post(path: string, payload: unknown) {
-  const response = await fetch(path, {
+  const response = await fetch(endpoint(path), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -86,16 +168,30 @@ function card(title: string, detail: string) {
   card.append(h, p);
   return card;
 }
+const connectionState: Record<string, string> = {
+  connected: "Conectada",
+  pending: "Aguardando autorização",
+  revoked: "Desconectada",
+  expired: "Acesso expirado",
+  denied: "Acesso recusado",
+  error: "Atualização indisponível",
+};
+el("google-drive-mode").addEventListener("change", () => {
+  el("google-selection-note").hidden =
+    (el("google-drive-mode") as HTMLSelectElement).value !== "selected_files";
+});
 async function render() {
   if (!token) return;
+  const sessionToken = token;
   try {
     const c = await api("/api/context");
+    if (token !== sessionToken) return;
     el("login").hidden = true;
     el("workspace").hidden = false;
     el("logout").hidden = false;
     el("mode-label").textContent = cfg.synthetic
       ? "Ambiente sintético local. Esta visão não comprova conexão real ou implantação."
-      : "Memória privada da sua conta. Consulte a cobertura de cada conexão.";
+      : "";
     const list = el("context-list");
     list.replaceChildren();
     el("empty-state").hidden = c.contexts.length > 0;
@@ -104,20 +200,27 @@ async function render() {
       list.append(
         card(
           ctx.title,
-          `${deltas.length} registros recuperados · versão ${ctx.version}${
-            deltas[0] ? " · " + deltas[0].content : ""
-          }`,
+          deltas[0]?.content ?? "Sem registros.",
         ),
       );
     }
     const connections = el("connection-list");
     connections.replaceChildren();
     for (const cn of c.connections) {
-      const entry = card(cn.label, `${cn.provider} · ${cn.state}`);
+      const entry = card(
+        cn.label,
+        `${
+          cn.provider === "moodle"
+            ? "Moodle"
+            : cn.provider === "google"
+            ? "Google"
+            : "Memória importada"
+        } · ${connectionState[cn.state] ?? "Verificar acesso"}`,
+      );
       if (!cfg.synthetic && cn.provider !== "migration") {
         const disconnect = document.createElement("button");
         disconnect.className = "quiet";
-        disconnect.textContent = "Desconectar";
+        setAction(disconnect, "offline", "Desconectar");
         disconnect.addEventListener("click", async () => {
           disconnect.disabled = true;
           try {
@@ -134,10 +237,10 @@ async function render() {
           }
         });
         entry.append(disconnect);
-        if (cn.provider === "moodle" && cfg.canConnectMoodle) {
+        if (cn.provider === "moodle" && cfg.canConnectMoodle && localCredentialEntry) {
           const renew = document.createElement("button");
           renew.className = "secondary";
-          renew.textContent = "Renovar acesso";
+          setAction(renew, "key", "Renovar acesso");
           renew.addEventListener("click", () => {
             if (moodleSubmitting) return;
             renewingMoodle = cn.id;
@@ -146,7 +249,8 @@ async function render() {
             origin.value = cn.origin;
             origin.readOnly = true;
             (el("moodle-token") as HTMLInputElement).value = "";
-            el("moodle-submit").textContent = "Renovar Moodle";
+            setAction(el("moodle-submit"), "key", "Renovar Moodle");
+            (el("moodle-setup") as HTMLDetailsElement).open = true;
             el("moodle-cancel-renewal").hidden = false;
             el("moodle-connect-form").scrollIntoView({ block: "nearest" });
             el("moodle-token").focus();
@@ -159,7 +263,7 @@ async function render() {
         if (cn.provider === "moodle" && cn.state === "connected") {
           const sync = document.createElement("button");
           sync.className = "secondary";
-          sync.textContent = "Atualizar cursos";
+          setAction(sync, "rotate", "Atualizar cursos");
           sync.addEventListener("click", async () => {
             sync.disabled = true;
             try {
@@ -184,7 +288,7 @@ async function render() {
         if (cn.provider === "google" && cfg.canConnectGoogle) {
           const renew = document.createElement("button");
           renew.className = "secondary";
-          renew.textContent = "Renovar acesso";
+          setAction(renew, "key", "Renovar acesso");
           renew.addEventListener("click", async () => {
             renew.disabled = true;
             try {
@@ -208,17 +312,152 @@ async function render() {
           entry.append(scopes);
         }
       }
+      const controls = document.createElement("div");
+      controls.className = "actions";
+      for (const button of Array.from(entry.querySelectorAll("button"))) controls.append(button);
+      if (controls.childElementCount) entry.append(controls);
       connections.append(entry);
     }
+    await renderActions(c.connections);
     msg("");
   } catch (e) {
     msg(e instanceof Error ? e.message : "Erro de acesso.");
+  }
+}
+async function renderActions(connections: { id: string; label: string }[]) {
+  const list = el("action-list");
+  list.replaceChildren();
+  el("actions-panel").hidden = !cfg.canApproveActions || !token;
+  if (!cfg.canApproveActions || !token) return;
+  const sessionToken = token;
+  const actions = await api("/api/actions");
+  if (token !== sessionToken) return;
+  if (!actions.length) {
+    const note = document.createElement("p");
+    note.textContent = "Nenhuma alteração preparada para revisar.";
+    list.append(note);
+  }
+  for (const view of actions) {
+    const action = view.action;
+    const account = connections.find((c) => c.id === action.connectionId)?.label ??
+      "Conta vinculada";
+    const operation = ({
+      docs_create: "Criar documento",
+      sheets_create: "Criar planilha",
+      slides_create: "Criar apresentação",
+      docs_insert_text: "Inserir texto no documento",
+      slides_replace_text: "Substituir texto na apresentação",
+    } as Record<string, string>)[action.operation] ?? "Revisar alteração";
+    const entry = card(account, operation);
+    if (action.target !== "new") {
+      const destination = document.createElement("p");
+      destination.className = "note";
+      destination.textContent = `Destino: ${action.target}`;
+      entry.append(destination);
+    }
+    const content = document.createElement("pre");
+    const proposed = action.content;
+    if (["docs_create", "sheets_create", "slides_create"].includes(action.operation)) {
+      content.textContent = `Nome: ${proposed.title}`;
+    } else if (action.operation === "docs_insert_text") {
+      content.textContent = proposed.text;
+      if (typeof proposed.index === "number") {
+        const position = document.createElement("p");
+        position.className = "note";
+        position.textContent = `Posição: ${proposed.index}${
+          proposed.tab_id ? ` · Aba: ${proposed.tab_id}` : ""
+        }`;
+        entry.append(position);
+      }
+    } else if (action.operation === "slides_replace_text") {
+      content.textContent = `Encontrar:\n${proposed.find}\n\nSubstituir por:\n${proposed.replace}`;
+      const pages = document.createElement("p");
+      pages.className = "note";
+      pages.textContent = `Slides: ${proposed.page_ids.join(", ")}`;
+      entry.append(pages);
+    } else content.textContent = JSON.stringify(proposed, null, 2);
+    if (action.revision) {
+      const version = document.createElement("details");
+      const label = document.createElement("summary");
+      label.textContent = "Versão fixada";
+      const value = document.createElement("p");
+      value.className = "note";
+      value.textContent = action.revision;
+      version.append(label, value);
+      entry.append(version);
+    }
+    const status = document.createElement("p");
+    status.className = "note";
+    status.textContent = ({
+      prepared: "Aguardando sua revisão",
+      approved: "Versão autorizada; execução pendente",
+      denied: "Alteração recusada",
+      uncertain: "Resultado incerto: confira a fonte; o AraHub não reenviará",
+      succeeded: "Alteração confirmada pelo provedor",
+    } as Record<string, string>)[view.state] ?? "Verificar estado";
+    entry.append(content, status);
+    if (view.state === "prepared") {
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      const label = document.createElement("label");
+      label.className = "check-label";
+      label.append(check, document.createTextNode("Revisei a conta, o destino e o conteúdo."));
+      const approve = document.createElement("button"), deny = document.createElement("button");
+      setAction(approve, "ready-state", "Autorizar esta versão");
+      approve.disabled = true;
+      check.addEventListener("change", () => approve.disabled = !check.checked);
+      setAction(deny, "remove-state", "Recusar alteração");
+      deny.classList.add("quiet");
+      for (const [button, decision] of [[approve, "approve"], [deny, "deny"]] as const) {
+        button.addEventListener("click", async () => {
+          approve.disabled = true;
+          deny.disabled = true;
+          try {
+            await post(`/api/actions/${decision}`, {
+              action_id: action.id,
+              content_hash: action.hash,
+            });
+            await render();
+            msg(
+              decision === "approve"
+                ? "Esta versão foi autorizada. Consulte o resultado após a execução."
+                : "Alteração recusada.",
+            );
+          } catch (e) {
+            approve.disabled = !check.checked;
+            deny.disabled = false;
+            msg(e instanceof Error ? e.message : "Não foi possível registrar sua decisão.");
+          }
+        });
+      }
+      const controls = document.createElement("div");
+      controls.className = "actions";
+      controls.append(approve, deny);
+      entry.append(label, controls);
+    }
+    list.append(entry);
   }
 }
 el("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!supabase) return;
   el("signin").setAttribute("disabled", "");
+  if (!localCredentialEntry) {
+    const { error } = await supabase.auth.signInWithOtp({
+      email: (el("email") as HTMLInputElement).value,
+      options: {
+        emailRedirectTo: new URL(route("/oauth/callback"), location.origin).href,
+        shouldCreateUser: false,
+      },
+    });
+    el("signin").removeAttribute("disabled");
+    msg(
+      error
+        ? "Não foi possível solicitar o acesso. Confira o cadastro da sua conta e tente novamente."
+        : "Confira seu e-mail e abra o link neste navegador para entrar.",
+    );
+    return;
+  }
   const { data, error } = await supabase.auth.signInWithPassword({
     email: (el("email") as HTMLInputElement).value,
     password: (el("password") as HTMLInputElement).value,
@@ -235,43 +474,45 @@ el("login-form").addEventListener("submit", async (e) => {
   await googleCallback();
 });
 el("synthetic-login").addEventListener("click", async () => {
-  const r = await fetch("/api/synthetic-login", { method: "POST" });
+  const r = await fetch(endpoint("/api/synthetic-login"), { method: "POST" });
   token = (await r.json()).access_token;
   sessionStorage.setItem("arahub-synthetic-token", token!);
   await render();
 });
+if (supabase) (el("signin") as HTMLButtonElement).disabled = false;
 el("refresh").addEventListener("click", () => void render());
 el("logout").addEventListener("click", async () => {
   token = null;
   sessionStorage.removeItem("arahub-synthetic-token");
   await supabase?.auth.signOut();
-  location.href = "/";
+  location.href = route("/");
 });
 for (const which of ["memory", "connections"]) {
   el(which + "-tab").addEventListener("click", () => {
     for (const id of ["memory", "connections"]) {
       el(id + "-view").hidden = id !== which;
       el(id + "-tab").classList.toggle("active", id === which);
-      el(id + "-tab").setAttribute("aria-selected", String(id === which));
+      el(id + "-tab").setAttribute("aria-pressed", String(id === which));
     }
   });
 }
 el("export").addEventListener("click", async () => {
+  const sessionToken = token;
   try {
-    el("export-content").textContent = JSON.stringify(
-      await api("/api/export"),
-      null,
-      2,
-    );
+    const exported = await api("/api/export");
+    if (!sessionToken || token !== sessionToken) return;
+    el("export-content").textContent = JSON.stringify(exported, null, 2);
     el("export-content").hidden = false;
     msg("Exportação privada preparada. Credenciais têm recuperação separada.");
   } catch {
     msg("Não foi possível preparar a exportação.");
   }
 });
+let consentRequest: string | null = null;
 async function consent() {
   const id = new URL(location.href).searchParams.get("authorization_id");
-  if (!id || !supabase || !token) return;
+  if (!id || !supabase || !token || consentRequest === id) return;
+  consentRequest = id;
   const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(id);
   if (error || !data) {
     msg("A solicitação de acesso expirou. Inicie novamente no assistente.");
@@ -282,10 +523,23 @@ async function consent() {
     return;
   }
   el("consent").hidden = false;
+  const scopeLabels: Record<string, string> = {
+    openid: "identidade",
+    email: "e-mail",
+    profile: "perfil",
+  };
+  const requested = data.scope.split(" ").map((scope: string) => scopeLabels[scope] ?? scope).join(
+    ", ",
+  );
   el("consent-details").textContent =
-    `${data.client.name} solicita acesso em nome da sua conta. Permissões de identidade: ${data.scope}.`;
+    `${data.client.name} solicita acesso em nome da sua conta: ${requested}.`;
+  let deciding = false;
   for (const action of ["approve", "deny"]) {
     el(action).addEventListener("click", async () => {
+      if (deciding) return;
+      deciding = true;
+      (el("approve") as HTMLButtonElement).disabled = true;
+      (el("deny") as HTMLButtonElement).disabled = true;
       const { data: result, error: failure } = action === "approve"
         ? await supabase.auth.oauth.approveAuthorization(id, {
           skipBrowserRedirect: true,
@@ -294,18 +548,31 @@ async function consent() {
           skipBrowserRedirect: true,
         });
       if (failure || !result?.redirect_url) {
+        deciding = false;
+        (el("approve") as HTMLButtonElement).disabled = false;
+        (el("deny") as HTMLButtonElement).disabled = false;
         msg("Não foi possível concluir a autorização.");
         return;
       }
       location.assign(result.redirect_url);
-    }, { once: true });
+    });
   }
 }
 if (supabase) {
   const { data } = await supabase.auth.getSession();
   token = data.session?.access_token ?? null;
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabase.auth.onAuthStateChange((event, session) => {
     token = session?.access_token ?? null;
+    if (token && event === "SIGNED_IN") {
+      // Leave the Auth callback before calling APIs that can reacquire its lock.
+      setTimeout(() => {
+        void (async () => {
+          await render();
+          await consent();
+          await googleCallback();
+        })();
+      }, 0);
+    }
     if (!token) {
       resetMoodleForm();
       el("context-list").replaceChildren();
@@ -316,6 +583,8 @@ if (supabase) {
       el("login").hidden = false;
       el("logout").hidden = true;
       el("consent").hidden = true;
+      el("actions-panel").hidden = true;
+      el("action-list").replaceChildren();
     }
   });
 }
@@ -331,7 +600,7 @@ el("moodle-connect-form").addEventListener("submit", async (e) => {
   button.disabled = true;
   const secret = el("moodle-token") as HTMLInputElement;
   try {
-    const response = await fetch("/api/connections/moodle", {
+    const response = await fetch(endpoint("/api/connections/moodle"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -385,6 +654,11 @@ el("google-connect-form").addEventListener("submit", async (e) => {
     }
     if ((el("google-calendar") as HTMLInputElement).checked) {
       scopes.push("calendar_read");
+    }
+    for (const provider of ["docs", "sheets", "slides"]) {
+      if ((el(`google-${provider}-write`) as HTMLInputElement).checked) {
+        scopes.push(`${provider}_write`);
+      }
     }
     const result = await post("/api/connections/google/start", {
       label: (el("google-label") as HTMLInputElement).value,

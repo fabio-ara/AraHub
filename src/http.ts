@@ -7,6 +7,7 @@ import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { z } from "zod";
 import type { GoogleConnections } from "./google_connections.ts";
+import type { PersistentActionStore } from "./approval_store.ts";
 
 interface HttpConfig {
   auth: Pick<AuthConfig, "resource" | "issuer">;
@@ -17,6 +18,7 @@ interface HttpConfig {
   syntheticLogin?: () => Promise<string>;
   connections?: ConnectionService;
   google?: GoogleConnections;
+  actions?: PersistentActionStore;
 }
 export function createHandler(hub: Hub, config: HttpConfig) {
   return async (req: Request): Promise<Response> => {
@@ -42,13 +44,14 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         u.pathname === "/.well-known/oauth-protected-resource" ||
         u.pathname === "/.well-known/oauth-protected-resource/mcp"
       ) return json(discovery(config.auth));
-      if (u.pathname === "/api/config") {
+      if (u.pathname === "/api/config" && req.method === "GET") {
         return json({
           supabaseUrl: config.supabaseUrl ?? null,
           publishableKey: config.publishableKey ?? null,
           synthetic: !!config.syntheticLogin,
           canConnectMoodle: !!config.connections && !config.syntheticLogin,
           canConnectGoogle: !!config.google && !config.syntheticLogin,
+          canApproveActions: !!config.actions && !config.syntheticLogin,
         });
       }
       if (u.pathname === "/api/synthetic-login" && req.method === "POST" && config.syntheticLogin) {
@@ -96,9 +99,39 @@ export function createHandler(hub: Hub, config: HttpConfig) {
             p,
             config.connections,
             config.google,
+            config.actions,
           );
         }
-        return await handleMcp(req, hub, p, config.connections, config.google);
+        return await handleMcp(req, hub, p, config.connections, config.google, config.actions);
+      }
+      if (
+        u.pathname === "/api/actions" && req.method === "GET" && config.actions
+      ) return json(await config.actions.list(await config.verify(req, false)));
+      if (
+        ["/api/actions/approve", "/api/actions/deny"].includes(u.pathname) &&
+        req.method === "POST" && config.actions
+      ) {
+        const p = await config.verify(req, false);
+        const input = z.object({
+          action_id: z.string().uuid(),
+          content_hash: z.string().regex(/^[a-f0-9]{64}$/),
+        }).strict().parse(JSON.parse(await boundedBody(req, 2048)));
+        const view = await config.actions.load(p, input.action_id);
+        if (!view) throw new HubError("not_found", "Ação não encontrada.", 404);
+        if (view.action.hash !== input.content_hash) {
+          throw new HubError(
+            "content_changed",
+            "O conteúdo mudou. Revise a nova versão antes de decidir.",
+            409,
+          );
+        }
+        if (u.pathname.endsWith("/approve")) {
+          return json(
+            await config.actions.approve(p, input.action_id, { expectedHash: input.content_hash }),
+          );
+        }
+        await config.actions.deny(p, input.action_id, { expectedHash: input.content_hash });
+        return json({ state: "denied" });
       }
       if (
         u.pathname === "/api/connections/google/start" && req.method === "POST" && config.google &&
@@ -151,6 +184,24 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         return json(await config.connections.disconnect(p, input.connection_id));
       }
       if (
+        u.pathname === "/api/sync/moodle-course" && req.method === "POST" && config.connections
+      ) {
+        const p = await config.verify(req, false);
+        const input = z.object({
+          connection_id: z.string().uuid(),
+          course_id: z.number().int().positive(),
+        }).strict().parse(
+          JSON.parse(await boundedBody(req, 1024)),
+        );
+        return json(
+          await new Sync(hub, config.connections).courseContent(
+            p,
+            input.connection_id,
+            input.course_id,
+          ),
+        );
+      }
+      if (
         u.pathname === "/api/sync/moodle-courses" && req.method === "POST" && config.connections
       ) {
         const p = await config.verify(req, false);
@@ -178,8 +229,9 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         err.status,
         err.status === 401
           ? {
-            "WWW-Authenticate":
-              `Bearer resource_metadata="${config.publicUrl}/.well-known/oauth-protected-resource"`,
+            "WWW-Authenticate": `Bearer resource_metadata="${
+              config.auth.resource.replace(/\/mcp$/, "")
+            }/.well-known/oauth-protected-resource"`,
           }
           : {},
       );
