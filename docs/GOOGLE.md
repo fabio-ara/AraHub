@@ -203,9 +203,33 @@ connectionId, alem de nao estar expirado.
 
 O caminho integrado usa `PersistentActionStore` (`src/approval_store.ts`) como autoridade durável e `GoogleWrites` (`src/google_writes.ts`) como executor de operações nativas fixas. O MCP prepara; somente uma sessão humana na interface pode revisar e autorizar a versão. A Data API concede apenas SELECT nas tabelas de ações: nem navegador nem cliente OAuth podem fabricar uma aprovação ou um resultado. Hash/revisão são conferidos após o lock; aprovação expira, é consumida uma única vez e o estado incerto é persistido antes do envio. Sem store configurado, as ferramentas de produção não são registradas.
 
-Operações implementadas: criar Docs, Sheets e Slides; inserir texto em posição/aba explícitas de Docs; substituir texto exato em slides selecionados. Docs/Slides fixam `revisionId` e enviam `requiredRevisionId` no batchUpdate. Nenhuma ferramenta aceita requests arbitrários, envio de e-mail ou compartilhamento. Edição de células Sheets continua pendente: a [API REST estável](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate) não oferece precondição atômica de revisão. Essa lacuna não encerra A21. [Docs writeControl](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate) e [Slides writeControl](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/batchUpdate).
+Operações implementadas: criar Docs, Sheets e Slides; criar uma planilha com células tipadas; inserir texto em posição/aba explícitas de Docs; acrescentar slide vazio com caixa de texto; substituir texto exato em slides selecionados. Docs/Slides conferem o ID da fonte, fixam `revisionId` e enviam `requiredRevisionId` no batchUpdate. Nenhuma ferramenta aceita requests arbitrários, envio de e-mail ou compartilhamento. Edição de células Sheets existentes continua pendente: a [API REST estável](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate) não oferece precondição atômica de revisão. Essa lacuna não encerra A21. [Docs writeControl](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate) e [Slides writeControl](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/batchUpdate).
 
-Prova local: 13 testes de autoridade com Postgres real e teste de executor com fetch sintético, revisão obsoleta, corrida de envio, aprovação divergente e timeout sem reenvio. A prova em conta/área reais permanece pendente.
+`sheets_create` aceita `sheet_title` e `rows` opcionais. Cada célula é texto literal,
+número finito, booleano, `null` (vazia) ou `{formula: "=SUM(A2:A3)"}`. Uma string
+começando por `=` continua sendo texto, sem execução implícita. Fórmulas explícitas
+aceitam aritmética e SUM/AVERAGE/MIN/MAX/COUNT/COUNTA/IF/ROUND, sem importação,
+links ou referências externas. Limites por criação: 200 linhas, 50 colunas,
+5.000 células, 48 KiB de conteúdo e 2.000 caracteres por célula. A criação envia
+uma instância nativa de Spreadsheet com GridData no único POST; não há segundo
+envio para preencher células. [Criação nativa](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/create),
+[células tipadas](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/cells).
+
+`slides_add_text` recebe apresentação, IDs novos do slide/caixa, texto e geometria
+em pontos. Os padrões são x/y=40, largura=600 e altura=300; o executor confere que
+a caixa cabe no tamanho nativo PT/EMU e recusa IDs existentes. Criação do slide,
+caixa e inserção de texto integram um batchUpdate atômico na revisão fixada.
+Texto de até 32.000 caracteres; IDs obedecem ao formato nativo de 5–50 caracteres.
+A revisão humana mostra todas as células com endereço/tipo ou todo o texto e
+geometria do slide, além de conta/destino; fontes hostis são renderizadas como texto.
+Essa implementação não comprova a execução pelo Google real.
+
+Prova local: 16 testes de autoridade/executores com Postgres real e fetch sintético,
+incluindo células tipadas, limites, destino/revisão divergentes, geometria,
+aprovação, corrida e resultado incerto sem reenvio. Dois testes de prévia e
+interação Chrome em 390×844/1280×900, com capturas nativas inspecionadas.
+A prova em conta/área reais permanece pendente; o lote revisável está em
+[LOTE-GOOGLE-ESCRITA.md](LOTE-GOOGLE-ESCRITA.md).
 
 ## Conexoes persistentes (GoogleConnections)
 

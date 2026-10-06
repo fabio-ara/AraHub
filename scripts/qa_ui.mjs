@@ -1,7 +1,7 @@
 // Isolated local browser. Captures use native screenshot bytes written outside the UI.
 // No authenticated user profiles, real provider accounts, external URLs or private data.
 import { chromium } from "../.private/qa/node_modules/playwright/index.mjs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 const base = "http://127.0.0.1:8787";
 const folder = new URL("../.private/evidence/ui/", import.meta.url);
@@ -18,18 +18,44 @@ const user = {
   user_metadata: {},
   created_at: new Date().toISOString(),
 };
-const token = Buffer.from(JSON.stringify({ alg: "ES256" })).toString("base64url") + "." +
-  Buffer.from(JSON.stringify({ sub: owner, exp: Math.floor(Date.now() / 1000) + 3600 })).toString(
+const token =
+  Buffer.from(JSON.stringify({ alg: "ES256" })).toString("base64url") + "." +
+  Buffer.from(
+    JSON.stringify({ sub: owner, exp: Math.floor(Date.now() / 1000) + 3600 }),
+  ).toString(
     "base64url",
   ) + ".synthetic";
 const errors = [], receipts = [];
+const staticFiles = new Map(
+  await Promise.all([
+    ["/", "index.html", "text/html"],
+    ["/ui/app.js", "app.js", "application/javascript"],
+    ["/ui/style.css", "style.css", "text/css"],
+  ].map(async (
+    [path, file, type],
+  ) => [path, {
+    body: await readFile(new URL(`../web/${file}`, import.meta.url)),
+    type,
+  }])),
+);
 try {
-  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  for (
+    const viewport of [{ width: 1280, height: 900 }, {
+      width: 390,
+      height: 844,
+    }]
+  ) {
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
     let renewed = false, actionApproved = false;
+    const additionalApproved = new Set();
     const actionId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const sheetId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const slideId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const sheetRows = [["Literal", "=SUM(A2:A3)", true, null], [2], [3], [{
+      formula: "=SUM(A2:A3)",
+    }], ["Última célula <script>window.__sourceExecuted=true</script>"]];
     await page.route("**/*", async (route) => {
       const request = route.request(), url = new URL(request.url());
       if (url.origin !== base) return route.abort();
@@ -59,7 +85,9 @@ try {
             user,
           });
         }
-        if (url.pathname.endsWith("/logout")) return route.fulfill({ status: 204, body: "" });
+        if (url.pathname.endsWith("/logout")) {
+          return route.fulfill({ status: 204, body: "" });
+        }
         return reply(user);
       }
       if (url.pathname === "/api/context") {
@@ -94,17 +122,61 @@ try {
             operation: "docs_insert_text",
             target: "document-fixture",
             revision: "revision-fixture",
-            content: { text: "<script>Fonte hostil é dado, não comando.</script>" },
+            content: {
+              text: "<script>Fonte hostil é dado, não comando.</script>",
+            },
             hash: "a".repeat(64),
           },
           state: actionApproved ? "approved" : "prepared",
+        }, {
+          action: {
+            id: sheetId,
+            connectionId,
+            operation: "sheets_create",
+            target: "new",
+            revision: null,
+            content: {
+              title: "Planilha sintética",
+              sheet_title: "Dados",
+              rows: sheetRows,
+            },
+            hash: "b".repeat(64),
+          },
+          state: additionalApproved.has(sheetId) ? "approved" : "prepared",
+        }, {
+          action: {
+            id: slideId,
+            connectionId,
+            operation: "slides_add_text",
+            target: "presentation-fixture",
+            revision: "revision-fixture",
+            content: {
+              slide_id: "slide_test",
+              text_id: "text_test",
+              x: 40,
+              y: 40,
+              width: 600,
+              height: 300,
+              text: "Título e conteúdo sintéticos\nÚltima linha do slide",
+            },
+            hash: "c".repeat(64),
+          },
+          state: additionalApproved.has(slideId) ? "approved" : "prepared",
         }]);
       }
       if (url.pathname === "/api/actions/approve") {
         const input = request.postDataJSON();
-        assert.equal(input.action_id, actionId);
-        assert.equal(input.content_hash, "a".repeat(64));
-        actionApproved = true;
+        assert.ok([actionId, sheetId, slideId].includes(input.action_id));
+        assert.equal(
+          input.content_hash,
+          (input.action_id === actionId
+            ? "a"
+            : input.action_id === sheetId
+            ? "b"
+            : "c").repeat(64),
+        );
+        if (input.action_id === actionId) actionApproved = true;
+        else additionalApproved.add(input.action_id);
         return reply({ source: "trusted_ui" });
       }
       if (url.pathname.startsWith("/api/")) {
@@ -114,7 +186,15 @@ try {
           body: '{"message":"Fixture não prevista"}',
         });
       }
-      return route.continue();
+      const file = staticFiles.get(url.pathname);
+      if (file) {
+        return route.fulfill({
+          status: 200,
+          contentType: file.type,
+          body: file.body,
+        });
+      }
+      return route.abort();
     });
     await page.goto(base);
     await page.locator("#email").fill("fixture@example.invalid");
@@ -123,35 +203,58 @@ try {
     await page.locator("#workspace").waitFor({ state: "visible" });
     assert.equal(await page.locator("#password").inputValue(), "");
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
-    await page.getByRole("button", { name: "Renovar acesso", exact: true }).click();
+    await page.getByRole("button", { name: "Renovar acesso", exact: true })
+      .click();
     assert.equal(
       await page.locator("#moodle-origin").inputValue(),
       "https://moodle.fixture.invalid",
     );
-    assert.equal(await page.locator("#moodle-origin").evaluate((el) => el.readOnly), true);
-    assert.equal(await page.locator("#moodle-token").inputValue(), "");
     assert.equal(
-      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      await page.locator("#moodle-origin").evaluate((el) => el.readOnly),
       true,
     );
-    const capture = await page.screenshot({ fullPage: true, animations: "disabled" });
-    await writeFile(new URL(`connections-${viewport.width}.png`, folder), capture);
+    assert.equal(await page.locator("#moodle-token").inputValue(), "");
+    assert.equal(
+      await page.evaluate(() =>
+        document.documentElement.scrollWidth <= innerWidth
+      ),
+      true,
+    );
+    const capture = await page.screenshot({
+      fullPage: true,
+      animations: "disabled",
+    });
+    await writeFile(
+      new URL(`connections-${viewport.width}.png`, folder),
+      capture,
+    );
     await page.locator("#moodle-token").fill("synthetic-renewal-marker");
-    await page.getByRole("button", { name: "Renovar Moodle", exact: true }).click();
-    await page.getByText("Acesso Moodle renovado. A identidade e o histórico foram preservados.", {
-      exact: true,
-    }).waitFor();
+    await page.getByRole("button", { name: "Renovar Moodle", exact: true })
+      .click();
+    await page.getByText(
+      "Acesso Moodle renovado. A identidade e o histórico foram preservados.",
+      {
+        exact: true,
+      },
+    ).waitFor();
     assert.equal(renewed, true);
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
-    assert.equal(await page.locator("#moodle-origin").evaluate((el) => el.readOnly), false);
+    assert.equal(
+      await page.locator("#moodle-origin").evaluate((el) => el.readOnly),
+      false,
+    );
     await page.locator("#google-setup > summary").click();
     await page.locator("#google-connect-form").scrollIntoViewIfNeeded();
     assert.equal(
-      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      await page.evaluate(() =>
+        document.documentElement.scrollWidth <= innerWidth
+      ),
       true,
     );
     assert.ok(
-      await page.locator(".app-shell").evaluate((el) => el.getBoundingClientRect().width) <= 430,
+      await page.locator(".app-shell").evaluate((el) =>
+        el.getBoundingClientRect().width
+      ) <= 430,
     );
     assert.deepEqual(
       await page.locator("button:visible").evaluateAll((buttons) =>
@@ -166,30 +269,101 @@ try {
       new URL(`google-${viewport.width}.png`, folder),
       await page.screenshot({ fullPage: true, animations: "disabled" }),
     );
-    const approve = page.getByRole("button", { name: "Autorizar esta versão", exact: true });
+    const firstAction = page.locator("#action-list > .panel").first();
+    const approve = firstAction.getByRole("button", {
+      name: "Autorizar esta versão",
+      exact: true,
+    });
     assert.equal(await approve.isDisabled(), true);
-    assert.ok((await page.locator("#action-list").textContent()).includes("<script>Fonte hostil"));
-    await page.getByText("Revisei a conta, o destino e o conteúdo.", { exact: true }).click();
+    assert.ok(
+      (await page.locator("#action-list").textContent()).includes(
+        "<script>Fonte hostil",
+      ),
+    );
+    await firstAction.getByText("Revisei a conta, o destino e o conteúdo.", {
+      exact: true,
+    }).click();
     assert.equal(await approve.isEnabled(), true);
     await writeFile(
       new URL(`approval-${viewport.width}.png`, folder),
       await page.screenshot({ fullPage: true, animations: "disabled" }),
     );
     await approve.click();
-    await page.getByText("Esta versão foi autorizada. Consulte o resultado após a execução.", {
-      exact: true,
-    }).waitFor();
+    await page.getByText(
+      "Esta versão foi autorizada. Consulte o resultado após a execução.",
+      {
+        exact: true,
+      },
+    ).waitFor();
     assert.equal(actionApproved, true);
-    await page.getByRole("button", { name: "Mudar tema: sistema", exact: true }).click();
-    await page.getByRole("button", { name: "Mudar tema: claro", exact: true }).click();
-    assert.equal(await page.locator("html").getAttribute("data-color-mode"), "dark");
+    for (
+      const [position, expected] of [[
+        1,
+        "Última célula <script>window.__sourceExecuted=true</script>",
+      ], [2, "Última linha do slide"]]
+    ) {
+      const card = page.locator("#action-list > .panel").nth(position);
+      assert.ok((await card.locator("pre").textContent()).includes(expected));
+      if (position === 1) {
+        const preview = await card.locator("pre").textContent();
+        for (
+          const value of [
+            "B1 · texto literal: =SUM(A2:A3)",
+            "A4 · fórmula: =SUM(A2:A3)",
+            "A2 · número: 2",
+            "C1 · lógico: verdadeiro",
+            "D1 · vazia:",
+          ]
+        ) assert.ok(preview.includes(value));
+      }
+      const button = card.getByRole("button", {
+        name: "Autorizar esta versão",
+        exact: true,
+      });
+      assert.equal(await button.isDisabled(), true);
+      await card.getByText("Revisei a conta, o destino e o conteúdo.", {
+        exact: true,
+      }).click();
+      await card.scrollIntoViewIfNeeded();
+      assert.ok(
+        await page.evaluate(() =>
+          document.documentElement.scrollWidth <= innerWidth
+        ),
+      );
+      assert.equal(
+        await page.evaluate(() => window.__sourceExecuted),
+        undefined,
+      );
+      await writeFile(
+        new URL(`content-review-${position}-${viewport.width}.png`, folder),
+        await page.screenshot({ animations: "disabled" }),
+      );
+      await button.click();
+      await card.getByText("Versão autorizada; execução pendente", {
+        exact: true,
+      }).waitFor();
+    }
+    assert.equal(additionalApproved.size, 2);
+    await page.getByRole("button", { name: "Mudar tema: sistema", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Mudar tema: claro", exact: true })
+      .click();
+    assert.equal(
+      await page.locator("html").getAttribute("data-color-mode"),
+      "dark",
+    );
     await writeFile(
       new URL(`dark-${viewport.width}.png`, folder),
       await page.screenshot({ fullPage: true, animations: "disabled" }),
     );
-    await page.getByRole("button", { name: "Preparar exportação privada" }).click();
+    await page.getByRole("button", { name: "Preparar exportação privada" })
+      .click();
     await page.locator("#export-content").waitFor({ state: "visible" });
-    assert.ok((await page.locator("#export-content").textContent()).includes("fixture-only"));
+    assert.ok(
+      (await page.locator("#export-content").textContent()).includes(
+        "fixture-only",
+      ),
+    );
     await page.getByRole("button", { name: "Sair", exact: true }).click();
     await page.locator("#login").waitFor({ state: "visible" });
     assert.equal(await page.locator("#export-content").textContent(), "");
@@ -198,6 +372,7 @@ try {
       login: "provider_stub",
       renewal: "http_stub",
       approval: "http_stub",
+      typed_sheet_and_new_slide_review: "http_stub",
       hostile_text_not_executed: true,
       export_logout: true,
       overflow: false,
@@ -209,7 +384,13 @@ try {
   await writeFile(
     new URL("result.json", folder),
     JSON.stringify(
-      { browser: browser.version(), real_accounts: false, real_mobile: false, receipts, errors },
+      {
+        browser: browser.version(),
+        real_accounts: false,
+        real_mobile: false,
+        receipts,
+        errors,
+      },
       null,
       2,
     ),

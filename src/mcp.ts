@@ -48,7 +48,7 @@ export async function handleMcp(
       "hub_prepare_google_write",
       {
         description:
-          "Prepara alteração nativa com conta, alvo, revisão e conteúdo fixados. Não executa a alteração. A capacidade OAuth e a aprovação humana por versão são separadas. Edição de células Sheets ainda não é oferecida: a API estável não fornece precondição de revisão atômica.",
+          "Prepara criação de Docs/Sheets/Slides, planilha nova com células tipadas, inserção de texto em Docs ou novo slide com texto/substituição em slides escolhidos. Conta, alvo, revisão e conteúdo ficam fixados; não executa. Capacidade OAuth e aprovação humana por versão são separadas. Fórmulas Sheets: aritmética local e SUM/AVERAGE/MIN/MAX/COUNT/COUNTA/IF/ROUND, sem importação ou referências externas. Editar células existentes ainda não é oferecido: a API estável não fornece precondição de revisão atômica.",
         inputSchema: { connection_id: z.string().uuid(), action: googleWriteSchema },
         annotations: write,
       },

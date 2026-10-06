@@ -9,17 +9,70 @@ import { boundedBody } from "./network.ts";
 
 const resourceId = z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/);
 const title = z.string().min(1).max(300);
+const objectId = z.string().regex(/^[a-zA-Z0-9_][a-zA-Z0-9_:-]{4,49}$/);
+const localFormulaFunctions = new Set([
+  "SUM",
+  "AVERAGE",
+  "MIN",
+  "MAX",
+  "COUNT",
+  "COUNTA",
+  "IF",
+  "ROUND",
+]);
+const formula = z.string().min(2).max(2000).refine(
+  (value) =>
+    /^=[A-Za-z0-9$():,;.+\-*/^%<>\s]+$/.test(value) &&
+    [...value.matchAll(/([A-Za-z_][A-Za-z0-9_.]*)\s*\(/g)]
+      .every((match) => localFormulaFunctions.has(match[1].toUpperCase())),
+  "Use fórmula aritmética local; funções de importação, links e referências externas não são oferecidos.",
+);
+const cell = z.union([
+  z.string().max(2000),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+  z.object({ formula }).strict(),
+]);
+const rows = z.array(z.array(cell).max(50)).min(1).max(200).superRefine((value, ctx) => {
+  if (
+    value.reduce((count, row) => count + row.length, 0) > 5000 ||
+    new TextEncoder().encode(JSON.stringify(value)).byteLength > 48 * 1024
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Use até 5.000 células e 48 KiB de conteúdo por criação.",
+    });
+  }
+});
 const scopes: Record<string, string> = {
   docs_create: "https://www.googleapis.com/auth/documents",
   docs_insert_text: "https://www.googleapis.com/auth/documents",
   sheets_create: "https://www.googleapis.com/auth/spreadsheets",
   slides_create: "https://www.googleapis.com/auth/presentations",
   slides_replace_text: "https://www.googleapis.com/auth/presentations",
+  slides_add_text: "https://www.googleapis.com/auth/presentations",
 };
 export const googleWriteSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("docs_create"), title }).strict(),
-  z.object({ operation: z.literal("sheets_create"), title }).strict(),
+  z.object({
+    operation: z.literal("sheets_create"),
+    title,
+    sheet_title: z.string().min(1).max(100).optional(),
+    rows: rows.optional(),
+  }).strict(),
   z.object({ operation: z.literal("slides_create"), title }).strict(),
+  z.object({
+    operation: z.literal("slides_add_text"),
+    resource_id: resourceId,
+    slide_id: objectId,
+    text_id: objectId,
+    text: z.string().min(1).max(32000),
+    x: z.number().finite().min(0).max(2000).default(40),
+    y: z.number().finite().min(0).max(2000).default(40),
+    width: z.number().finite().positive().max(2000).default(600),
+    height: z.number().finite().positive().max(2000).default(300),
+  }).strict(),
   z.object({
     operation: z.literal("docs_insert_text"),
     resource_id: resourceId,
@@ -76,9 +129,19 @@ export class GoogleWrites {
     let source: Record<string, unknown>;
     if (input.operation === "docs_insert_text") {
       source = await client.getDocument({ documentId: input.resource_id });
-    } else if (input.operation === "slides_replace_text") {
+    } else if (input.operation === "slides_replace_text" || input.operation === "slides_add_text") {
       source = await client.getPresentation({ presentationId: input.resource_id });
     } else return null;
+    const sourceId = input.operation === "docs_insert_text"
+      ? source.documentId
+      : source.presentationId;
+    if (sourceId !== input.resource_id) {
+      throw new HubError(
+        "target_mismatch",
+        "A fonte retornada não corresponde ao destino escolhido.",
+        409,
+      );
+    }
     if (typeof source.revisionId !== "string" || !source.revisionId) {
       throw new HubError(
         "revision_unavailable",
@@ -96,9 +159,65 @@ export class GoogleWrites {
         409,
       );
     }
+    if (input.operation === "slides_add_text") {
+      if (input.slide_id === input.text_id) {
+        throw new HubError(
+          "invalid_target",
+          "Slide e caixa de texto precisam de IDs distintos.",
+          400,
+        );
+      }
+      const size = source.pageSize as {
+        width?: { magnitude?: number; unit?: string };
+        height?: { magnitude?: number; unit?: string };
+      } | undefined;
+      const points = (dimension: { magnitude?: number; unit?: string } | undefined) => {
+        const magnitude = dimension?.magnitude;
+        if (typeof magnitude !== "number" || !Number.isFinite(magnitude) || magnitude <= 0) {
+          return null;
+        }
+        return dimension?.unit === "PT"
+          ? magnitude
+          : dimension?.unit === "EMU"
+          ? magnitude / 12700
+          : null;
+      };
+      const width = points(size?.width), height = points(size?.height);
+      if (width === null || height === null) {
+        throw new HubError(
+          "geometry_unavailable",
+          "Não foi possível conferir o tamanho do slide.",
+          409,
+        );
+      }
+      if (input.x + input.width > width || input.y + input.height > height) {
+        throw new HubError(
+          "geometry_out_of_bounds",
+          "A caixa de texto precisa caber no slide escolhido.",
+          400,
+        );
+      }
+      const slides = Array.isArray(source.slides)
+        ? source.slides as { objectId?: string; pageElements?: { objectId?: string }[] }[]
+        : [];
+      if (
+        slides.some((slide) =>
+          [input.slide_id, input.text_id].includes(slide.objectId ?? "") ||
+          slide.pageElements?.some((element) =>
+            [input.slide_id, input.text_id].includes(element.objectId ?? "")
+          )
+        )
+      ) {
+        throw new HubError(
+          "target_exists",
+          "Os IDs já existem. Escolha IDs novos antes de preparar a alteração.",
+          409,
+        );
+      }
+    }
     return source.revisionId;
   }
-  async prepare(p: Principal, connectionId: string, raw: WriteInput) {
+  async prepare(p: Principal, connectionId: string, raw: z.input<typeof googleWriteSchema>) {
     const input = googleWriteSchema.parse(raw);
     await this.permitted(p, connectionId, input.operation);
     const revision = await this.revision(p, connectionId, input);
@@ -164,7 +283,50 @@ export class GoogleWrites {
       case "sheets_create":
         return {
           url: "https://sheets.googleapis.com/v4/spreadsheets",
-          body: { properties: { title: input.title } },
+          body: {
+            properties: { title: input.title },
+            ...(input.rows || input.sheet_title
+              ? {
+                sheets: [{
+                  properties: {
+                    title: input.sheet_title ?? "Dados",
+                    ...(input.rows
+                      ? {
+                        gridProperties: {
+                          rowCount: Math.max(1, input.rows.length),
+                          columnCount: Math.max(
+                            1,
+                            ...input.rows.map((row) => row.length),
+                          ),
+                        },
+                      }
+                      : {}),
+                  },
+                  ...(input.rows
+                    ? {
+                      data: [{
+                        startRow: 0,
+                        startColumn: 0,
+                        rowData: input.rows.map((row) => ({
+                          values: row.map((value) =>
+                            value === null ? {} : {
+                              userEnteredValue: typeof value === "string"
+                                ? { stringValue: value }
+                                : typeof value === "number"
+                                ? { numberValue: value }
+                                : typeof value === "boolean"
+                                ? { boolValue: value }
+                                : { formulaValue: value.formula },
+                            }
+                          ),
+                        })),
+                      }],
+                    }
+                    : {}),
+                }],
+              }
+              : {}),
+          },
         };
       case "slides_create":
         return {
@@ -195,6 +357,42 @@ export class GoogleWrites {
                 pageObjectIds: input.page_ids,
               },
             }],
+            writeControl: { requiredRevisionId: revision },
+          },
+        };
+      case "slides_add_text":
+        return {
+          url: `https://slides.googleapis.com/v1/presentations/${input.resource_id}:batchUpdate`,
+          body: {
+            requests: [
+              {
+                createSlide: {
+                  objectId: input.slide_id,
+                  slideLayoutReference: { predefinedLayout: "BLANK" },
+                },
+              },
+              {
+                createShape: {
+                  objectId: input.text_id,
+                  shapeType: "TEXT_BOX",
+                  elementProperties: {
+                    pageObjectId: input.slide_id,
+                    size: {
+                      width: { magnitude: input.width, unit: "PT" },
+                      height: { magnitude: input.height, unit: "PT" },
+                    },
+                    transform: {
+                      scaleX: 1,
+                      scaleY: 1,
+                      translateX: input.x,
+                      translateY: input.y,
+                      unit: "PT",
+                    },
+                  },
+                },
+              },
+              { insertText: { objectId: input.text_id, insertionIndex: 0, text: input.text } },
+            ],
             writeControl: { requiredRevisionId: revision },
           },
         };

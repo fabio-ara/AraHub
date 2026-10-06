@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
+import { actionPreview } from "./action_preview.ts";
 import { extractClientPdf, PDF_CLIENT_MAX_BYTES } from "./pdf_client.ts";
 const siteBase = new URL("../", import.meta.url).href;
 const route = (path: string) => sitePath(siteBase, path);
@@ -66,7 +67,11 @@ function applyTheme() {
     el("theme"),
     `theme-${themePreference}`,
     `Mudar tema: ${
-      themePreference === "system" ? "sistema" : themePreference === "dark" ? "escuro" : "claro"
+      themePreference === "system"
+        ? "sistema"
+        : themePreference === "dark"
+        ? "escuro"
+        : "claro"
     }`,
   );
 }
@@ -84,13 +89,14 @@ el("theme").addEventListener("click", () => {
   applyTheme();
 });
 const callbackUrl = new URL(location.href);
-const pendingGoogle = callbackUrl.pathname.replace(/\/+$/, "") === route("/oauth/google/callback")
-  ? {
-    state: callbackUrl.searchParams.get("state"),
-    code: callbackUrl.searchParams.get("code") ?? undefined,
-    error: callbackUrl.searchParams.get("error") ?? undefined,
-  }
-  : null;
+const pendingGoogle =
+  callbackUrl.pathname.replace(/\/+$/, "") === route("/oauth/google/callback")
+    ? {
+      state: callbackUrl.searchParams.get("state"),
+      code: callbackUrl.searchParams.get("code") ?? undefined,
+      error: callbackUrl.searchParams.get("error") ?? undefined,
+    }
+    : null;
 if (pendingGoogle) {
   history.replaceState({}, "", route("/oauth/google/callback"));
 }
@@ -107,7 +113,9 @@ const supabase = cfg.supabaseUrl && cfg.publishableKey
     auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true },
   })
   : null;
-let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthetic-token") : null;
+let token: string | null = cfg.synthetic
+  ? sessionStorage.getItem("arahub-synthetic-token")
+  : null;
 let renewingMoodle: string | null = null;
 let moodleSubmitting = false;
 let pdfCursor: string | null = null;
@@ -131,7 +139,8 @@ if (!supabase) {
   el("login-form").hidden = true;
   el("setup-note").hidden = false;
   if (cfg.unavailable) {
-    el("setup-note").textContent = "Acesso indisponível no momento. Tente novamente mais tarde.";
+    el("setup-note").textContent =
+      "Acesso indisponível no momento. Tente novamente mais tarde.";
   }
 }
 if (!localCredentialEntry) {
@@ -347,7 +356,9 @@ async function render() {
     list.replaceChildren();
     el("empty-state").hidden = c.contexts.length > 0;
     for (const ctx of c.contexts) {
-      const deltas = c.deltas.filter((d: { context_id: string }) => d.context_id === ctx.id);
+      const deltas = c.deltas.filter((d: { context_id: string }) =>
+        d.context_id === ctx.id
+      );
       list.append(
         card(
           ctx.title,
@@ -413,7 +424,6 @@ async function render() {
             );
           });
           entry.append(renew);
-
         }
         if (cn.provider === "moodle" && cn.state === "connected") {
           const sync = document.createElement("button");
@@ -450,7 +460,9 @@ async function render() {
               const result = await post("/api/connections/google/start", {
                 connection_id: cn.id,
                 label: cn.label,
-                scopes: cn.desired_scopes?.length ? cn.desired_scopes : ["identity"],
+                scopes: cn.desired_scopes?.length
+                  ? cn.desired_scopes
+                  : ["identity"],
               });
               location.assign(result.authorization_url);
             } catch (e) {
@@ -468,14 +480,32 @@ async function render() {
             check.addEventListener("click", async () => {
               check.disabled = true;
               try {
-                const result = await post("/api/connections/google/check", { connection_id: cn.id });
-                const names: Record<string, string> = { gmail_messages: "Gmail", calendars: "Calendar", drive_files: "Drive" };
-                const states: Record<string, string> = { complete: "concluído", partial: "parcial", denied: "sem permissão", expired: "acesso expirado", timeout: "tempo esgotado" };
-                checked.textContent = result.checks.map((item: { kind: string; coverage: string; items?: number }) =>
-                  `${names[item.kind]}: ${states[item.coverage] ?? "indisponível"}${item.items === undefined ? "" : ` (${item.items})`}`
+                const result = await post("/api/connections/google/check", {
+                  connection_id: cn.id,
+                });
+                const names: Record<string, string> = {
+                  gmail_messages: "Gmail",
+                  calendars: "Calendar",
+                  drive_files: "Drive",
+                };
+                const states: Record<string, string> = {
+                  complete: "concluído",
+                  partial: "parcial",
+                  denied: "sem permissão",
+                  expired: "acesso expirado",
+                  timeout: "tempo esgotado",
+                };
+                checked.textContent = result.checks.map((
+                  item: { kind: string; coverage: string; items?: number },
+                ) =>
+                  `${names[item.kind]}: ${
+                    states[item.coverage] ?? "indisponível"
+                  }${item.items === undefined ? "" : ` (${item.items})`}`
                 ).join(" · ");
               } catch (error) {
-                checked.textContent = error instanceof Error ? error.message : "Não foi possível verificar.";
+                checked.textContent = error instanceof Error
+                  ? error.message
+                  : "Não foi possível verificar.";
               } finally {
                 check.disabled = false;
               }
@@ -484,9 +514,10 @@ async function render() {
           }
           const scopes = document.createElement("p");
           scopes.className = "note";
-          const grantedCount = (cn.desired_scopes ?? []).filter((scope: string) =>
-            (cn.granted_scopes ?? []).includes(scope)
-          ).length;
+          const grantedCount =
+            (cn.desired_scopes ?? []).filter((scope: string) =>
+              (cn.granted_scopes ?? []).includes(scope)
+            ).length;
           scopes.textContent = `${grantedCount} permissões concedidas de ${
             cn.desired_scopes?.length ?? 0
           } solicitadas.`;
@@ -527,7 +558,9 @@ async function renderActions(connections: { id: string; label: string }[]) {
   }
   for (const view of actions) {
     const action = view.action;
-    const account = connections.find((c) => c.id === action.connectionId)?.label ??
+    const account = connections.find((c) =>
+      c.id === action.connectionId
+    )?.label ??
       "Conta vinculada";
     const operation = ({
       docs_create: "Criar documento",
@@ -535,6 +568,7 @@ async function renderActions(connections: { id: string; label: string }[]) {
       slides_create: "Criar apresentação",
       docs_insert_text: "Inserir texto no documento",
       slides_replace_text: "Substituir texto na apresentação",
+      slides_add_text: "Acrescentar slide com texto",
     } as Record<string, string>)[action.operation] ?? "Revisar alteração";
     const entry = card(account, operation);
     if (action.target !== "new") {
@@ -545,14 +579,8 @@ async function renderActions(connections: { id: string; label: string }[]) {
     }
     const content = document.createElement("pre");
     const proposed = action.content;
-    if (
-      ["docs_create", "sheets_create", "slides_create"].includes(
-        action.operation,
-      )
-    ) {
-      content.textContent = `Nome: ${proposed.title}`;
-    } else if (action.operation === "docs_insert_text") {
-      content.textContent = proposed.text;
+    content.textContent = actionPreview(action.operation, proposed);
+    if (action.operation === "docs_insert_text") {
       if (typeof proposed.index === "number") {
         const position = document.createElement("p");
         position.className = "note";
@@ -562,12 +590,11 @@ async function renderActions(connections: { id: string; label: string }[]) {
         entry.append(position);
       }
     } else if (action.operation === "slides_replace_text") {
-      content.textContent = `Encontrar:\n${proposed.find}\n\nSubstituir por:\n${proposed.replace}`;
       const pages = document.createElement("p");
       pages.className = "note";
       pages.textContent = `Slides: ${proposed.page_ids.join(", ")}`;
       entry.append(pages);
-    } else content.textContent = JSON.stringify(proposed, null, 2);
+    }
     if (action.revision) {
       const version = document.createElement("details");
       const label = document.createElement("summary");
@@ -628,7 +655,9 @@ async function renderActions(connections: { id: string; label: string }[]) {
             approve.disabled = !check.checked;
             deny.disabled = false;
             msg(
-              e instanceof Error ? e.message : "Não foi possível registrar sua decisão.",
+              e instanceof Error
+                ? e.message
+                : "Não foi possível registrar sua decisão.",
             );
           }
         });
@@ -647,7 +676,8 @@ el("login-form").addEventListener("submit", async (e) => {
   el("signin").setAttribute("disabled", "");
   if (!localCredentialEntry) {
     const email = (el("email") as HTMLInputElement).value;
-    const emailRedirectTo = new URL(route("/oauth/callback"), location.origin).href;
+    const emailRedirectTo =
+      new URL(route("/oauth/callback"), location.origin).href;
     let { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
@@ -743,7 +773,9 @@ async function consent() {
     email: "e-mail",
     profile: "perfil",
   };
-  const requested = data.scope.split(" ").map((scope: string) => scopeLabels[scope] ?? scope).join(
+  const requested = data.scope.split(" ").map((scope: string) =>
+    scopeLabels[scope] ?? scope
+  ).join(
     ", ",
   );
   el("consent-details").textContent =

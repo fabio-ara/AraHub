@@ -27,6 +27,10 @@ deno task dev
 
 Abra `http://127.0.0.1:8787`. O modo sintético tem identidade local de demonstração, somente loopback; não comprova OAuth ou contas reais. A fixture `scripts/local_identity.sql` nunca é enviada ao Supabase. Banco/volumes são exclusivos do AraHub, sem acessar infraestrutura de projetos irmãos.
 
+Para reproduzir a instalação com dependências baixadas em cache vazio e banco novo,
+execute `deno task validation:fresh`. O gate usa lock congelado, SDK MCP por HTTP,
+dois donos e retry idempotente; preserva seu manifesto privado. [Instalação e limites](docs/INSTALACAO.md).
+
 Para modo configurado, copie apenas os nomes de `.env.example` para um arquivo ignorado, preencha por superfície protegida e execute `deno run --env-file=.env --allow-net --allow-env --allow-read src/main.ts`. Nunca cole segredos no chat. O verificador exige assinatura, emissor, audience, sessão ativa e client ID permitido para MCP. A tela de consentimento utiliza o OAuth Server do Supabase; autorização-code/PKCE e consentimento na interface hospedada foram comprovados com contas sintéticas. A conta titular também concluiu entrada e consentimento no cliente pessoal ChatGPT.
 
 ## Documentação por etapa
