@@ -11,6 +11,7 @@ import { GoogleMaterials, nativeMaterialSchema } from "./google_materials.ts";
 import type { GoogleConnections } from "./google_connections.ts";
 import { type GoogleReadInput, GoogleReads } from "./google_reads.ts";
 import { submissionReportSchema, targetSchema, WorkContext } from "./work_context.ts";
+import { TimeContext, timeContextSchema } from "./time_context.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 import { GoogleWrites, googleWriteSchema } from "./google_writes.ts";
 import {
@@ -109,6 +110,13 @@ export async function handleMcp(
     annotations: { ...write, idempotentHint: true },
   }, (a: Delta) => response(() => hub.recordDelta(principal, a)));
   const work = new WorkContext(hub);
+  const times = new TimeContext(hub);
+  server.registerTool("hub_time_context", {
+    description:
+      "Reconcilia datas preservadas de atividades Moodle e eventos Calendar em fusos IANA, por IDs qualificados. Mantém dia inteiro, DST ambíguo e fuso desconhecido explícitos. Não atualiza fontes, agenda eventos nem confirma envio/disponibilidade.",
+    inputSchema: timeContextSchema.shape,
+    annotations: read,
+  }, (a: z.input<typeof timeContextSchema>) => response(() => times.read(principal, a)));
   server.registerTool(
     "hub_compare_forum_draft",
     {

@@ -12,11 +12,70 @@ import { ConnectionService } from "../src/connections.ts";
 import { TokenVault } from "../src/adapters/token_vault.ts";
 import { AUDITED_FUNCTIONS, MoodleAdapter } from "../src/adapters/moodle.ts";
 import { courseJobKind, Sync, type SyncCourseSummary } from "../src/sync.ts";
+import { WorkContext } from "../src/work_context.ts";
 
 const DB_URL = "postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub";
 const ORIGIN = "https://fixture.invalid/moodle";
 const TOKEN = "synthetic-sync-token-not-a-real-secret";
 const COURSE_ID = 101;
+
+Deno.test("A11 A12 A14: refresh reabre disponibilidade sem apagar relato ou impor progresso monotônico", async () => {
+  const { db, hub, a, vault } = await setup();
+  let visible = false;
+  try {
+    const connections = new ConnectionService(
+      hub,
+      vault,
+      factory({
+        core_course_get_contents: () => [{
+          id: 1,
+          name: "Seção",
+          section: 1,
+          modules: [
+            { id: 13, name: "Tarefa", modname: "assign", instance: 401, uservisible: visible },
+          ],
+        }],
+      }),
+    );
+    const connection = await connections.addMoodle(a, {
+      label: "Fixture",
+      origin: ORIGIN,
+      token: TOKEN,
+    });
+    const sync = new Sync(hub, connections), work = new WorkContext(hub);
+    await sync.courseContent(a, connection.id, COURSE_ID);
+    const module =
+      (await db`select id from public.hub_entities where owner_id=${a.ownerId} and kind='module'`)[
+        0
+      ];
+    const context = await hub.createContext(a, "Relato sintético");
+    await work.bind(a, { context_id: context.id, entity_ids: [module.id], expected_version: 0 });
+    const report = await work.reportSubmission(a, {
+      context_id: context.id,
+      expected_version: 1,
+      idempotency_key: crypto.randomUUID(),
+      content: "[DADO SINTÉTICO] Pronto, entreguei.",
+    });
+    visible = true;
+    await sync.courseContent(a, connection.id, COURSE_ID);
+    const reopened = await hub.entityContext(a, module.id);
+    assert.equal(reopened.entity.state.uservisible, true);
+    assert.equal(reopened.entity.state.user_report.delta_id, report.memory_commit.id);
+    assert.equal(reopened.entity.state.user_report.actual_submission_time, null);
+    assert.equal(reopened.entity.state.submitted, undefined);
+    const observed =
+      await db`select content from public.hub_observations where owner_id=${a.ownerId} and entity_id=${module.id}`;
+    assert.deepEqual(observed.map((o) => o.content.uservisible).sort(), [false, true]);
+    visible = false;
+    await sync.courseContent(a, connection.id, COURSE_ID);
+    const unavailableAgain = await hub.entityContext(a, module.id);
+    assert.equal(unavailableAgain.entity.state.uservisible, false);
+    assert.equal(unavailableAgain.entity.state.user_report.delta_id, report.memory_commit.id);
+    assert.equal((await hub.history(a, context.id)).records.length, 1);
+  } finally {
+    await db.end();
+  }
+});
 
 function defaultBody(fn: string): unknown {
   switch (fn) {

@@ -42,7 +42,7 @@ proveniência; o parser não executa na thread da Edge Function.
 
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
 - [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
-- [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [arquivos e páginas](docs/ARQUIVOS.md), [pacote de estudo](docs/PACOTE-ESTUDO.md).
+- [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [arquivos e páginas](docs/ARQUIVOS.md), [pacote de estudo](docs/PACOTE-ESTUDO.md), [datas e fusos](docs/DATAS.md).
 - [Gate de implantação](docs/IMPLANTACAO.md), [clientes e primeiro uso](docs/CLIENTES.md), [plugin e Skill](plugin/README.md).
 - O bootstrap e todas as evidências pessoais ficam fora do Git. Consulte o bootstrap apenas na etapa pertinente.
 

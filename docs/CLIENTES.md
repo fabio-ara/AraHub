@@ -66,3 +66,7 @@ permite aprofundar a cronologia sem colar o chat anterior.
 
 Pacotes de estudo usam offset/next_offset e preservam versões/direitos;
 consulte [o contrato do pacote](PACOTE-ESTUDO.md) antes de criar um curso.
+
+Datas de atividades/eventos preservados: [hub_time_context](DATAS.md) converte
+instantes para Lisboa/São Paulo por padrão e mantém dia inteiro, DST incerto e
+fuso desconhecido explícitos. Não modifica calendários nem confirma envio.
