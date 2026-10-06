@@ -31,12 +31,14 @@ import { type Coverage, HubError, type Principal } from "./contracts.ts";
 import { GOOGLE_READ_CAPABILITIES, type GoogleConnections } from "./google_connections.ts";
 import {
   type BoundedPage,
+  type FetchLike,
   GoogleApiError,
   type GoogleReadClient,
   type JsonObject,
   type PaginationLimits,
   sha256Hex,
 } from "./adapters/google.ts";
+import { JobMetrics, type JobMetricsReport } from "./job_metrics.ts";
 
 /** Prefixo do kind do job. O restante carrega a chave duravel da sincronizacao. */
 export const GOOGLE_SYNC_JOB_PREFIX = "google_sync:";
@@ -74,6 +76,8 @@ export interface GoogleSyncSummary {
   readonly truncated: boolean;
   readonly observed_at: string;
   readonly bounded: Readonly<Record<string, number>>;
+  /** Medicao da tentativa: duracao, chamadas reais e amostra de memoria. */
+  readonly metrics: JobMetricsReport | null;
 }
 
 export interface GoogleSyncRun {
@@ -324,6 +328,18 @@ function parseJobKind(kind: string): { syncKind: GoogleSyncKind; key: string } |
 }
 
 /**
+ * Composicao de transporte por execucao: envolve o fetch do cliente de leitura
+ * para contar cada requisicao efetivamente despachada ao provedor (inclusive
+ * quando a resposta vem com erro). Nenhum dado da requisicao e observado.
+ */
+function countedFetch(base: FetchLike, metrics: JobMetrics): FetchLike {
+  return (input, init) => {
+    metrics.recordCall();
+    return base(input, init);
+  };
+}
+
+/**
  * Sincronizacao duravel dirigida (Gmail, Calendar, Drive).
  *
  * Cada metodo enfileira um job retomavel e o executa ate o limite local; um
@@ -400,19 +416,22 @@ export class GoogleSync {
     if (!parsed) throw new HubError("invalid_job", "Lote nao e de sincronizacao Google.", 400);
     const job = await this.jobs.claim(p, jobId);
     if (!job) return { state: "idle" };
+    // Uma instancia por tentativa: a contagem fica presa a esta execucao e nao
+    // se mistura com lotes simultaneos de outro dono ou de outra chave.
+    const metrics = new JobMetrics();
     p = withJobLease(p, job.id, job.attempts);
     try {
       switch (parsed.syncKind) {
         case "gmail":
-          return await this.#runGmail(p, job, parsed);
+          return await this.#runGmail(p, job, parsed, metrics);
         case "calendar":
-          return await this.#runCalendar(p, job, parsed);
+          return await this.#runCalendar(p, job, parsed, metrics);
         case "drive":
-          return await this.#runDrive(p, job, parsed);
+          return await this.#runDrive(p, job, parsed, metrics);
       }
     } catch (error) {
       if (error instanceof HubError && error.code === "job_conflict") throw error;
-      return await this.#finishError(p, job, parsed, error);
+      return await this.#finishError(p, job, parsed, error, metrics);
     }
   }
 
@@ -586,6 +605,7 @@ export class GoogleSync {
     p: Principal,
     job: ClaimedJob,
     parsed: { syncKind: GoogleSyncKind; key: string },
+    metrics: JobMetrics,
   ): Promise<GoogleSyncRun> {
     const connectionId = job.connection_id;
     const observedAt = nowIso();
@@ -622,10 +642,13 @@ export class GoogleSync {
         "initial",
         state,
         observedAt,
+        metrics,
       );
     }
 
-    const client = await this.connections.client(p, connectionId);
+    const client = await this.connections.client(p, connectionId, {
+      wrapFetch: (base) => countedFetch(base, metrics),
+    });
     let cursor = asString(state.cursor);
     let cursorKind = asString(state.cursor_kind) ?? "history_id";
     let resume = asRecordOrNull(state.resume);
@@ -848,6 +871,7 @@ export class GoogleSync {
       mode,
       state,
       observedAt,
+      metrics,
     );
   }
 
@@ -917,6 +941,7 @@ export class GoogleSync {
     p: Principal,
     job: ClaimedJob,
     parsed: { syncKind: GoogleSyncKind; key: string },
+    metrics: JobMetrics,
   ): Promise<GoogleSyncRun> {
     const connectionId = job.connection_id;
     const observedAt = nowIso();
@@ -953,10 +978,13 @@ export class GoogleSync {
         "initial",
         state,
         observedAt,
+        metrics,
       );
     }
 
-    const client = await this.connections.client(p, connectionId);
+    const client = await this.connections.client(p, connectionId, {
+      wrapFetch: (base) => countedFetch(base, metrics),
+    });
     const calendarId = asString(descriptor.calendar_id) ?? "primary";
     let cursor = asString(state.cursor);
     let cursorKind = asString(state.cursor_kind) ?? "sync_token";
@@ -1068,6 +1096,7 @@ export class GoogleSync {
       mode,
       state,
       observedAt,
+      metrics,
     );
   }
 
@@ -1135,6 +1164,7 @@ export class GoogleSync {
     p: Principal,
     job: ClaimedJob,
     parsed: { syncKind: GoogleSyncKind; key: string },
+    metrics: JobMetrics,
   ): Promise<GoogleSyncRun> {
     const connectionId = job.connection_id;
     const observedAt = nowIso();
@@ -1172,10 +1202,13 @@ export class GoogleSync {
         "initial",
         state,
         observedAt,
+        metrics,
       );
     }
 
-    const client = await this.connections.client(p, connectionId);
+    const client = await this.connections.client(p, connectionId, {
+      wrapFetch: (base) => countedFetch(base, metrics),
+    });
     const driveId = asString(descriptor.drive_id) ?? undefined;
     const selectionQuery = asString(descriptor.selection_query) ?? undefined;
     let cursor = canIncremental ? asString(state.cursor) : null;
@@ -1255,6 +1288,7 @@ export class GoogleSync {
       mode,
       state,
       observedAt,
+      metrics,
     );
   }
 
@@ -1381,8 +1415,10 @@ export class GoogleSync {
     mode: GoogleSyncMode,
     state: GoogleSyncState,
     observedAt: string,
+    metrics: JobMetrics,
   ): Promise<GoogleSyncRun> {
     const finishedAt = nowIso();
+    const metricsReport = metrics.report();
     const cursorValue = outcome.cursorKind
       ? { kind: outcome.cursorKind, value: outcome.cursor }
       : null;
@@ -1397,6 +1433,7 @@ export class GoogleSync {
       truncated: outcome.truncated,
       mode,
       bounded: outcome.bounded,
+      metrics: metricsReport,
       next_checkpoint: {
         cursor_advanced: outcome.coverage === "complete",
         resume: outcome.resume,
@@ -1438,6 +1475,7 @@ export class GoogleSync {
       truncated: outcome.truncated,
       observed_at: observedAt,
       bounded: outcome.bounded,
+      metrics: metricsReport,
     };
     return { job: jobRow, directed: true, summary };
   }
@@ -1447,6 +1485,7 @@ export class GoogleSync {
     job: ClaimedJob,
     parsed: { syncKind: GoogleSyncKind; key: string },
     error: unknown,
+    metrics: JobMetrics,
   ): Promise<GoogleSyncRun> {
     const observedAt = nowIso();
     const state = (await this.#readState(p, job.connection_id, job.kind))?.state ?? {};
@@ -1469,6 +1508,7 @@ export class GoogleSync {
       "initial",
       state,
       observedAt,
+      metrics,
     );
   }
 }

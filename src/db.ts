@@ -25,6 +25,7 @@ export async function asOwner<T>(
   db: Db,
   principal: Principal,
   fn: (tx: postgres.TransactionSql) => Promise<T>,
+  options: { lockConnection?: string } = {},
 ): Promise<T> {
   if (!/^[0-9a-f-]{36}$/i.test(principal.ownerId)) {
     throw new HubError("unauthorized", "Sessão inválida.", 401);
@@ -33,6 +34,13 @@ export async function asOwner<T>(
     return await db.begin(async (tx) => {
       await tx`select set_config('request.jwt.claim.sub',${principal.ownerId},true)`;
       await tx`select set_config('request.jwt.claims','{}',true)`;
+      // Protected connection rows cannot be locked by the Data API role (it
+      // has no UPDATE grant). Lock only this owner's row before assuming that
+      // role; all consumer reads/writes below still run with RLS enforced.
+      if (options.lockConnection) {
+        const rows = await tx`select id from public.hub_connections where owner_id=${principal.ownerId} and id=${options.lockConnection} for update`;
+        if (!rows.length) throw new HubError("not_found", "Conexão não encontrada.", 404);
+      }
       const lease = jobLeases.get(principal);
       if (lease) {
         // Fence before assuming the Data API role: lock and renew only an active

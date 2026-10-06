@@ -1,5 +1,38 @@
 # Arquivos e extração de texto de PDF
 
+## Materiais Google nativos preservados
+
+`hub_preserve_google_material` consulta um Docs, Sheets ou Slides pela conexão
+consentida e conserva um snapshot JSON privado, com estrutura nativa, hash,
+revisão disponível, seleção e proveniência. Grava somente no AraHub; não edita
+o Google nem marca leitura/entrega. Texto, tabelas/abas, fórmulas/valores e slides
+continuam representados no JSON, sem transformá-los silenciosamente em prosa.
+
+O snapshot é uma representação derivada da API, **não o binário original**.
+Seu envelope inclui kind/ID/seleção e conteúdo nativo; o hash inclui a seleção,
+para que faixas diferentes com valores iguais conservem sua própria cobertura.
+Faixas Sheets têm cobertura parcial do documento. Imagens permanecem referências
+nativas sem interpretação. Teto 8 MiB: excesso é recusado antes de gravar,
+sem truncamento ou exclusão de versões anteriores. A conexão é travada/conferida
+por dono/epoch antes do commit; a Data API continua sem UPDATE nas conexões.
+
+`hub_read_google_material` recupera o snapshot por file_id/hash mesmo sem Google
+disponível. O JSON Pointer RFC 6901 começa na raiz nativa, por exemplo
+`/tabs/0/documentTab/body/content`, `/slides/0/pageElements` ou `/sheets/0/data`.
+Arrays/texto paginam com offset/limit (máximo 100 elementos ou limite solicitado
+de 16.000 unidades UTF-16; a última unidade pode ser incluída para conservar um
+par de surrogate). A parte tem teto de
+128 KiB; resultados extensos retornam cobertura parcial e filhos para aprofundar.
+O recibo distingue cobertura da parte e do snapshot. Conteúdo segue não confiável;
+versão observada não prova atualidade ou submissão.
+
+Prova local: dois testes SQL dirigidos com APIs sintéticas conservaram
+abas/tabelas/slides/fórmulas, seleção, retries/versões, recuperação offline,
+isolamento/hash, conexão alterada durante a leitura, partes extensas/Unicode e
+recusa de excesso. A prova Google real dessa preservação tem gate próprio.
+
+## PDFs
+
 Este documento descreve a extração de texto por página de PDF usada pelos
 materiais do AraHub (critérios A05 e A23). Ele é genérico: não contém dados de
 usuários, fontes acadêmicas nem contas.

@@ -35,6 +35,33 @@ export const deltaSchema = z.object({
 
 export class Hub {
   constructor(readonly db: Db) {}
+  /** Logical owner-only storage, never the shared project's billable database size. */
+  usage(p: Principal) {
+    return asOwner(this.db, p, async (tx) => {
+      const [counts] = await tx`select
+        (select count(*)::integer from public.hub_contexts where owner_id=${p.ownerId}) as contexts,
+        (select count(*)::integer from public.hub_connections where owner_id=${p.ownerId}) as connections,
+        (select count(*)::integer from public.hub_entities where owner_id=${p.ownerId}) as entities,
+        (select count(*)::integer from public.hub_deltas where owner_id=${p.ownerId}) as deltas,
+        (select count(*)::integer from public.hub_jobs where owner_id=${p.ownerId}) as jobs`;
+      const [files] = await tx`select count(*)::integer as files,
+        coalesce(sum(bytes),0)::text as declared_file_bytes,
+        coalesce(sum(octet_length(binary_content)),0)::text as preserved_binary_bytes,
+        coalesce(sum(octet_length(extracted_text)),0)::text as extracted_text_utf8_bytes
+        from public.hub_files where owner_id=${p.ownerId}`;
+      return {
+        observed_at: new Date().toISOString(), counts: { ...counts, files: files.files },
+        storage: {
+          declared_file_bytes: files.declared_file_bytes,
+          preserved_binary_bytes: files.preserved_binary_bytes,
+          extracted_text_utf8_bytes: files.extracted_text_utf8_bytes,
+          measurement: "owner_logical_bytes",
+          byte_values: "decimal_strings",
+        },
+        note: "Representações distintas do proprietário; não incluem índices, WAL, Auth, TOAST ou outros usuários. Não são tamanho físico/faturável do banco nem saldo de cota.",
+      };
+    });
+  }
   createContext(p: Principal, title: string, scope: Record<string, string> = {}) {
     if (!title.trim() || title.length > 300) {
       throw new HubError("invalid_title", "Título inválido.");

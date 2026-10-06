@@ -40,6 +40,7 @@ import {
 import {
   createAuthorizationRequest,
   createGoogleIdTokenVerifier,
+  defaultFetch,
   type FetchLike,
   GOOGLE_SCOPE_SETS,
   GoogleApiError,
@@ -99,7 +100,7 @@ export interface GoogleConnectionsDeps {
   readonly verifier?: GoogleIdTokenVerifier;
   readonly sessionActive?: (ownerId: string, sessionId: string) => Promise<boolean>;
   readonly now?: () => number;
-  readonly clientFactory?: (accessToken: string) => GoogleReadClient;
+  readonly clientFactory?: (accessToken: string, fetch?: FetchLike) => GoogleReadClient;
   readonly tokenStore?: (db: Db, actor: Principal) => TokenStore;
 }
 
@@ -301,10 +302,11 @@ export class GoogleConnections {
       createGoogleIdTokenVerifier({ jwksUri: this.#config.jwksUri, fetch: this.#deps.fetch });
   }
 
-  #makeClient(accessToken: string): GoogleReadClient {
+  #makeClient(accessToken: string, fetchImpl?: FetchLike): GoogleReadClient {
+    const effective = fetchImpl ?? this.#deps.fetch;
     return this.#deps.clientFactory
-      ? this.#deps.clientFactory(accessToken)
-      : new GoogleReadClient({ accessToken, fetch: this.#deps.fetch });
+      ? this.#deps.clientFactory(accessToken, effective)
+      : new GoogleReadClient({ accessToken, fetch: effective });
   }
 
   /**
@@ -647,9 +649,18 @@ export class GoogleConnections {
     };
   }
 
-  async client(p: GooglePrincipal, connectionId: string): Promise<GoogleReadClient> {
+  async client(
+    p: GooglePrincipal,
+    connectionId: string,
+    options: { readonly wrapFetch?: (base: FetchLike) => FetchLike } = {},
+  ): Promise<GoogleReadClient> {
     const access = await this.tokens(p, connectionId);
-    return this.#makeClient(access.access_token);
+    const wrap = options.wrapFetch;
+    if (!wrap) return this.#makeClient(access.access_token);
+    // Composicao por chamada: o transporte observado vale so para a execucao
+    // que o pediu, sem tocar no fetch configurado no servico nem em singleton.
+    const base = this.#deps.fetch ?? defaultFetch;
+    return this.#makeClient(access.access_token, wrap(base));
   }
 
   async tokens(p: GooglePrincipal, connectionId: string): Promise<GoogleAccess> {

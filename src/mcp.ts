@@ -7,6 +7,7 @@ import { Jobs } from "./jobs.ts";
 import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { Materials } from "./materials.ts";
+import { GoogleMaterials, nativeMaterialSchema } from "./google_materials.ts";
 import type { GoogleConnections } from "./google_connections.ts";
 import { type GoogleReadInput, GoogleReads } from "./google_reads.ts";
 import { submissionReportSchema, targetSchema, WorkContext } from "./work_context.ts";
@@ -209,6 +210,11 @@ export async function handleMcp(
     inputSchema: {},
     annotations: read,
   }, () => response(() => new Jobs(hub.db).list(principal)));
+  server.registerTool("hub_usage", {
+    description: "Mede contagens e bytes lógicos de arquivos preservados/texto do próprio usuário. Não informa tamanho físico/faturável do projeto ou saldo de cota. Somente leitura.",
+    inputSchema: {},
+    annotations: read,
+  }, () => response(() => hub.usage(principal)));
   server.registerTool("hub_study_package", {
     description:
       "Prepara pacote com enunciado/material já preservado e direitos. Não cria curso nem presume leitura.",
@@ -219,6 +225,16 @@ export async function handleMcp(
       return await hub.activityPackage(principal, a.activity_id, a.goal);
     }));
   const materials = new Materials(hub, connections);
+  server.registerTool("hub_read_google_material", {
+    description: "Lê offline JSON nativo preservado por hash e JSON Pointer RFC 6901 (vazio=raiz; /tabs/0/documentTab/body/content, /slides/0, /sheets/0). Arrays/texto paginam com offset/limit; partes maiores que 128 KiB pedem aprofundar pelos filhos. Conserva estrutura e seleção; não confirma atualidade ou entrega.",
+    inputSchema: { file_id: z.string().uuid(), sha256: z.string().regex(/^[a-f0-9]{64}$/), pointer: z.string().max(2000).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(16000).optional() },
+    annotations: read,
+  }, (a: {file_id: string; sha256: string; pointer?: string; offset?: number; limit?: number}) => response(() => new GoogleMaterials(hub).read(principal, a.file_id, a.sha256, a.pointer, a.offset, a.limit)));
+  if (google) server.registerTool("hub_preserve_google_material", {
+    description: "Preserva observação nativa Docs/Sheets/Slides na memória privada: JSON, hash, versão/seleção/proveniência, sem achatar estrutura. Escreve somente no AraHub; consulta fonte com capacidade de leitura consentida. Teto 8 MiB, sem truncamento; faixas Sheets têm cobertura parcial do documento. Retorna recibo para recuperação offline.",
+    inputSchema: { connection_id: z.string().uuid(), material: nativeMaterialSchema },
+    annotations: { ...write, openWorldHint: true },
+  }, (a: {connection_id: string; material: z.infer<typeof nativeMaterialSchema>}) => response(() => new GoogleMaterials(hub, google).preserve(principal, a.connection_id, a.material)));
   server.registerTool(
     "hub_extract_pdf",
     {

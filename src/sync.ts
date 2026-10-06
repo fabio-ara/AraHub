@@ -5,6 +5,7 @@ import { type Coverage, HubError, type Principal } from "./contracts.ts";
 import type { ConnectionService } from "./connections.ts";
 import type { MoodleRecord, MoodleResult } from "./adapters/moodle.ts";
 import { sha256Hex } from "./migration.ts";
+import { JobMetrics, type JobMetricsReport } from "./job_metrics.ts";
 
 type ClaimedJob = NonNullable<Awaited<ReturnType<Jobs["claim"]>>>;
 
@@ -74,6 +75,8 @@ export interface SyncCourseSummary {
   readonly truncated: boolean;
   readonly observed_at: string;
   readonly bounded: Readonly<Record<string, number>>;
+  /** Medicao da tentativa: duracao, chamadas reais e amostra de memoria. */
+  readonly metrics: JobMetricsReport;
   /** Progresso durável da travessia de fóruns/discussões/posts. */
   readonly checkpoint?: {
     readonly resumed: boolean;
@@ -90,6 +93,8 @@ export interface SyncCourseRun {
   readonly job: Record<string, unknown>;
   readonly directed: boolean;
   readonly summary: SyncCourseSummary;
+  /** Medicao da tentativa, no topo do resultado alem do summary. */
+  readonly metrics: JobMetricsReport;
 }
 
 /** Resultado de um lote. `job` fica opcional para o caso ocioso (nenhum lote). */
@@ -98,6 +103,8 @@ export interface SyncRunResult {
   readonly job?: Record<string, unknown>;
   readonly directed?: boolean;
   readonly summary?: SyncCourseSummary;
+  /** Medicao da tentativa; ausente apenas no caso ocioso (nenhum lote). */
+  readonly metrics?: JobMetricsReport;
 }
 
 export interface SyncOptions {
@@ -262,6 +269,9 @@ export class Sync {
   async run(p: Principal, expectedId?: string): Promise<SyncRunResult> {
     const job = await this.jobs.claim(p, expectedId);
     if (!job) return { state: "idle" };
+    // Uma instancia por tentativa: a contagem fica presa a esta execucao e nao
+    // se mistura com lotes simultaneos de outro dono ou de outra conexao.
+    const metrics = new JobMetrics();
     // A queued job may run before the newly requested one; its receipt makes this explicit.
     const directed = expectedId === undefined || expectedId === job.id;
     // Vincula as escritas ao lease ativo deste lote: um lease perdido nega a
@@ -270,18 +280,19 @@ export class Sync {
     p = withJobLease(p, job.id, job.attempts);
     try {
       if (job.kind === "moodle_courses") {
-        return await this.runCoursesJob(p, job, directed);
+        return await this.runCoursesJob(p, job, directed, metrics);
       }
       const courseId = parseCourseJobKind(job.kind);
       if (courseId !== null) {
-        return await this.runCourseJob(p, job, courseId, directed);
+        return await this.runCourseJob(p, job, courseId, directed, metrics);
       }
+      const unknownReport = metrics.report();
       return {
-        job: await this.jobs.finish(p, job.id, job.attempts, "unavailable", null) as Record<
-          string,
-          unknown
-        >,
+        job: await this.jobs.finish(p, job.id, job.attempts, "unavailable", null, {
+          metrics: unknownReport,
+        }) as Record<string, unknown>,
         directed,
+        metrics: unknownReport,
       };
     } catch (error) {
       // Recibo obsoleto: o lote ja mudou de dono. Propaga sem finalizar para
@@ -292,11 +303,14 @@ export class Sync {
       ) {
         throw error;
       }
+      const failureReport = metrics.report();
       return {
         job: await this.jobs.finish(p, job.id, job.attempts, "unavailable" as Coverage, null, {
           reason: "A fonte nao pode ser atualizada. A memoria foi preservada.",
+          metrics: failureReport,
         }) as Record<string, unknown>,
         directed,
+        metrics: failureReport,
       };
     }
   }
@@ -450,8 +464,11 @@ export class Sync {
     p: Principal,
     job: ClaimedJob,
     directed: boolean,
+    metrics: JobMetrics,
   ) {
-    const moodle = await this.connections.moodle(p, job.connection_id);
+    const moodle = await this.connections.moodle(p, job.connection_id, {
+      onRequest: () => metrics.recordCall(),
+    });
     const result = await moodle.listCourses();
     let count = 0;
     for (const c of result.data ?? []) {
@@ -479,11 +496,16 @@ export class Sync {
       );
       count++;
     }
+    const report = metrics.report();
     return {
       job: await this.jobs.finish(p, job.id, job.attempts, result.coverage, {
         completed_at: result.observed_at,
-      }, { resources: count, error_code: result.error_code }) as Record<string, unknown>,
+      }, { resources: count, error_code: result.error_code, metrics: report }) as Record<
+        string,
+        unknown
+      >,
       directed,
+      metrics: report,
     };
   }
 
@@ -494,8 +516,11 @@ export class Sync {
     job: ClaimedJob,
     courseId: number,
     directed: boolean,
+    metrics: JobMetrics,
   ): Promise<SyncCourseRun> {
-    const moodle = await this.connections.moodle(p, job.connection_id);
+    const moodle = await this.connections.moodle(p, job.connection_id, {
+      onRequest: () => metrics.recordCall(),
+    });
     const connectionId = job.connection_id;
     const gaps: SyncGap[] = [];
     const coverages: Coverage[] = [];
@@ -1197,6 +1222,7 @@ export class Sync {
 
     const coverage = worstCoverage(coverages);
     const observedAt = nowIso();
+    const metricsReport = metrics.report();
     const total = Object.entries(counts).reduce(
       (sum, [key, value]) => key === "relations" ? sum : sum + value,
       0,
@@ -1215,6 +1241,7 @@ export class Sync {
         feedbacks: MAX_SYNC_FEEDBACKS,
         feedback_items: MAX_SYNC_FEEDBACK_ITEMS,
       },
+      metrics: metricsReport,
       checkpoint: {
         resumed: checkpointResumed,
         pending: checkpointPending,
@@ -1234,7 +1261,8 @@ export class Sync {
       relations: counts.relations ?? 0,
       gaps: gaps.length,
       truncated,
+      metrics: metricsReport,
     });
-    return { job: jobRow as Record<string, unknown>, directed, summary };
+    return { job: jobRow as Record<string, unknown>, directed, summary, metrics: metricsReport };
   }
 }

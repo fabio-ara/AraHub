@@ -156,6 +156,14 @@ export interface MoodleDeps {
   readonly fetch?: FetchLike;
   /** Injecao do resolvedor de DNS. Usado para testar rejeicao de rede nao publica. */
   readonly resolveHost?: HostResolver;
+  /**
+   * Observador de transporte por instancia: chamado imediatamente antes de cada
+   * requisicao efetivamente despachada ao provedor, inclusive quando a resposta
+   * vem com erro. Nao recebe URL, cabecalho, token nem corpo: apenas sinaliza a
+   * tentativa para medicao por execucao. Uma instancia por lote mantem a
+   * contagem presa ao dono daquela execucao.
+   */
+  readonly onRequest?: () => void;
 }
 
 // --- Allowlist auditada, implementacao e bloqueios -------------------------
@@ -955,6 +963,7 @@ export class MoodleAdapter {
   private readonly _injectedFetch?: FetchLike;
   private readonly _resolver: HostResolver;
   private readonly _checkDns: boolean;
+  private readonly _onRequest?: () => void;
 
   private identityPromise?: Promise<MoodleIdentity>;
   private identity?: MoodleIdentity;
@@ -981,6 +990,7 @@ export class MoodleAdapter {
     }
     this._injectedFetch = deps.fetch;
     this._resolver = deps.resolveHost ?? defaultResolveHost;
+    this._onRequest = deps.onRequest;
     // O DNS e validado no caminho real e sempre que um resolvedor e injetado
     // para teste. Sem resolvedor e com fetch injetado, e fixture pura.
     this._checkDns = deps.resolveHost !== undefined || deps.fetch === undefined;
@@ -1106,6 +1116,9 @@ export class MoodleAdapter {
 
   private async sendViaFetch(options: SendOptions): Promise<TransportReply> {
     const fetchImpl = this._injectedFetch as FetchLike;
+    // Conta a tentativa no ponto de despacho: a requisicao saiu daqui mesmo se a
+    // resposta for erro de HTTP ou falha de rede.
+    this._onRequest?.();
     try {
       const response = await fetchImpl(options.url, {
         method: options.method,
@@ -1144,6 +1157,9 @@ export class MoodleAdapter {
       // janela de DNS entre a validacao e o proprio runtime.
       throw new MoodleError("security_error", "Nenhum endereco publico validado para a origem.");
     }
+    // Conta a tentativa exatamente antes de abrir a conexao (o endereco ja foi
+    // validado e fixado); erros de TLS/rede apos este ponto tambem contam.
+    this._onRequest?.();
     const requestOptions: Record<string, unknown> = {
       hostname: target.hostname,
       port: target.port === "" ? 443 : Number(target.port),

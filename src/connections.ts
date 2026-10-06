@@ -1,7 +1,7 @@
 import { asOwner, type Db } from "./db.ts";
 import { Hub } from "./domain.ts";
 import { HubError, type Principal } from "./contracts.ts";
-import { MoodleAdapter } from "./adapters/moodle.ts";
+import { MoodleAdapter, type MoodleDeps } from "./adapters/moodle.ts";
 import {
   type SealedSecret,
   type SealedTokenRecord,
@@ -14,7 +14,8 @@ export class ConnectionService {
   constructor(
     private hub: Hub,
     private vault: TokenVault,
-    private makeMoodle = (origin: string, token: string) => new MoodleAdapter({ origin, token }),
+    private makeMoodle = (origin: string, token: string, deps?: MoodleDeps) =>
+      new MoodleAdapter({ origin, token }, deps),
   ) {}
   async parent(p: Principal, id: string) {
     return asOwner(this.hub.db, p, async (tx) => {
@@ -99,7 +100,7 @@ export class ConnectionService {
       history_preserved: true,
     };
   }
-  async moodle(p: Principal, id: string) {
+  async moodle(p: Principal, id: string, deps?: MoodleDeps) {
     const parent = await this.parent(p, id);
     if (parent.provider !== "moodle" || parent.state !== "connected") {
       throw new HubError(
@@ -115,7 +116,7 @@ export class ConnectionService {
     }
     const sealed = rows[0].encrypted_payload.sealed as SealedSecret;
     const token = await this.vault.open(sealed, `${p.ownerId}:${id}:moodle`);
-    return this.makeMoodle(parent.origin, token);
+    return this.makeMoodle(parent.origin, token, deps);
   }
   async disconnect(p: Principal, id: string) {
     if (p.clientId) {
