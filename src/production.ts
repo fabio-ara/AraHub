@@ -121,6 +121,7 @@ export interface StudyMaterial {
   readEvidence?: string;
   title?: string;
   relation_kinds?: string[];
+  relation_evidence?: { kind: string; evidence: Record<string, unknown> }[];
   rights_by_relation?: Record<string, string>;
   rights_requires_review?: boolean;
   coverage?: string | null;

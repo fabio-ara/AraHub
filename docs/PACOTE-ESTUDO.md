@@ -46,9 +46,23 @@ como relato/interpretação quando não houver observação de criação.
 
 ## Limites e evidências
 
-O pacote usa relações preservadas. A expansão de toda a seção por
-`has_module` e a identificação de bibliografia dentro de texto livre continuam
-pendentes; não se inventam vínculos ou exigência docente. Não há escrita em
+O pacote usa relações preservadas. Em Moodle, uma atividade/módulo/seção
+focal pode recuperar páginas, livros, URLs e recursos da mesma seção pelo
+grafo has_module/has_content. Recursos preservados também se vinculam por
+course_id/module_id da mesma conta/conexão: IDs decimais em número/texto
+correspondem; IDs nulos ou desconhecidos não criam vínculo.
+
+O papel derivado section_related conserva motivo/escopo/proveniência dos arcos
+em relation_evidence; não vira obrigatório, lido ou autorização de redistribuir.
+section_coverage declara seção, contagens e ambiguidade. Com duas ou mais
+seções candidatas, o pacote conserva apenas vínculos diretos e informa a lacuna.
+Outras seções/conexões/donos ficam excluídos da expansão automática; relações
+diretas explicitamente preservadas podem atravessar conexões do mesmo dono.
+
+A página é selecionada no SQL com sentinela; apenas entidades/evidências da
+página chegam ao processo. O banco ainda examina metadados para ordenar a
+união da seção; isso não é varredura incremental dos módulos. Cursos inteiros
+e bibliografia dentro de texto livre não são inferidos. Não há escrita em
 AraLearn nem em projetos irmãos.
 
 Cinco testes SQL dirigidos cobrem 33 entidades paginadas, dois donos, versões,
@@ -56,3 +70,8 @@ bibliografia, direitos conflitantes e `has_content`/HTML nativo. O SDK MCP por
 HTTP recuperou o pacote e sua continuação, incluindo material Google nativo
 preservado por um provedor sintético. Isso não comprova pacote acadêmico de uma
 conta Moodle real ou criação real de curso.
+
+Oito testes do grafo e a integração em Hub.activityPackage exercitaram
+34 candidatos paginados, vínculos diretos/derivados, IDs número/texto/nulos,
+foco não Moodle, ambiguidade, seção ausente e isolamento. Provedores sintéticos,
+SQL real; nenhuma renovação de credencial Moodle ou criação real de curso.

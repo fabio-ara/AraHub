@@ -3,6 +3,7 @@ import { type StudyFile, type StudyMaterial, studyPackage, type StudyRole } from
 import { asOwner, type Db } from "./db.ts";
 import { type Delta, HubError, type Principal, type Provider } from "./contracts.ts";
 import { preferenceSchema, resolvePreferences } from "./preferences.ts";
+import { studyGraphPage } from "./study_graph.ts";
 
 export const deltaSchema = z.object({
   idempotency_key: z.string().min(8).max(200),
@@ -352,12 +353,11 @@ export class Hub {
       if (!activity) throw new HubError("not_found", "Atividade não encontrada.", 404);
       // Agrupa por entidade antes de paginar: uma entidade pode ter várias
       // relações (tipos) e vários arquivos/versões, mas produz um só material.
-      const related =
-        await tx`select e.id,e.title from public.hub_relations r join public.hub_entities e on e.owner_id=r.owner_id and e.id=r.to_id where r.owner_id=${p.ownerId} and r.from_id=${activityId} and r.kind in ('required','related','suggested','has_content','references') group by e.id,e.title order by e.title,e.id limit 21 offset ${offset}`;
+      const graph = await studyGraphPage(tx, p.ownerId, activityId, offset);
+      const related = graph.entities;
       const page = related.slice(0, 20);
       const nextOffset = related.length > 20 ? offset + 20 : null;
       const ids = page.map((e) => e.id as string);
-      type RelationRow = { entity_id: string; kind: string; evidence: Record<string, unknown> };
       type ObservationRow = {
         observation_id: string;
         entity_id: string;
@@ -380,11 +380,7 @@ export class Hub {
         text_length: number | null;
         extraction: Record<string, unknown>;
       };
-      const relations = (ids.length
-        ? await tx`select r.to_id as entity_id,r.kind,r.evidence from public.hub_relations r where r.owner_id=${p.ownerId} and r.from_id=${activityId} and r.kind in ('required','related','suggested','has_content','references') and r.to_id in ${
-          tx(ids)
-        } order by r.to_id,r.kind`
-        : []) as unknown as RelationRow[];
+      const relations = graph.relations;
       const observations = (ids.length
         ? await tx`select distinct on (o.entity_id) o.id as observation_id,o.entity_id,o.content_hash,o.provenance,o.coverage,o.occurred_at,o.source_modified_at,o.observed_at,o.recorded_at from public.hub_observations o where o.owner_id=${p.ownerId} and o.entity_id in ${
           tx(ids)
@@ -405,6 +401,7 @@ export class Hub {
         "related",
         "suggested",
         "has_content",
+        "section_related",
         "references",
       ];
       const roleOf = (kind: string | undefined): StudyRole | "reference" =>
@@ -500,6 +497,12 @@ export class Hub {
           locator: studyFiles.length === 1 ? studyFiles[0].locator : `hub:entity:${entityId}`,
           rights_by_relation: rightsByKind,
           relation_kinds: relationKinds,
+          relation_evidence: relations.filter((r) =>
+            r.entity_id === entityId
+          ).map((r) => ({
+            kind: r.kind,
+            evidence: r.evidence,
+          })),
           coverage: aggregatedCoverage,
           provenance: observation ? observation.provenance : null,
           // Metadados da observação; o corpo fica recuperável por hub:entity:
@@ -569,9 +572,10 @@ export class Hub {
         source_description: sourceDescription,
         page: { offset, limit: 20, next_offset: nextOffset },
         next_offset: nextOffset,
-        gaps: instruction ? [] : [instructionGap],
+        gaps: [...(instruction ? [] : [instructionGap]), ...graph.gaps],
+        section_coverage: graph.section_coverage,
         limitations: [
-          "Material de seção e relatos de links usam vínculos próprios (has_module/has_content); o pacote não infere relações além das preservadas.",
+          "Material de seção é relacionado pela estrutura preservada, não leitura obrigatória ou confirmada. Cursos inteiros e bibliografia em texto livre não são inferidos.",
         ],
         truncated: nextOffset !== null,
       };
