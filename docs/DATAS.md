@@ -33,4 +33,10 @@ parcial, conexão expirada e ausência de dados permanecem visíveis.
 Prova local: três cenários de normalização e um SQL/SDK integrado exercitam
 Lisboa/São Paulo, verão/inverno, DST repetido/inexistente, dia inteiro, fim
 indeterminado, data inválida, divergência de offset, fonte preservada e isolamento.
-A prova hospedada e os recursos acadêmicos atuais têm evidências separadas.
+A função foi implantada no AraHub (ACTIVE v17) e anunciada ao plugin pessoal
+após atualização de metadados. Em nova conversa ChatGPT, dois recursos
+sintéticos deram prazo convertido para Lisboa/São Paulo e intervalo de dia
+inteiro sem hora artificial, com `unverified_state_projection`. O ensaio
+exercitou o cliente real, mas não exportou o trace bruto do streaming nem
+consultou uma fonte acadêmica atual. A fixture foi removida e as onze
+tabelas do dono conservaram os fingerprints do snapshot anterior.
