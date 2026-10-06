@@ -2,8 +2,8 @@
 
 Fundamento da etapa 5 do plano: fixar a origem, inventariar com rastreabilidade,
 preservar os bytes brutos, curar com ponte para o trecho original e exportar um
-lote privado que possa ser restaurado e verificado. Nada aqui depende de banco
-remoto nem de escrita em serviços externos.
+lote privado que possa ser restaurado e verificado. O staging e a curadoria são
+locais; a importação hospedada tem autorização e evidências separadas.
 
 ## Invariantes
 
@@ -137,13 +137,13 @@ Flags: `--source`, `--to`/`--dest`, `--in`, `--out`, `--label`.
   real usa dados privados e não é publicada.
 - **A27 — backup e virada.** Implementado e testado sinteticamente: export com
   manifesto, hashes e relações; restauração em destino limpo verificada; tokens
-  excluídos. A virada de cliente e a reconciliação final permanecem pendentes de
-  autorização e de alvo remoto.
+  excluídos. A virada canônica de cliente permanece pendente de seus gates; o destino
+  remoto autorizado já recebeu a importação e teve seu snapshot restaurado localmente.
 
 ## Limitações
 
-- Sem banco remoto: o staging é local. Importação hospedada e a virada exigem
-  alvo autorizado.
+- O staging é local. Importação hospedada executada no lote separado autorizado;
+  isso não encerra os gates de virada.
 - A reconciliação de um delta de origem é detectada por `verifyOrigin`, mas a
   fusão de um commit novo ainda é manual.
 - A curadoria foi feita pelo assistente durante esta sessão; não substitui validação amostral
@@ -153,4 +153,18 @@ Flags: `--source`, `--to`/`--dest`, `--in`, `--out`, `--label`.
 
 `deno task migration:import` preservou 57 arquivos completos e 109 registros curados no Postgres local. A repetição acrescentou zero registros e reutilizou os 109; também repara vínculos após interrupção entre o delta e suas relações. `deno task migration:validate` usou um cliente MCP novo e conferiu os 109 conteúdos com referências literais, além da leitura de documento bruto. A identidade e o transporte são sintéticos locais; os dados de origem são reais e privados. Isso não comprova qualidade de todas as respostas acadêmicas, OAuth remoto ou A29.
 
-`deno task backup:local` restaura o dump em banco exclusivo novo e compara todas as tabelas do domínio/cofre, binários, políticas RLS e grants. A prova atual compara 11 tabelas e 855.797 bytes de dump; o destino e o manifesto ficam em `.private/backups/`. Executar com escritas locais pausadas; o restore não sobrescreve outro banco. A virada e o backup hospedado continuam pendentes.
+`deno task backup:local` restaura o dump em banco exclusivo novo e compara tabelas do domínio/cofre, binários, políticas RLS e grants. A prova original comparou 11 tabelas e 855.797 bytes; há também prova posterior com 14 tabelas em `STATUS.md`. Destinos/manifests ficam em `.private/backups/`. Executar com escritas locais pausadas; o restore não sobrescreve outro banco.
+
+## Importação e recuperação hospedadas
+
+Lote privado aprovado separadamente e executado em 2026-10-06; consultar
+[lote de importação](LOTE-IMPORTACAO.md) e [validação](VALIDACAO.md). Destino conferido:
+nove contextos, 57 documentos/hashes e 109 registros/vínculos. Plugin pessoal real
+recuperou todos os históricos, arquivos e trecho bruto. Nova conversa ChatGPT fez
+consulta somente ao AraHub e recuperou dois registros com fontes/versões corretas,
+distinguindo história e vigência não verificada.
+
+Snapshot nativo de onze tabelas da aplicação foi restaurado em banco local novo,
+com igualdade de fingerprints, binários, RLS e isolamento. Não restaura o serviço
+Auth Supabase; cofre e configurações têm backup separado. Revisão semântica integral
+e virada canônica permanecem pendentes; a origem METD não foi alterada.

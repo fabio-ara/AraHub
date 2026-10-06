@@ -58,6 +58,11 @@ export function createHandler(hub: Hub, config: HttpConfig) {
       if (u.pathname === "/api/synthetic-login" && req.method === "POST" && config.syntheticLogin) {
         return json({ access_token: await config.syntheticLogin(), mode: "synthetic" });
       }
+      if (u.pathname === "/privacy.html" && req.method === "GET") {
+        return new Response(await Deno.readTextFile(new URL("../web/privacy.html", import.meta.url)), {
+          headers: { ...safeHeaders, "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
       if (
         u.pathname === "/" || u.pathname === "/oauth/consent" ||
         u.pathname === "/oauth/google/callback"

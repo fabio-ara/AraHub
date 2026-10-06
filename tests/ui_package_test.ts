@@ -16,6 +16,7 @@ const EXPECTED_FILES = [
   "oauth/callback/index.html",
   "oauth/consent/index.html",
   "oauth/google/callback/index.html",
+  "privacy.html",
   "ui/app.js",
   "ui/pdf-parser.worker.js",
   "ui/style.css",
@@ -151,6 +152,11 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
     );
     assert.ok(index.includes('<meta name="referrer" content="no-referrer">'));
 
+    const privacy = await Deno.readTextFile(new URL("privacy.html", directory));
+    assert.ok(index.includes('href="/AraHub/privacy.html"'));
+    assert.ok(privacy.includes('href="/AraHub/ui/style.css"'));
+    assert.ok(privacy.includes('name="referrer" content="no-referrer"'));
+    assert.doesNotMatch(privacy, /<script\b/);
     const copies = await Promise.all(
       [
         "oauth/consent/index.html",

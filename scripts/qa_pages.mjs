@@ -53,6 +53,7 @@ const files = new Map();
 for (
   const path of [
     "index.html",
+    "privacy.html",
     "ui/app.js",
     "ui/pdf-parser.worker.js",
     "ui/style.css",
@@ -299,6 +300,14 @@ try {
     await page.goto(site);
     await page.getByRole("button", { name: "Receber link de acesso" })
       .waitFor();
+    await page.getByRole("link", { name: "Privacidade", exact: true }).click();
+    await page.getByRole("heading", { name: "Seus dados", exact: true }).waitFor();
+    assert.equal(await page.locator("script").count(), 0);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await writeFile(new URL(`privacy-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true, animations: "disabled" }));
+    await page.getByRole("link", { name: "Voltar ao AraHub", exact: true }).click();
+    await page.getByRole("button", { name: "Receber link de acesso" }).waitFor();
     assert.equal(await page.locator("#password").isVisible(), false);
     await page.locator("#email").fill(user.email);
     await page.getByRole("button", { name: "Receber link de acesso" }).click();
@@ -414,6 +423,7 @@ try {
       pkce_magic_link: "provider_stub",
       consent: "provider_stub",
       physical_callbacks: true,
+      privacy_link_and_return: true,
       password_hidden: true,
       moodle_https_connect_renew: moodleRequests === 2,
       pdf_browser_worker: true,

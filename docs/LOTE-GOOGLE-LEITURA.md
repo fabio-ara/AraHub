@@ -3,8 +3,13 @@
 Preparado e autorizado em 2026-10-06 para aplicativo próprio e leitura.
 Código OAuth/leitura já implementado e testado com provedores sintéticos; não é uma
 conta Google conectada. Login e aceite pessoal dos Termos de Serviço Google Cloud
-concluídos pelo titular. Consentimento OAuth
-será dado pelo titular após o cadastro e a conferência de cotas.
+concluídos pelo titular. Projeto exclusivo AraHub criado: 12 projetos disponíveis
+na cota antes da criação, sem projetos existentes visíveis. Painel de faturamento
+confirma que o projeto não possui conta vinculada. Seis APIs ativadas; cliente Web
+AraHub criado como cliente de agente, callback/origem exatos, escopos somente de
+identidade/leitura cadastrados e titular incluído como usuário de teste. Segredo
+preservado apenas na configuração privada do backend, já implantada. Ainda não há
+consentimento Google nem prova de leitura de dados reais.
 
 Autorização: aplicativo OAuth **AraHub** em projeto Google Cloud exclusivo, na conta
 institucional titular; conferir projetos existentes antes de criar e não usar
@@ -41,3 +46,19 @@ Fontes: [OAuth e expiração](https://developers.google.com/identity/protocols/o
 [fluxo Web](https://developers.google.com/identity/protocols/oauth2/web-server),
 [limites Drive](https://developers.google.com/workspace/drive/api/guides/limits) e
 [limites Gmail](https://developers.google.com/workspace/gmail/api/reference/quota).
+
+## Conferência no projeto antes das leituras
+
+Painel nativo Google Cloud: uso zero; sem faturamento, trial ou pedido de aumento.
+Valores por minuto / por usuário por minuto: Gmail 1.200.000 / 6.000 unidades;
+Calendar 10.000 / 600 consultas; Drive 1.000.000 / 325.000 unidades; Docs 3.000 / 300
+leituras; Sheets 300 / 60 leituras; Slides 3.000 / 600 leituras (leituras caras:
+300 / 60). Evidência privada em `.private/evidence/google-quota-before-reads.json`.
+Não confundir cotas técnicas com volume autorizado: o primeiro ensaio continua
+restrito a páginas limitadas e recursos escolhidos por ID, sem recorrência.
+
+O app permanece Externo/Testing, com limite de 100 usuários; não foi publicado como
+app Google de produção nem enviado para verificação. [Política de privacidade](https://fabio-ara.github.io/AraHub/privacy.html)
+e página inicial cadastradas no branding. A política descreve consultas pelo
+assistente, armazenamento, isolamento, uso limitado e desconexão. Publicação MIT e
+interface continuam no lote de hospedagem; dados e segredo não são publicados.

@@ -43,6 +43,7 @@ for (
     ["approve", "ready-state", "Permitir"],
     ["deny", "remove-state", "Recusar"],
     ["pdf-more", "book-open", "Mais PDFs"],
+    ["privacy", "info", "Privacidade"],
   ]
 ) setAction(el(id), icon, label);
 const mediaTheme = matchMedia("(prefers-color-scheme: dark)");
