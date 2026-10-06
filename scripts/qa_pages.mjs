@@ -111,9 +111,9 @@ try {
         "Access-Control-Allow-Origin": origin,
         "Cache-Control": "no-store",
       };
-      const reply = (value) =>
+      const reply = (value, status = 200) =>
         route.fulfill({
-          status: 200,
+          status,
           contentType: "application/json",
           headers,
           body: JSON.stringify(value),
@@ -253,7 +253,9 @@ try {
           assert.ok(data.code_challenge);
           assert.equal(data.password, undefined);
           otp++;
-          if (otp === 1) return reply({ code: "signup_disabled", message: "Signups disabled" }, 422);
+          if (otp === 1) {
+            return reply({ error_code: "signup_disabled", msg: "Signups disabled" }, 422);
+          }
           return reply({});
         }
         if (url.pathname.endsWith("/resend")) {

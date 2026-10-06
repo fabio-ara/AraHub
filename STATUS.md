@@ -1,6 +1,6 @@
 # Estado do AraHub
 
-Atualizado: 2026-10-05. Branch main; commits locais. Produto completo A01–A30 ainda não entregue. Este checkpoint substitui o histórico do chat.
+Atualizado: 2026-10-06. Branch main; remoto público MIT publicado. Produto completo A01–A30 ainda não entregue. Este checkpoint substitui o histórico do chat.
 
 ## Mandato corrente
 
@@ -11,7 +11,7 @@ Decisões posteriores do usuário: projeto **AraHub**, nova conta institucional 
 ## Implementado e comprovado localmente
 
 - ZIP/bootstrap/credenciais/dados privados ignorados antes do primeiro commit. Pacote: 20 hashes conferidos; plano e auditoria em `docs/PLANO.md` e `docs/FONTES.md`. Checkpoint anterior à fatia PDF: `a79bc40`.
-- Postgres exclusivo loopback `127.0.0.1:55432`, dez migrations. Instalação SQL em banco novo: dez migrations, RLS ativo/forçado, dois donos e idempotência aprovados. Backup/restore em destino novo: 14 tabelas, 1.190.181 bytes, binários/políticas/grants comparados. Bancos e backups preservados.
+- Postgres exclusivo loopback `127.0.0.1:55432`; instalação SQL em banco novo: onze migrations, RLS ativo/forçado, dois donos e idempotência aprovados. Backup/restore anterior com dez migrations: 14 tabelas, 1.190.181 bytes, binários/políticas/grants comparados. A migration nova altera somente permissão do event trigger do provedor. Bancos e backups preservados.
 - Deltas/versionamento/concorrência, preferências com vigência/superação/retirada/conflitos e memória antes de refresh. MCP SDK por HTTP com identidade sintética, recuperação por cliente novo e fronteira de client ID/sessão.
 - Alvo ativo por contexto: vínculo explícito com versão, ambiguidade sem palpite e relato de entrega idempotente que conserva o alvo original mesmo após mudança do contexto. Não confirma submissão externa.
 - Comparação de rascunho selecionado por ID com observação Moodle qualificada: autoria vinculada, versão e proveniência; diferenças não provam outra versão. SQL/ownership/autor distinto/cobertura parcial testados.
@@ -21,16 +21,24 @@ Decisões posteriores do usuário: projeto **AraHub**, nova conta institucional 
 - PDF: parser isolado em worker terminável, limites, página/localizador/hash/lacunas; sem OCR. Persistência/merge sob lock, página offline e retomada SDK testados. PDF acadêmico real: 2.215.244 bytes/15 páginas, HTTP/SQL/SDK locais, parcial→completo/cliente novo/dono/hash aprovados; identidade sintética. Supabase Edge não expõe o worker terminável necessário: parse na Edge indisponível, rota cliente implementada em worker do navegador. Não enfraquecer limites nem declarar A23 completo; consultar `docs/ARQUIVOS.md`.
 - PDF cliente: Chrome extraiu o PDF acadêmico real em dois viewports; hash divergente, cancelamento e timeout terminando CPU síncrona aprovados. Resultado gravado por HTTP/SQL real local e recuperado por cliente MCP novo, identidade sintética, proveniência browser_client não corroborada. Worker sem token/CDN, lote continuável por página, licença pdf.js Apache-2.0 incluída. Gate integrado da fatia aprovado; não comprova runtime/conta hospedados.
 - UI adaptada de AraLearn MIT, snapshot e atribuição em `THIRD_PARTY_NOTICES.md`: coluna até 430 px, ícones com nomes acessíveis, cartões, temas claro/escuro. Chrome isolado operou entrada, renovação Moodle, revisão/autorizações, exportação e saída em 1280×900 e 390×844; sem overflow/erros e capturas nativas inspecionadas. HTTP/Auth são fixtures; não comprova conta real ou celular físico.
-- Pacote Pages preparado e testado: nove arquivos/licenças MIT/Apache-2.0/subpath/três callbacks físicos/CSP/referrer e manifesto privado. Chrome operou PKCE/consentimento/CSP/indisponibilidade e cadastro/renovação Moodle por HTTPS, token limpo e ID preservado; provedores simulados. Workflow manual Pages preparado com actions fixadas por SHA, ainda não executado. Backend Edge atende MCP/discovery/APIs com CORS exato; UI_URL inclui subpath e UI_ORIGIN apenas origem.
+- Pacote Pages preparado e testado: nove arquivos/licenças MIT/Apache-2.0/subpath/três callbacks físicos/CSP/referrer e manifesto privado. Chrome operou PKCE/consentimento/CSP/indisponibilidade e cadastro/renovação Moodle por HTTPS, token limpo e ID preservado; provedores simulados. Workflow manual Pages com actions fixadas por SHA executado no lote aprovado. Backend Edge atende MCP/discovery/APIs com CORS exato; UI_URL inclui subpath e UI_ORIGIN apenas origem.
 - Migração privada: 57 arquivos brutos completos/109 registros curados no banco local, idempotência; cliente MCP novo recuperou todos com fontes e texto bruto. Não comprova revisão semântica humana completa. Plugin/Skill genéricos preparados, sem ativação em conversa real.
 
 ## Prova hospedada e limites externos
 
-Projeto remoto AraHub Healthy/NANO/Free em São Paulo, conferido pelo painel autenticado. Oito migrations instaladas com hashes canônicos conferidos; SQL/RLS com dois donos sintéticos e rollback passou, deixando zero usuários/contextos. Alvo e evidências em `.private/cloud/`. Não reaplicar o bundle antigo: reconciliar histórico e aplicar apenas migrations novas.
+Lote aprovado em 2026-10-05; execução em 2026-10-06. Repositório público MIT https://github.com/fabio-ara/AraHub e interface HTTPS https://fabio-ara.github.io/AraHub/ publicados. Dois workflows manuais concluídos; nove assets/licenças, sem evidências privadas. GitHub Free: 8/2.000 minutos e 0/0,5 GB de storage conferidos antes; runners padrão, sem serviços pagos.
 
-Sem aplicação implantada, repo remoto criado, Pages publicado, OAuth Google real, importação hospedada, cron ou virada. Publicar código MIT não publica a memória nem oferece serviço multiusuário. Matriz de autorizações do bootstrap continua aplicável a alvos/escopos externos e custos.
+Supabase AraHub Free/NANO em São Paulo: spend cap ativo, sem cartão; cotas conferidas (26,2 MB/500 MB de banco, zero chamadas/500.000 antes). Função arahub implantada; configuração Auth pontual, inscrições públicas/DCR fechados, consentimento no subpath exato. Cofre gerado com backup privado. TLS e sessão ativa comprovados na API pessoal. Runtime encaminha HTTP /arahub/...: adaptador normaliza apenas host/prefixo configurados, sem confiar em forwarded headers; assinatura/client ID/CORS permanecem restritos.
 
-O conector Supabase não acessa o novo projeto. O usuário concluiu login CLI protegido na nova conta: CLI 2.119.0, home exclusivo `.private/supabase-cli/`, keyring global desativado, telemetria desativada. Leitura confirmou somente AraHub na organização alvo; oito hashes remotos foram reconferidos. Credencial não foi exposta no chat. Não usar contas/projetos irmãos nem ampliar permissões; login não autoriza qualquer escrita.
+Onze migrations hospedadas: oito hashes originais reconferidos, duas novas aplicadas com guarda de prefixo; uma correção da auditoria retira EXECUTE público de rls_auto_enable() sem remover seu event trigger. Zero avisos SQL restantes; aviso de proteção contra senhas vazadas exige Pro, sem upgrade (interface usa e-mail, não senha). RLS/FORCE/dois donos/rollback reconferidos.
+
+HTTPS real: 32 verificações aprovadas, zero falhas/skips, duas identidades sintéticas temporárias criadas no Auth real, autorização-code/PKCE nativos, cliente MCP SDK, idempotência/isolamento/busca/exportação/sessão revogada. PDF sintético hospedado extraído/gravado pelo worker real em dois viewports, sem rede simulada/overflow/violação CSP; capturas nativas inspecionadas. Consentimento na interface hospedada e troca PKCE/callback nativos também operados com usuário sintético. Limpeza dirigida concluída: dois usuários sintéticos/dados/sessões e cliente temporário removidos por IDs e guardas; titular preservado. Estado remoto: um usuário, zero contextos/conexões/entidades/deltas, onze migrations.
+
+Conta titular confirmou seu e-mail, entrou e concedeu consentimento humano no navegador habitual. Primeira entrada encontrou signup_disabled; fallback para resend nativo com PKCE implementado. Fixture de QA corrigida para devolver HTTP 422/error_code de verdade; ensaio PKCE/consentimento em dois viewports aprovado. Não houve confirmação artificial, leitura de e-mail/códigos ou senha no chat. Mensagem de autorizações duplicada por renderizações concorrentes corrigida.
+
+Plugin pessoal AraHub criado e conectado no ChatGPT, sem publicação no catálogo público. Cliente público/PKCE, callback específico conferido no cadastro, sem segredo e sem DCR; somente identidade/e-mail/perfil. Nova conversa ChatGPT chamou a retomada de contextos: contextos/deltas/conexões vazios e cobertura persisted, sem escrita ou sincronização. Identificador do plugin/cliente/conversa e comprovantes ficam em .private/cloud, não nos arquivos genéricos.
+
+CLI 2.119.0 autenticado na conta nova, home exclusivo .private/supabase-cli; keyring global/telemetria desativados. Conector Supabase antigo não acessa o alvo; não usar para operações. Importação privada hospedada, cron, app Google e escritas acadêmicas não estão autorizados neste lote. Projetos irmãos intactos.
 
 ## Validação corrente
 
@@ -38,11 +46,11 @@ Gate integrado final: **202 aprovados/0 falhas** (4m31s). TypeScript, build e QA
 
 ## Próximo passo executável
 
-Agentes encerrados, patches revisados e gate integrado aprovado. Commit local da fatia: consultar `git log -1`. Login resolvido. Lote externo concreto/revisável em `docs/LOTE-IMPLANTACAO.md`: backend no projeto existente e código público/interface em `fabio-ara/AraHub`/Pages, sem importação privada/cron/app Google/escrita acadêmica. Em 2026-10-05 o usuário respondeu “Aprovo” ao lote: backend/OAuth no projeto existente, repositório público MIT e GitHub Pages, custo adicional máximo zero. Execução iniciada.
+Login CLI, publicação MIT/Pages, implantação, entrada humana e cliente pessoal resolvidos. Publicar/inspecionar a correção da mensagem duplicada, concluir commit/push das evidências genéricas. A fixture PKCE antes devolvia 200 apesar de solicitar 422: foi corrigida e executada novamente, sem aproveitar aquela aprovação como prova do fallback.
 
-Executar o lote autorizado e conferir plano/cotas reais; usar SUPABASE_DB_URL injetada na Edge (DATABASE_URL/pooler protegido somente se necessário), reconciliar/aplicar só novas migrations, configurar Auth pontualmente sem `config push` global, provar cliente real/sessões/dois donos. Edição Sheets e parse PDF na Edge ainda têm limites técnicos documentados; validar a rota cliente PDF no alvo hospedado sem enfraquecer isolamento. Não substituí-los silenciosamente por outra função.
+Evidência HTTPS32: .private/evidence/hosted-3d29dd39-053f-4add-b561-56c8fe1931b9.json; UI/PDF: .private/evidence/hosted-ui-pdf-result.json; consentimento: .private/evidence/hosted-consent-result.json. Registro final/limpeza em .private/cloud/registry-eleven-hashes.json e hosted-current-counts.json. Contexto de implantação e chaves ficam exclusivamente em .private/cloud.
 
-Depois do lote autorizado: provar Auth/MCP real antes de apresentar o escopo de importação privada e sua autorização. Login CLI já resolvido; não pedir novamente por rotina. Provas reais de Google, renovação Moodle, smartphone/nova conversa, delta final de migração e virada continuam no escopo; não declarar produto finalizado com esses gates omitidos.
+Após concluir o lote: apresentar o escopo concreto de importação privada para aprovação específica, somente com isolamento comprovado. Provas reais Google/renovação Moodle/smartphone/nova conversa, edição Sheets, delta final METD e virada continuam no escopo; não declarar A01–A30 encerrados. Não pedir login CLI ou senha de banco novamente por rotina.
 
 ## Retomada sem chat
 

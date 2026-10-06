@@ -1,6 +1,6 @@
 # Checkpoint de validação
 
-Data: 2026-10-05. Commits somente locais, sem remoto Git configurado ou publicação. Este checkpoint substitui o diário de execução. Produto completo A01–A30 ainda não entregue; pendências em STATUS e na matriz de aceite.
+Data: 2026-10-06. Código MIT e interface GitHub Pages publicados, backend Supabase implantado. Este checkpoint substitui o diário de execução. Produto completo A01–A30 ainda não entregue; pendências em STATUS e na matriz de aceite.
 
 | Verificação executada | Resultado | Limite da evidência |
 |---|---|---|
@@ -9,30 +9,32 @@ Data: 2026-10-05. Commits somente locais, sem remoto Git configurado ou publica�
 | Suíte completa | 202 aprovados/0 falhas, 4m31s; 12 regressões HTTP dirigidas após servir o worker local aprovadas; regressões temporais, concorrência e continuação incluídas | Postgres/HTTP/SDK locais; identidade/provedores sintéticos salvo provas separadas |
 | Preferências SQL/tempo | Três testes dirigidos aprovados; regressão de milissegundos | Datas do driver SQL e strings ISO; conversa real pendente |
 | Formatação | 78 arquivos aprovados | Não comprova comportamento |
-| Instalação limpa | Dez migrations em banco novo; dois donos/RLS/idempotência | SQL local; cache vazio e implantação limpa não testados |
+| Instalação limpa | Onze migrations em banco novo; dois donos/RLS/idempotência | SQL local; cache vazio e nova implantação independente não testados |
 | Contexto/autoria | Três testes SQL dirigidos aprovados | Alvo versionado, relato idempotente e observação qualificada; conta real pendente |
 | Google sync | 16 testes dirigidos e MCP SDK aprovados | Paginação/expiração/historyId/checkpoints, descritor atômico e concorrência por chave; APIs simuladas |
 | Moodle sync | Oito testes dirigidos aprovados | Além de 50 fóruns/páginas, reordenação, reinício/job esgotado e lease; provedor simulado, SQL real |
 | Lease/fencing | Exclusão entre jobs/processos e rejeição após expirar/takeover/finish | SQL real; capability de runtime não pode ser criada por JSON/JWT |
-| Atualização incremental | Oito→dez migrations em banco novo; RLS novo, replay/drift recusados; registro remoto de oito hashes reconferido | Ensaio local; lote remoto de duas migrations preparado e não executado |
+| Atualização incremental | Oito→dez em ensaio local; remoto oito→dez→onze, guardas e onze hashes canônicos reconferidos | Duas migrations funcionais e correção de EXECUTE do event trigger aplicadas; nenhum bundle inicial reaplicado |
 | Aprovação persistente | 13 testes SQL dirigidos aprovados | Snapshot/hash/expiração/consumo único/isolamento/Data API; nenhuma escrita externa |
 | Executor Google | Teste SQL/fetch dirigido aprovado | Criar Docs/Sheets/Slides e editar Docs/Slides; edição de células Sheets e OAuth real pendentes |
 | Recepção PDF cliente | Dez testes SQL/HTTP aprovados; esquema estrito, hash binário sob lock, tamanho/dono/client ID, idempotência, retomada e cobertura forjada recusada | Não corrobora autenticidade da extração; origem browser_client não verificada |
 | PDF navegador | PDF acadêmico real parseado no Chrome em dois viewports; gravação do resultado por HTTP/SQL e leitura MCP local; hash adulterado, cancelamento e CPU síncrona terminada por timeout | Auth sintético; sem OCR; arquivo privado e origem browser_client não corroborada. Hospedagem/conta real pendentes |
 | PDF/material/MCP | PDF acadêmico real de 2.215.244 bytes/15 páginas via socket HTTP/MCP SDK, dono/hash/cliente novo; dez testes material e nove parser | Identidade sintética; sem OCR; extração no Supabase Edge indisponível sem Worker terminável |
 | UI AraLearn | Dois cenários Chrome: 1280×900 e 390×844; entrada, renovação, aprovação, temas, exportação e saída operados; capturas nativas inspecionadas | Design MIT copiado, coluna até 430 px, ícones; HTTP/Auth fixtures, smartphone físico pendente |
-| Pacote Pages | Três testes de empacotamento; dois cenários Chrome PKCE/consentimento/CSP/falha/cadastro-renovação Moodle HTTPS aprovados | Nove arquivos/atribuições Apache-2.0 do worker e MIT do app/subpath/callbacks; rede simulada, sem email/hosting. Workflow manual com SHAs preparado, sem execução remota |
+| Pacote Pages | Três testes de empacotamento; dois cenários Chrome PKCE/consentimento/CSP/falha/cadastro-renovação Moodle HTTPS aprovados | Nove arquivos/atribuições Apache-2.0 do worker e MIT do app/subpath/callbacks; rede simulada, sem email/hosting. Workflow manual com SHAs executado; esta linha descreve os ensaios com provedores simulados |
 | Regressão privada A26 | Quatro aprovados; dez cenários ancorados nas fontes | Não é avaliação semântica completa |
 | Migração privada | 57 arquivos brutos/109 registros curados; retry sem duplicar | Staging/destino locais; sem virada/importação hospedada |
 | Recuperação privada | Cliente MCP novo recuperou 109 registros com fontes e texto bruto | Dados reais privados; identidade/transportes locais sintéticos |
 | Backup/restore | 14 tabelas/binários/RLS/grants conferidos; dump de 1.190.181 bytes | Banco novo exclusivo; chaves do cofre têm backup separado |
 | Moodle real fixado | Conta/instância reais, 16 funções permitidas; arquivo de 22.077 bytes | Somente leitura; IP remoto e segundo Moodle não comprovados |
 | Material/SDK Moodle real | JPEG de 52.017 bytes preservado, retry/id/hash/isolamento; credencial de prova revogada | Sem OCR; renovação real e PDF obtido do Moodle pelo cliente pendentes |
-| Supabase hospedado | Oito hashes canônicos; RLS ativo/forçado, dois donos sintéticos e rollback aprovados | Zero usuários/contextos ao concluir; claims sintéticos, não Auth/MCP real; duas migrations novas locais |
-| Skill/manifesto | Validador aprovado; schemas oficiais conferidos | Plugin não instalado/chamado em conversa real |
+| Supabase hospedado | Onze hashes canônicos; RLS ativo/forçado, dois donos e rollback aprovados; 32 verificações HTTPS/Auth/OAuth/MCP nativos sem falhas/skips | Identidades sintéticas; nenhuma importação privada hospedada. Contas/dados de teste removidos por IDs/guardas, titular preservado |
+| UI hospedada | PDF sintético extraído e gravado em 390×844 e 1280×900; consentimento real/PKCE no Chrome com usuário sintético; zero violações CSP, capturas inspecionadas | Rede/provedor reais; arquivo sintético. Smartphone e material acadêmico hospedado pendentes |
+| Titular/OAuth pessoal | E-mail confirmado, sessão e consentimento humanos; AraHub conectado ao titular no ChatGPT | Cliente pessoal com callback exato, apenas identidade/e-mail/perfil; nova conversa consultou contextos/coverage, sem registros ou sincronização |
+| Skill/manifesto | Validador aprovado; schemas oficiais conferidos | Template genérico; instalação pessoal e consulta em nova conversa comprovadas separadamente |
 | Git/exclusões/licenças | 121 arquivos indexados, zero achados heurísticos; revisão manual/atribuições AraLearn e dependências feitas; diff sem erros de whitespace | Scan não equivale a auditoria completa |
 
-O projeto remoto AraHub Free existe, com schema anterior instalado. Aplicação, Pages, OAuth Google, cron, escritas acadêmicas e APIs faturadas não foram ativados. O usuário concluiu login CLI protegido: home exclusivo, keyring global/telemetria desativados; projeto e hashes reconferidos por leitura. Login não amplia o lote de escrita autorizado. Config diff/Auth foram lidos sem alteração: não executar config push global, pois modificaria valores alheios ao lote (incluindo MFA).
+O projeto remoto AraHub Free tem onze migrations e função implantada; Pages está publicado. OAuth Google, cron, escritas acadêmicas e APIs faturadas não foram ativados. O usuário concluiu login CLI protegido: home exclusivo, keyring global/telemetria desativados; projeto e hashes reconferidos por leitura. Login não amplia o lote de escrita autorizado. Auth recebeu somente o PATCH pontual aprovado. Não executar config push global: ele modificaria valores alheios ao lote (incluindo MFA).
 
 O design do AraLearn foi auditado e copiado somente por leitura de snapshot MIT identificado em THIRD_PARTY_NOTICES. Nenhuma escrita em projetos irmãos foi executada. O estado vivo do irmão pode conter trabalho independente: não reverter nem incorporar alterações sem auditar a fonte necessária.
 

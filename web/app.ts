@@ -481,12 +481,17 @@ async function render() {
 }
 async function renderActions(connections: { id: string; label: string }[]) {
   const list = el("action-list");
-  list.replaceChildren();
   el("actions-panel").hidden = !cfg.canApproveActions || !token;
-  if (!cfg.canApproveActions || !token) return;
+  if (!cfg.canApproveActions || !token) {
+    list.replaceChildren();
+    return;
+  }
   const sessionToken = token;
   const actions = await api("/api/actions");
   if (token !== sessionToken) return;
+  // Initial session recovery and SIGNED_IN can render concurrently. Replace the
+  // list only when the response is ready so both do not append the same content.
+  list.replaceChildren();
   if (!actions.length) {
     const note = document.createElement("p");
     note.textContent = "Nenhuma alteração preparada para revisar.";

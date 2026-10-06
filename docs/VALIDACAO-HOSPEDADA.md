@@ -4,6 +4,14 @@ Data: 2026-10-05. Script genérico `scripts/validate_hosted.ts`. Comprova o alvo
 hospedado com **sessões reais do Supabase Auth** e o **cliente MCP SDK** existente.
 Não substitui a matriz de aceite: registra o que foi executado, com quais limites.
 
+Executado em 2026-10-06: **32 pass, 0 fail, 0 skip**, sessões e OAuth reais
+de dois usuários temporários com dados sintéticos. Discovery HTTPS, MCP SDK,
+idempotência, leitura cruzada/busca/exportação e revogação aprovados.
+Evidência privada em `.private/evidence/hosted-3d29dd39-053f-4add-b561-56c8fe1931b9.json`.
+UI/PDF hospedados: dois viewports, rede real, texto gravado e capturas inspecionadas;
+`.private/evidence/hosted-ui-pdf-result.json`. Não comprova conta acadêmica,
+consentimento humano, conversa ChatGPT nem smartphone físico.
+
 ## Princípios
 
 - Não cria nem apaga usuários, não gera JWT sintético e não executa escrita
@@ -97,6 +105,13 @@ Se o encerramento automático não estiver disponível no alvo:
 4. Registre os status HTTP como evidência privada.
 
 ## Limites conhecidos
+
+Em 2026-10-06, o consentimento foi operado na interface hospedada com identidade
+sintética, autorização nativa e troca PKCE/callback vinculados, sem rede simulada.
+Captura de 390×844 inspecionada. A conta titular confirmou seu e-mail e concedeu
+consentimento no cliente pessoal ChatGPT; a conexão foi reconhecida pelo ChatGPT.
+Cliente temporário, duas contas sintéticas e seus dados/sessões foram removidos
+por limpeza dirigida com guardas; nenhuma memória privada foi importada.
 
 - A prova cobre o alvo HTTPS real, Auth real, MCP real e isolamento por dois
   donos. Não cobre escrita acadêmica, provedores Moodle/Google, cron nem
