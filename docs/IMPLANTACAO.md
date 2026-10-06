@@ -1,8 +1,8 @@
 # Gate de implantação
 
-O projeto **AraHub** foi criado no plano Free, em São Paulo, na nova conta autorizada. Oito migrations foram aplicadas pelo editor SQL autenticado, com histórico compatível com o CLI e hashes conferidos após normalização CRLF/LF. RLS ativo/forçado e isolamento SQL com dois donos sintéticos foram verificados; o rollback deixou zero usuários e contextos de aplicação. Alvo/conta e evidências ficam em `.private/cloud/`.
+O projeto **AraHub** está implantado no plano Free, em São Paulo, na nova conta autorizada. Onze migrations e hashes canônicos reconciliados; RLS ativo/forçado e dois donos verificados. Auth/OAuth/PKCE/MCP SDK hospedados passaram por 32 verificações; PDF e consentimento operados na interface publicada. Conta titular confirmou e-mail/consentimento e consultou contextos em nova conversa ChatGPT. Contas/dados sintéticos foram removidos; alvo/conta e evidências ficam em `.private/cloud/`.
 
-Hosting do backend, app OAuth Google e importação privada não foram autorizados neste lote. A interface pública MIT tem destino fixado em GitHub Pages, com pacote estático preparado localmente e ainda não publicado. `supabase/functions/arahub/index.ts` continua candidato, validado por TypeScript e adaptação HTTP sintética. O projeto criado e a prova SQL não comprovam MCP hospedado, autenticação real de cliente ou virada.
+Backend, cliente pessoal OAuth, código MIT e interface GitHub Pages foram publicados no lote aprovado em 2026-10-05. O app Google, importação privada e recorrência permanecem fora daquele lote. Ver [lote de hospedagem](LOTE-IMPLANTACAO.md), [validação](VALIDACAO-HOSPEDADA.md) e [lote de importação privada](LOTE-IMPORTACAO.md). A implantação não comprova virada canônica, integração Google nem uso no smartphone.
 
 ## Pré-requisitos concretos
 

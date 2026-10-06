@@ -24,10 +24,17 @@ export async function importStaging(hub: Hub, actor: Principal, path: string) {
   if (!verified.ok) throw new Error("Staging inválido; importação recusada.");
   const manifest = await readJson<StagingManifest>(`${path}/manifest.json`);
   const connectionId = await stableUuid(`${actor.ownerId}:migration:${manifest.sourceLabel}`);
-  await asOwner(hub.db, actor, async (tx) => {
-    await tx`insert into public.hub_connections(id,owner_id,provider,label,provider_subject,state,capabilities) values(${connectionId},${actor.ownerId},'migration','Memória importada',${manifest.sourceLabel},'connected',${
-      tx.json({ batch: manifest.batchId, commit: manifest.commit, source_read_only: true })
-    }) on conflict(id) do update set capabilities=excluded.capabilities`;
+  // Import runs only through the administrative staging commands. Connection
+  // metadata updates are intentionally unavailable to the authenticated role.
+  // Keep that boundary and bind any retry to this owner and migration source.
+  await hub.db.begin(async (tx) => {
+    const rows =
+      await tx`insert into public.hub_connections(id,owner_id,provider,label,provider_subject,state,capabilities) values(${connectionId},${actor.ownerId},'migration','Memória importada',${manifest.sourceLabel},'connected',${
+        tx.json({ batch: manifest.batchId, commit: manifest.commit, source_read_only: true })
+      }) on conflict(id) do update set capabilities=excluded.capabilities
+    where hub_connections.owner_id=${actor.ownerId} and hub_connections.provider='migration'
+      and hub_connections.provider_subject=${manifest.sourceLabel} returning id`;
+    if (rows.length !== 1) throw new Error("Conexão de migração divergente; importação recusada.");
   });
   const documentMap = new Map<string, string>();
   let files = 0, records = 0, reused = 0;
