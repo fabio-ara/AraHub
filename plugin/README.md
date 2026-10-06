@@ -23,4 +23,7 @@ Compacte somente esses quatro arquivos/diretórios, deixando o recibo de hashes
 fora do ZIP. Atualizar o pacote pessoal e testar a Skill em conversa nova são gates
 distintos de preparar arquivos. A integração inicial encontrou recusa do instrumento
 de upload ao caminho do workspace; o pacote está pronto, mas a atualização não foi
-declarada concluída. Consulte [clientes](../docs/CLIENTES.md).
+declarada concluída naquele ensaio. Depois de corrigir ID e nome técnico contra
+o cadastro real, o envio humano da versão 1.0.3 foi aceito; Skill visível, conexão
+preservada e recuperação em conversa nova comprovadas separadamente.
+Consulte [clientes](../docs/CLIENTES.md).

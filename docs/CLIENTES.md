@@ -39,14 +39,16 @@ de leitura. Nenhuma planilha nativa existe na conta usada: Sheets tem implementa
 e testes sintéticos, sem prova real inventada. A revisão dos dez cenários da memória
 identificou omissão de um marco na cronologia; recuperação dirigida com orientação
 genérica corrigida preservou o marco, os valores e as granularidades temporais.
-Isso não comprova que o novo pacote esteja instalado: o instrumento de upload
-recusou o caminho do workspace. O primeiro envio manual também foi recusado por
+O instrumento de upload recusou o caminho do workspace. O primeiro envio manual também foi recusado por
 usar o ID do plugin no campo de aplicativo. A versão 1.0.2 corrigiu esse campo,
 mas foi recusada por nome técnico diferente do cadastro. A versão 1.0.3 preserva
 nome, apelido e vínculo obrigatório conferidos no cadastro real; quatro testes
-e quatro entradas/hashes ZIP aprovados. O aceite do upload e a ativação
-continuam pendentes. Evidências e pacote
-permanecem privados.
+e quatro entradas/hashes ZIP aprovados. O envio manual 1.0.3 foi aceito: a página
+mostra essa versão, uma Skill e o aplicativo com a conta previamente conectada.
+O aceite do pacote e seu uso efetivo em conversa nova têm provas separadas em
+STATUS. Uma conversa nova com a Skill instalada recuperou os dois cenários
+afetados sem repetir sua orientação no prompt; manteve os marcos, a precisão
+das datas e as distinções do trabalho coletivo. Evidências e pacote permanecem privados.
 
 No celular, é necessário testar o cliente real: conversa nova usando AraHub,
 registro de um delta interno de teste em contexto separado e recuperação posterior
