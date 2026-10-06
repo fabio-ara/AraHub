@@ -1,12 +1,18 @@
 // Bind generic skills to an already registered personal MCP app; no service mutation.
 export async function preparePersonalPlugin(input: {
-  registeredPluginId: string;
+  registeredAppId: string;
   version: string;
   website: string;
   privacy: string;
 }) {
-  if (!/^plugin_asdk_app_[0-9a-f]{32}$/.test(input.registeredPluginId)) {
-    throw new Error("Use o ID técnico do plugin MCP já registrado, sem credenciais.");
+  if (
+    !/^(?:asdk_app_|connector_|templated_apps_)[A-Za-z0-9][A-Za-z0-9_-]*$/.test(
+      input.registeredAppId,
+    )
+  ) {
+    throw new Error(
+      "Use o ID do aplicativo MCP registrado (asdk_app_, connector_ ou templated_apps_), não o ID plugin_ da página.",
+    );
   }
   if (!/^\d+\.\d+\.\d+$/.test(input.version)) throw new Error("Versão inválida.");
   for (const value of [input.website, input.privacy]) {
@@ -45,7 +51,7 @@ export async function preparePersonalPlugin(input: {
     ["plugin.json", JSON.stringify(manifest, null, 2) + "\n"],
     [
       ".app.json",
-      JSON.stringify({ apps: { arahub: { id: input.registeredPluginId } } }, null, 2) + "\n",
+      JSON.stringify({ apps: { arahub: { id: input.registeredAppId } } }, null, 2) + "\n",
     ],
     [
       "skills/academic-memory/SKILL.md",
@@ -79,11 +85,11 @@ export async function preparePersonalPlugin(input: {
 if (import.meta.main) {
   if (Deno.args.length !== 4) {
     throw new Error(
-      "Uso: prepare_plugin.ts <plugin_asdk_app_ID> <versão> <site HTTPS> <privacidade HTTPS>",
+      "Uso: prepare_plugin.ts <app_ID> <versão> <site HTTPS> <privacidade HTTPS>",
     );
   }
-  const [registeredPluginId, version, website, privacy] = Deno.args;
+  const [registeredAppId, version, website, privacy] = Deno.args;
   console.log(
-    JSON.stringify(await preparePersonalPlugin({ registeredPluginId, version, website, privacy })),
+    JSON.stringify(await preparePersonalPlugin({ registeredAppId, version, website, privacy })),
   );
 }

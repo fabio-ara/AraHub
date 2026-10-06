@@ -23,6 +23,9 @@ conforme o [formato oficial](https://developers.openai.com/plugins/build/plugins
 `deno task plugin:prepare` gera somente manifest, ligação, Skill e licença em
 `.private/deploy/`, com recibo de hashes fora dos arquivos distribuídos. IDs de
 contas/instalação ficam na cópia privada; o repositório distribui o template.
+O vínculo usa o ID do aplicativo registrado, confirmado no conector:
+`asdk_app_`, `connector_` ou `templated_apps_`. O ID `plugin_...` da página não
+é aceito nesse campo. O gerador recusa esse erro antes de preparar arquivos.
 Não alterar configuração global de clientes, reiniciar o aplicativo ou publicar
 o plugin em catálogo/workspace por inferência. Não remover a conexão existente
 para tentar instalar a Skill.
@@ -34,8 +37,11 @@ e testes sintéticos, sem prova real inventada. A revisão dos dez cenários da 
 identificou omissão de um marco na cronologia; recuperação dirigida com orientação
 genérica corrigida preservou o marco, os valores e as granularidades temporais.
 Isso não comprova que o novo pacote esteja instalado: o instrumento de upload
-recusou o caminho do workspace, e a atualização pessoal aguarda envio autorizado
-pela interface. Evidências e pacote permanecem privados.
+recusou o caminho do workspace. O primeiro envio manual também foi recusado por
+usar o ID do plugin no campo de aplicativo. A versão 1.0.2 corrige esse vínculo,
+confirmado no conector, e tem três testes e quatro entradas/hashes ZIP conferidos;
+o aceite do novo upload e a ativação continuam pendentes. Evidências e pacote
+permanecem privados.
 
 No celular, é necessário testar o cliente real: conversa nova usando AraHub,
 registro de um delta interno de teste em contexto separado e recuperação posterior
