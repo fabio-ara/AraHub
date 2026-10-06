@@ -29,6 +29,7 @@ import {
   resolveRequestedScopes,
 } from "../src/google_connections.ts";
 import { GoogleSync } from "../src/google_sync.ts";
+import { Jobs } from "../src/jobs.ts";
 
 const DB_URL = Deno.env.get("LOCAL_DATABASE_URL") ??
   "postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub";
@@ -47,6 +48,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 // ---------------------------------------------------------------------------
 
 interface Fixture {
+  pauseRead?: () => Promise<void>;
   gmailMessages: JsonObject[];
   gmailListPageSize: number;
   gmailListCalls: number;
@@ -135,6 +137,11 @@ function slicePage<T>(
 
 function providerFetch(fixture: Fixture): FetchLike {
   return (input, init) => {
+    if (fixture.pauseRead) {
+      const pause = fixture.pauseRead;
+      fixture.pauseRead = undefined;
+      return pause().then(() => providerFetch(fixture)(input, init));
+    }
     const url = new URL(String(input));
     const host = url.hostname;
     fixture.providerReads++;
@@ -371,6 +378,59 @@ async function countEntities(db: Db, ownerId: string, kind: string): Promise<num
 // ---------------------------------------------------------------------------
 // Gmail
 // ---------------------------------------------------------------------------
+
+Deno.test("Google sync: processo concorrente não muda descritor nem executa a mesma chave", async () => {
+  const fixture = baseFixture();
+  fixture.gmailMessages = [message("message-1", "900", "Fixture")];
+  fixture.historyId = "900";
+  const env = await makeEnv(fixture);
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => release = resolve);
+  let entered!: () => void;
+  const reading = new Promise<void>((resolve) => entered = resolve);
+  let running: Promise<unknown> | undefined;
+  try {
+    const p = await newPrincipal(env.db);
+    const connectionId = await authorize(env, p, { scopes: ["gmail_read"] });
+    fixture.pauseRead = async () => {
+      entered();
+      await blocked;
+    };
+    running = new GoogleSync(env.hub, env.service).gmail(p, connectionId, {
+      query: "label:fixture",
+    });
+    await reading;
+    const jobs = await new Jobs(env.db).list(p);
+    const active = jobs.find((job) => job.state === "running")!;
+    const before = (await new GoogleSync(env.hub, env.service).state(p, connectionId)).states;
+    await assert.rejects(
+      new GoogleSync(env.hub, env.service).gmail(p, connectionId, {
+        query: "label:fixture",
+        rebuild: true,
+      }),
+      (e: unknown) => e instanceof HubError && e.code === "sync_busy",
+    );
+    const queued = await new Jobs(env.db).enqueue(p, connectionId, active.kind);
+    assert.deepEqual(await new GoogleSync(env.hub, env.service).run(p, queued.id), {
+      state: "idle",
+    });
+    assert.deepEqual(
+      (await new GoogleSync(env.hub, env.service).state(p, connectionId)).states,
+      before,
+    );
+    release();
+    const complete = await running as { summary: { coverage: string } };
+    assert.equal(complete.summary.coverage, "complete");
+    const resumed = await new GoogleSync(env.hub, env.service).run(p, queued.id);
+    assert.ok("summary" in resumed);
+    assert.equal(resumed.summary.coverage, "complete");
+    assert.equal(await countEntities(env.db, p.ownerId, "gmail_message"), 1);
+  } finally {
+    release();
+    await running?.catch(() => {});
+    await env.db.end();
+  }
+});
 
 Deno.test("Gmail: consulta dirigida, history incremental e reconstrucao apos expiracao", async () => {
   const fixture = baseFixture();

@@ -24,7 +24,7 @@
  * consentimento ou alteracao de projetos irmaos.
  */
 
-import { asOwner } from "./db.ts";
+import { asOwner, withJobLease } from "./db.ts";
 import { Hub } from "./domain.ts";
 import { Jobs } from "./jobs.ts";
 import { type Coverage, HubError, type Principal } from "./contracts.ts";
@@ -400,6 +400,7 @@ export class GoogleSync {
     if (!parsed) throw new HubError("invalid_job", "Lote nao e de sincronizacao Google.", 400);
     const job = await this.jobs.claim(p, jobId);
     if (!job) return { state: "idle" };
+    p = withJobLease(p, job.id, job.attempts);
     try {
       switch (parsed.syncKind) {
         case "gmail":
@@ -410,6 +411,7 @@ export class GoogleSync {
           return await this.#runDrive(p, job, parsed);
       }
     } catch (error) {
+      if (error instanceof HubError && error.code === "job_conflict") throw error;
       return await this.#finishError(p, job, parsed, error);
     }
   }
@@ -457,14 +459,36 @@ export class GoogleSync {
     await this.#connection(p, connectionId);
     const externalId = GOOGLE_SYNC_JOB_PREFIX +
       await syncKey(syncKind, descriptor);
-    const prior = (await this.#readState(p, connectionId, externalId))?.state ?? {};
-    await this.#persistState(p, connectionId, externalId, {
-      ...prior,
-      sync_kind: syncKind,
-      descriptor,
-      limits: options.limits,
-      rebuild_requested: options.rebuild,
-      updated_at: nowIso(),
+    await asOwner(this.hub.db, p, async (tx) => {
+      const scope = "arahub:sync:" + p.ownerId + ":" + connectionId;
+      await tx`select pg_advisory_xact_lock(hashtextextended(${scope},0))`;
+      const active = await tx`select id from public.hub_jobs where owner_id=${p.ownerId}
+        and connection_id=${connectionId} and kind=${externalId} and state='running'
+        and lease_until>clock_timestamp() limit 1`;
+      if (active.length) {
+        throw new HubError(
+          "sync_busy",
+          "Esta sincronização já está em andamento. Retome o lote existente.",
+          409,
+        );
+      }
+      // Read and merge under the same transaction/scope lock; never reset a
+      // running worker's descriptor or checkpoint using an earlier snapshot.
+      const rows = await tx`select state from public.hub_entities where owner_id=${p.ownerId}
+        and connection_id=${connectionId} and kind=${GOOGLE_SYNC_STATE_KIND} and external_id=${externalId}`;
+      const state = {
+        ...(rows[0]?.state ?? {}),
+        sync_kind: syncKind,
+        descriptor,
+        limits: options.limits,
+        rebuild_requested: options.rebuild,
+        updated_at: nowIso(),
+      };
+      await tx`insert into public.hub_entities(owner_id,connection_id,kind,external_id,title,state)
+        values(${p.ownerId},${connectionId},${GOOGLE_SYNC_STATE_KIND},${externalId},${
+        "Google sync " + externalId.slice(GOOGLE_SYNC_JOB_PREFIX.length)
+      },${tx.json(state)})
+        on conflict(owner_id,connection_id,kind,external_id) do update set state=hub_entities.state || excluded.state`;
     });
     return externalId;
   }

@@ -5,8 +5,9 @@
  */
 
 import assert from "node:assert/strict";
-import { createDb } from "../src/db.ts";
+import { asOwner, createDb, withJobLease } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
+import { HubError } from "../src/contracts.ts";
 import { ConnectionService } from "../src/connections.ts";
 import { TokenVault } from "../src/adapters/token_vault.ts";
 import { AUDITED_FUNCTIONS, MoodleAdapter } from "../src/adapters/moodle.ts";
@@ -462,6 +463,275 @@ Deno.test("A30: lote novo apos 5 tentativas retoma o estado duravel", async () =
       [a.ownerId],
     ))[0].n;
     assert.equal(bigPosts, 150);
+  } finally {
+    await db.end();
+  }
+});
+
+/** Grava um checkpoint duravel como o proprio fluxo faz (papel autenticado). */
+async function seedCheckpoint(
+  db: ReturnType<typeof createDb>,
+  owner: { ownerId: string },
+  connectionId: string,
+  state: Record<string, unknown>,
+): Promise<void> {
+  await asOwner(
+    db,
+    owner,
+    (tx) =>
+      tx`insert into public.hub_entities(owner_id,connection_id,kind,external_id,title,state)
+      values(${owner.ownerId},${connectionId},'sync_checkpoint',${
+        "course/" + COURSE_ID
+      },${"seed"},${
+        tx.json(JSON.parse(JSON.stringify(state)))
+      }) on conflict(owner_id,connection_id,kind,external_id) do update set state=excluded.state`,
+  );
+}
+
+// Fixture com mais de 50 foruns: cada forum tem 1 discussao e 1 post. Prova que
+// a lista completa e percorrida ao longo de varias execucoes bounded, sem o
+// antigo corte permanente nos primeiros 50.
+const MANY_FORUMS = 55;
+const manyForumsOverrides: Record<string, (params: URLSearchParams) => unknown> = {
+  mod_forum_get_forums_by_courses: () =>
+    Array.from({ length: MANY_FORUMS }, (_, index) => ({
+      id: 3000 + index,
+      course: COURSE_ID,
+      name: "Forum " + index,
+      cmid: 100 + index,
+    })),
+  mod_forum_get_forum_discussions: (params) => {
+    if (Number(params.get("page") ?? "0") > 0) return { discussions: [], warnings: [] };
+    const forumId = Number(params.get("forumid"));
+    return {
+      discussions: [{ discussion: forumId * 10, name: "Disc " + forumId }],
+      warnings: [],
+    };
+  },
+  mod_forum_get_discussion_posts: (params) => {
+    const discussionId = Number(params.get("discussionid"));
+    return {
+      posts: [{ id: discussionId * 100 + 1, subject: "P", message: "m", userid: 7 }],
+      warnings: [],
+    };
+  },
+};
+
+Deno.test("A18: lista com mais de 50 foruns e percorrida por completo em varias execucoes", async () => {
+  const { db, hub, a, vault } = await setup();
+  try {
+    const connections = new ConnectionService(hub, vault, factory(manyForumsOverrides));
+    const connection = await connections.addMoodle(a, {
+      label: "Muitos foruns",
+      origin: ORIGIN,
+      token: TOKEN,
+    });
+    const { state, summaries } = await driveToCompletion(hub, connections, a, connection.id);
+    assert.equal(state, "complete");
+    assert.ok(summaries.length > 1, "a travessia precisou de mais de uma execucao");
+    const forums = (await db.unsafe(
+      "select count(*)::int as n from public.hub_entities where owner_id=$1 and kind='forum'",
+      [a.ownerId],
+    ))[0].n;
+    assert.equal(forums, MANY_FORUMS);
+    const beyond = (await db.unsafe(
+      "select count(*)::int as n from public.hub_entities where owner_id=$1 and kind='discussion' and state->>'forum_id'='3054'",
+      [a.ownerId],
+    ))[0].n;
+    assert.equal(beyond, 1, "o 55o forum, alem do antigo corte de 50, foi percorrido");
+    const posts = (await db.unsafe(
+      "select count(*)::int as n from public.hub_entities where owner_id=$1 and kind='post'",
+      [a.ownerId],
+    ))[0].n;
+    assert.equal(posts, MANY_FORUMS);
+    assert.ok(
+      summaries.every((s) => s.gaps.every((gap) => gap.stage !== "forums")),
+      "nenhuma execucao reportou lacuna de foruns",
+    );
+    const cp = (await db.unsafe(
+      "select state from public.hub_entities where owner_id=$1 and kind='sync_checkpoint'",
+      [a.ownerId],
+    ))[0];
+    assert.equal(cp.state.completed, true);
+  } finally {
+    await db.end();
+  }
+});
+
+// Fixture com paginas de discussoes bem alem do antigo teto de 50 (a pagina 50
+// devolve perpage cheio, logo ha_more=true; a 51 fecha). O ponto de partida e um
+// checkpoint duravel em discussion_page=50.
+const deepPageOverrides: Record<string, (params: URLSearchParams) => unknown> = {
+  mod_forum_get_forum_discussions: (params) => {
+    const page = Number(params.get("page") ?? "0");
+    if (page === 50) {
+      return {
+        discussions: Array.from({ length: 20 }, (_, index) => ({
+          discussion: 7000 + index,
+          name: "D " + (7000 + index),
+        })),
+        warnings: [],
+      };
+    }
+    if (page === 51) return { discussions: [{ discussion: 7050, name: "D 7050" }], warnings: [] };
+    return { discussions: [], warnings: [] };
+  },
+  mod_forum_get_discussion_posts: (params) => {
+    const discussionId = Number(params.get("discussionid"));
+    return {
+      posts: [{ id: discussionId * 10 + 1, subject: "P", message: "m", userid: 7 }],
+      warnings: [],
+    };
+  },
+};
+
+Deno.test("A18: retoma pagina de discussoes alem do antigo teto de 50", async () => {
+  const { db, hub, a, vault } = await setup();
+  try {
+    const connections = new ConnectionService(hub, vault, factory(deepPageOverrides));
+    const connection = await connections.addMoodle(a, {
+      label: "Paginas profundas",
+      origin: ORIGIN,
+      token: TOKEN,
+    });
+    await seedCheckpoint(db, a, connection.id, {
+      version: 1,
+      course_id: COURSE_ID,
+      forum_id: 301,
+      forum_index: 0,
+      discussion_page: 50,
+      discussion_index: 0,
+      discussion_id: null,
+      post_offset: 0,
+      updated_at: new Date().toISOString(),
+    });
+    const { state, summaries } = await driveToCompletion(hub, connections, a, connection.id);
+    assert.equal(state, "complete");
+    assert.equal(summaries[0].checkpoint?.resumed, true);
+    assert.ok(
+      summaries.some((s) => s.checkpoint?.pending === true && s.checkpoint.discussion_page >= 50),
+      "houve janela pendente em pagina >= 50",
+    );
+    const discussions = (await db.unsafe(
+      "select count(*)::int as n from public.hub_entities where owner_id=$1 and kind='discussion'",
+      [a.ownerId],
+    ))[0].n;
+    assert.equal(discussions, 21);
+    const cp = (await db.unsafe(
+      "select state from public.hub_entities where owner_id=$1 and kind='sync_checkpoint'",
+      [a.ownerId],
+    ))[0];
+    assert.equal(cp.state.completed, true);
+  } finally {
+    await db.end();
+  }
+});
+
+// Ponteiro gravado na ordem antiga (o forum B era o indice 1). O provedor agora
+// devolve [B, A]: retomar pela posicao pularia B. A guarda por forum_id recomeca.
+const reorderOverrides: Record<string, (params: URLSearchParams) => unknown> = {
+  mod_forum_get_forums_by_courses: () => [
+    { id: 3002, course: COURSE_ID, name: "Forum B", cmid: 22 },
+    { id: 3001, course: COURSE_ID, name: "Forum A", cmid: 21 },
+  ],
+  mod_forum_get_forum_discussions: (params) => {
+    if (Number(params.get("page") ?? "0") > 0) return { discussions: [], warnings: [] };
+    const forumId = Number(params.get("forumid"));
+    return {
+      discussions: [{ discussion: forumId * 10, name: "Disc " + forumId }],
+      warnings: [],
+    };
+  },
+  mod_forum_get_discussion_posts: (params) => {
+    const discussionId = Number(params.get("discussionid"));
+    return {
+      posts: [{ id: discussionId * 100 + 1, subject: "P", message: "m", userid: 7 }],
+      warnings: [],
+    };
+  },
+};
+
+Deno.test("A18: reordenacao de foruns nao pula forum pendente", async () => {
+  const { db, hub, a, vault } = await setup();
+  try {
+    const connections = new ConnectionService(hub, vault, factory(reorderOverrides));
+    const connection = await connections.addMoodle(a, {
+      label: "Reordenado",
+      origin: ORIGIN,
+      token: TOKEN,
+    });
+    await seedCheckpoint(db, a, connection.id, {
+      version: 1,
+      course_id: COURSE_ID,
+      forum_id: 3002,
+      forum_index: 1,
+      discussion_page: 0,
+      discussion_index: 0,
+      discussion_id: null,
+      post_offset: 0,
+      updated_at: new Date().toISOString(),
+    });
+    const sync = new Sync(hub, connections);
+    const run = await sync.courseContent(a, connection.id, COURSE_ID);
+    assert.equal(run.job.state, "complete");
+    const forums = (await db.unsafe(
+      "select count(*)::int as n from public.hub_entities where owner_id=$1 and kind='forum'",
+      [a.ownerId],
+    ))[0].n;
+    assert.equal(forums, 2);
+    const pendingForum = (await db.unsafe(
+      "select count(*)::int as n from public.hub_entities where owner_id=$1 and kind='discussion' and state->>'discussion_id'='30020'",
+      [a.ownerId],
+    ))[0].n;
+    assert.equal(pendingForum, 1, "o forum pendente nao foi pulado apos a reordenacao");
+  } finally {
+    await db.end();
+  }
+});
+
+// Integracao do lease no caminho do Sync: o escopo ocupado fica idle e a posse
+// perdida nao consegue finalizar o lote (a escrita seguinte e cercada).
+Deno.test("A30: lease serializa o escopo e cerca a posse perdida", async () => {
+  const { db, hub, a, vault } = await setup();
+  try {
+    const connections = new ConnectionService(hub, vault, factory());
+    const connection = await connections.addMoodle(a, {
+      label: "Lease",
+      origin: ORIGIN,
+      token: TOKEN,
+    });
+    const sync = new Sync(hub, connections);
+    const first = await sync.jobs.enqueue(a, connection.id, courseJobKind(COURSE_ID));
+    const second = await sync.jobs.enqueue(a, connection.id, courseJobKind(COURSE_ID));
+    const held = await sync.jobs.claim(a, first.id);
+    assert.ok(held, "posse inicial do escopo");
+
+    // Lote irmao do mesmo escopo nao e reivindicado: o run devolve idle.
+    const busy = await sync.run(a, second.id) as { state?: string };
+    assert.equal(busy.state, "idle");
+
+    // A posse antiga perde o lease; a retomada apos a expiracao vence.
+    const stale = withJobLease(a, held.id, held.attempts);
+    await db`update public.hub_jobs set lease_until=now()-interval '1 minute'
+      where owner_id=${a.ownerId} and id=${held.id}`;
+    const retaken = await sync.jobs.claim(a, first.id);
+    assert.ok(retaken, "retomada apos a expiracao do lease");
+    assert.equal(retaken.attempts, held.attempts + 1);
+
+    // A posse perdida nao finaliza o lote: a escrita e cercada antes do papel.
+    await assert.rejects(
+      sync.jobs.finish(stale, held.id, held.attempts, "complete", null),
+      (error: unknown) => error instanceof HubError && error.code === "job_conflict",
+      "a posse perdida nao pode finalizar o lote",
+    );
+    const done = await sync.jobs.finish(
+      withJobLease(a, retaken.id, retaken.attempts),
+      retaken.id,
+      retaken.attempts,
+      "unavailable",
+      null,
+    ) as { state?: string };
+    assert.equal(done.state, "partial");
   } finally {
     await db.end();
   }

@@ -151,7 +151,7 @@ deno test --allow-net=127.0.0.1:55432 --allow-env tests/google_sync_test.ts
 deno fmt src/google_sync.ts tests/google_sync_test.ts
 ```
 
-15 testes, 15 aprovados, 0 falhas (SQL real no Postgres exclusivo; fixture do provedor com `fetch`
+16 testes, 16 aprovados, 0 falhas (SQL real no Postgres exclusivo; fixture do provedor com `fetch`
 injetado nos endpoints oficiais). Cobrem: consulta dirigida, history incremental, reconstrução após
 expiração do histórico, paginação limitada sem avançar cursor com retomada, `syncToken` inválido
 preservando recorrência/dia inteiro, `startPageToken` + `changes` + reconstrução por cursor
@@ -164,16 +164,17 @@ próprio cobre `state()` projetando `updated_at` do `jsonb` sem usar coluna inex
 precisão do `historyId` acima de 2^53 e a retomada da leitura inicial por `pending_ids` sem relistar a
 página.
 
+A regressão concorrente suspende uma leitura no provedor e tenta, por outro processo,
+reconfigurar/reexecutar a mesma chave. O descritor/checkpoint não muda e o lote irmão fica
+ocioso; após liberar o primeiro, o segundo retoma sem duplicar entidades. `Jobs.claim`
+serializa a reivindicação por transação e `withJobLease` cerca/renova cada transação do
+worker por tentativa ativa. Resposta tardia após expiração/takeover não escreve memória.
+
 ## Limites e pendências
 
 - Fixture de provedor; nenhuma conta Google real conectada. Não é prova de aceitação do tenant real.
 - `history.list` do Gmail e `events.list` do Calendar aceitam `pageToken` opcional no adaptador; a
   retomada continua da página seguinte com o checkpoint durável, sem depender de ampliar `limits`.
 - `changes.list` exige `drive.readonly`; `drive.file` cobre apenas seleção.
-- Recomendação ao root: `Jobs.claim` devolve `id, connection_id, kind, cursor,
-  attempts` (sem
-  `coverage`). A retomada aqui não depende disso (o checkpoint é durável na entidade de estado). Se
-  o root quiser retomada a partir do próprio job, uma extensão aditiva de `Jobs.claim` para também
-  devolver `coverage` é segura e não exige mudança neste módulo.
 - Escritas Google (`docs_write`/`sheets_write`/`slides_write` e afins) não são usadas aqui; leitura
   estrita.

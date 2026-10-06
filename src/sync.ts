@@ -1,5 +1,5 @@
 import { Hub } from "./domain.ts";
-import { asOwner } from "./db.ts";
+import { asOwner, withJobLease } from "./db.ts";
 import { Jobs } from "./jobs.ts";
 import { type Coverage, HubError, type Principal } from "./contracts.ts";
 import type { ConnectionService } from "./connections.ts";
@@ -38,8 +38,6 @@ export function parseCourseJobKind(kind: string): number | null {
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
-/** Limites do lote dirigido. Excedente vira truncamento explicito, nunca perda. */
-export const MAX_SYNC_FORUMS = 50;
 /** Tamanho da janela de discussoes pedida ao provedor (perpage). */
 export const MAX_SYNC_DISCUSSIONS_PER_FORUM = 20;
 /** Tamanho da janela de posts por chamada (offset/limit sobre a lista completa). */
@@ -53,9 +51,12 @@ export const MAX_SYNC_FEEDBACK_ITEMS = 100;
  * numero fixo de chamadas.
  */
 export const MAX_SYNC_FORUM_CALLS_PER_RUN = 40;
-/** Teto de paginas de discussoes por forum (guarda contra has_more patologico). */
-export const MAX_SYNC_DISCUSSION_PAGES_PER_FORUM = 50;
-/** Kind privado do checkpoint duravel de travessia (owner + conexao + curso). */
+/**
+ * Kind privado do checkpoint duravel de travessia (owner + conexao + curso).
+ * Nao existe corte permanente de foruns nem teto de paginas por forum: a lista
+ * completa do provedor entra na travessia e o orcamento por execucao limita
+ * cada passo; a janela seguinte fica no checkpoint.
+ */
 export const SYNC_CHECKPOINT_KIND = "sync_checkpoint";
 
 export interface SyncGap {
@@ -77,6 +78,7 @@ export interface SyncCourseSummary {
   readonly checkpoint?: {
     readonly resumed: boolean;
     readonly pending: boolean;
+    readonly forum_id: number | null;
     readonly forum_index: number;
     readonly discussion_page: number;
     readonly discussion_index: number;
@@ -99,7 +101,11 @@ export interface SyncRunResult {
 }
 
 export interface SyncOptions {
-  /** Orcamento de chamadas da fase de foruns por execucao. Padrao 40. */
+  /**
+   * Orcamento de chamadas da fase de foruns por execucao. Padrao 40. Minimo 2:
+   * com 1 o passo gastaria tudo na pagina de discussoes e nunca avancaria uma
+   * discussao, entao valores menores sao elevados ao padrao.
+   */
   readonly forumCallBudget?: number;
 }
 
@@ -107,6 +113,7 @@ export interface SyncOptions {
 interface ForumCheckpoint {
   readonly version: number;
   readonly course_id: number;
+  readonly forum_id: number | null;
   readonly forum_index: number;
   readonly discussion_page: number;
   readonly discussion_index: number;
@@ -217,7 +224,7 @@ export class Sync {
   ) {
     this.jobs = new Jobs(hub.db);
     const requested = options.forumCallBudget ?? MAX_SYNC_FORUM_CALLS_PER_RUN;
-    this.forumCallBudget = Number.isSafeInteger(requested) && requested > 0
+    this.forumCallBudget = Number.isSafeInteger(requested) && requested >= 2
       ? requested
       : MAX_SYNC_FORUM_CALLS_PER_RUN;
   }
@@ -257,6 +264,10 @@ export class Sync {
     if (!job) return { state: "idle" };
     // A queued job may run before the newly requested one; its receipt makes this explicit.
     const directed = expectedId === undefined || expectedId === job.id;
+    // Vincula as escritas ao lease ativo deste lote: um lease perdido nega a
+    // escrita seguinte (job_conflict) em vez de gravar sob a posse de outro
+    // processo que ja reivindicou o mesmo escopo.
+    p = withJobLease(p, job.id, job.attempts);
     try {
       if (job.kind === "moodle_courses") {
         return await this.runCoursesJob(p, job, directed);
@@ -272,7 +283,15 @@ export class Sync {
         >,
         directed,
       };
-    } catch {
+    } catch (error) {
+      // Recibo obsoleto: o lote ja mudou de dono. Propaga sem finalizar para
+      // nao sobrescrever o estado do lote que agora detem o lease.
+      if (
+        error instanceof HubError &&
+        (error.code === "job_conflict" || error.code === "expired")
+      ) {
+        throw error;
+      }
       return {
         job: await this.jobs.finish(p, job.id, job.attempts, "unavailable" as Coverage, null, {
           reason: "A fonte nao pode ser atualizada. A memoria foi preservada.",
@@ -376,6 +395,7 @@ export class Sync {
     return {
       version: 1,
       course_id: courseId,
+      forum_id: numericId(state.forum_id),
       forum_index: count(state.forum_index),
       discussion_page: count(state.discussion_page),
       discussion_index: count(state.discussion_index),
@@ -728,9 +748,12 @@ export class Sync {
 
     const forums = await moodle.getForums([courseId]);
     note("forums", forums);
-    const forumRecords = (forums.data ?? []).slice(0, MAX_SYNC_FORUMS);
-    if ((forums.data ?? []).length > MAX_SYNC_FORUMS) markTruncated("forums");
-    const forumIds = await persistContent("forum", "forum", forumRecords, forums);
+    // Sem corte permanente: a lista completa do provedor entra na travessia. O
+    // orcamento por execucao limita quantos foruns cada execucao alcanca; a
+    // lista nunca e recortada em 50, entao os foruns alem do 50o sao
+    // persistidos e percorridos ao longo das retomadas.
+    const forumRecords = forums.data ?? [];
+    const forumIds = new Map<string, string>();
 
     // Foruns -> discussoes -> posts.
     //
@@ -750,6 +773,21 @@ export class Sync {
     let discussionIndex = checkpoint?.discussion_index ?? 0;
     let discussionId = checkpoint?.discussion_id ?? null;
     let postOffset = checkpoint?.post_offset ?? 0;
+    // Guarda de reordenacao: se a ordem do provedor mudou em relacao ao ponto
+    // salvo, a posicao nao prova que os foruns anteriores ja foram percorridos.
+    // Recomeca a travessia (upsert/observacao sao idempotentes) em vez de pular.
+    if (checkpoint?.forum_id != null) {
+      const found = forumRecords.findIndex((record) =>
+        numericId(record.id) === checkpoint.forum_id
+      );
+      if (found !== checkpoint.forum_index) {
+        forumIndex = 0;
+        discussionPage = 0;
+        discussionIndex = 0;
+        discussionId = null;
+        postOffset = 0;
+      }
+    }
     if (forumIndex < 0 || forumIndex >= forumRecords.length) {
       forumIndex = 0;
       discussionPage = 0;
@@ -781,6 +819,15 @@ export class Sync {
         postOffset = 0;
         pageCache = null;
         continue;
+      }
+
+      // Persiste o forum apenas quando a travessia o alcanca; assim o trabalho
+      // por execucao fica limitado pelo orcamento, sem corte em 50 foruns.
+      let forumEntityId = forumIds.get(String(forumId));
+      if (forumEntityId === undefined) {
+        const persisted = await persistContent("forum", "forum", [forum], forums);
+        forumEntityId = persisted.get(String(forumId));
+        if (forumEntityId !== undefined) forumIds.set(String(forumId), forumEntityId);
       }
 
       if (
@@ -816,10 +863,9 @@ export class Sync {
 
       if (discussionIndex >= pageCache.records.length) {
         if (pageCache.hasMore) {
-          if (discussionPage + 1 >= MAX_SYNC_DISCUSSION_PAGES_PER_FORUM) {
-            stoppedStage = "discussions_pages";
-            break;
-          }
+          // Sem teto de paginas por forum: cada busca consome o orcamento da
+          // execucao, entao um has_more patologico fica limitado por execucao
+          // e a pagina seguinte e retomada pelo checkpoint.
           discussionPage++;
           discussionIndex = 0;
           discussionId = null;
@@ -844,7 +890,6 @@ export class Sync {
       }
       discussionId = currentId;
       const discussionLocator = courseLocator + "/forum/" + forumId + "/discussion/" + currentId;
-      const forumEntityId = forumIds.get(String(forumId));
 
       // O upsert e idempotente: em retomada (postOffset>0) recupera o id da
       // discussao sem recontar nem reobservar a entidade.
@@ -967,6 +1012,9 @@ export class Sync {
       discussionIndex++;
     }
 
+    const resumeForumId = forumIndex < forumRecords.length
+      ? numericId(forumRecords[forumIndex].id)
+      : null;
     if (forumIndex >= forumRecords.length) {
       if (checkpointResumed) await this.completeCheckpoint(p, connectionId, courseId);
       checkpointPending = false;
@@ -974,6 +1022,7 @@ export class Sync {
       await this.saveCheckpoint(p, connectionId, {
         version: 1,
         course_id: courseId,
+        forum_id: resumeForumId,
         forum_index: forumIndex,
         discussion_page: discussionPage,
         discussion_index: discussionIndex,
@@ -1160,8 +1209,6 @@ export class Sync {
       truncated,
       observed_at: observedAt,
       bounded: {
-        forums: MAX_SYNC_FORUMS,
-        discussion_pages_per_forum: MAX_SYNC_DISCUSSION_PAGES_PER_FORUM,
         discussions_per_page: Math.min(MAX_SYNC_DISCUSSIONS_PER_FORUM, 100),
         posts_per_page: MAX_SYNC_POSTS_PER_DISCUSSION,
         forum_calls_per_run: this.forumCallBudget,
@@ -1171,6 +1218,7 @@ export class Sync {
       checkpoint: {
         resumed: checkpointResumed,
         pending: checkpointPending,
+        forum_id: resumeForumId,
         forum_index: forumIndex,
         discussion_page: discussionPage,
         discussion_index: discussionIndex,

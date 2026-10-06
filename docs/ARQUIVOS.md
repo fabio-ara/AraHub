@@ -93,13 +93,15 @@ terminável**:
   8 s foi interrompido em ~166 ms);
 - só então `hard_timeout` é `true` e `execution` é `isolated_worker`.
 
-**Sem worker terminável** (ex.: runtime Edge), a extração é **recusada** por
-padrão com `worker_unavailable`, `execution:"main_thread"` e
-`hard_timeout:false`. Um chamador de runtime local, sob limite externo
-(subprocesso ou timeout de servidor), pode optar por
-`allowMainThreadFallback: true`; nesse modo o resultado permanece com
-`hard_timeout:false` e os limites incluem o aviso de que o tempo é
-cooperativo. Essa opção **não deve** ser usada na rota hospedada.
+**Sem worker terminável** (ex.: runtime de usuário do Supabase Edge
+hospedado, que não expõe a Web Worker API), a extração é **recusada** por
+padrão com `worker_unavailable`, `execution:"main_thread"`,
+`hard_timeout:false` e a nota `HOSTED_UNAVAILABLE_NOTE` no resultado. Um
+chamador de runtime local, sob limite externo (subprocesso ou timeout de
+servidor), pode optar por `allowMainThreadFallback: true`; nesse modo o
+resultado permanece com `hard_timeout:false` e os limites incluem o aviso de
+que o tempo é cooperativo. Essa opção **não deve** ser usada na rota
+hospedada; a recusa e a rota suportada estão em "Disponibilidade hospedada".
 
 ## Dependência e runtime
 
@@ -179,17 +181,78 @@ chama `extractPdfText` e imprime o JSON. O isolamento já está dentro da funç�
 então o CLI não precisa criar worker próprio; para um limite externo adicional,
 execute o CLI sob um subprocesso com timeout e kill.
 
+## Disponibilidade hospedada (Supabase Edge)
+
+Determinação: **não existe** caminho hospedado suportado que extraia PDF dentro
+da Edge Function do Supabase sem destruir a garantia de isolamento. A extração
+remota é recusada (`worker_unavailable`) e a rota usada é local/cliente.
+
+Evidência primária (consultada em 2026-10-05; versão markdown `.../limits.md`):
+
+- Supabase, *Limits* (`https://supabase.com/docs/guides/functions/limits`):
+  "Web Worker API (or Node `vm` API) are not available."; "Maximum CPU Time:
+  2s"; "Maximum Memory: 256MB"; "Maximum Duration (Wall clock limit) ... Free
+  plan: 150s". Sem Web Worker API no runtime de usuário não há worker
+  terminável.
+- Supabase `edge-runtime`, `ext/runtime/js/namespaces.js`
+  (`https://github.com/supabase/edge-runtime/blob/main/ext/runtime/js/namespaces.js`):
+  o `EdgeRuntime` do runtime de usuário expõe apenas `waitUntil`; `userWorkers`
+  só é montado no caso `"main"`. O teste do próprio repositório
+  (`crates/base/src/runtime/mod.rs`, `test_user_runtime_creation`) fixa
+  `allowed_apis = ["waitUntil"]`.
+- `types/global.d.ts` do mesmo repositório: `EdgeRuntime.userWorkers` é o
+  `UserWorker.create(...)` do runtime principal, com `memoryLimitMb`,
+  `workerTimeoutMs` e `cpuTimeHardLimitMs` — é a API do *embarcador/ingress*
+  que cria o sandbox da função, não algo chamável pelo código da função.
+- README do `edge-runtime`: separa *main runtime* (sem limites, acesso a
+  variáveis) e *user runtime* (limites obrigatórios de memória e tempo); a
+  função do AraHub roda no segundo.
+
+Consequência: nem `EdgeRuntime.userWorkers` (inacessível à função) nem os
+limites do provedor servem como isolamento terminável. Os limites do provedor
+(CPU/memória/relógio) encerram o **isolate inteiro** pelo supervisor, sem
+devolver resultado controlado; não podem ser promovidos a `hard_timeout:true`
+nem usados para "limitar" um parse hostil na thread principal. Habilitar a
+extração na thread principal por variável de ambiente (alegando limite externo)
+é o que `HOSTED_UNAVAILABLE_NOTE` proíbe e a prova de regressão barra.
+
+Rota suportada para PDF remoto:
+
+1. **Local (padrão hoje).** `extractPdf` roda no processo local com worker
+   terminável, sobre os bytes preservados (RLS por dono), e grava a memória
+   (ver "Integração com Materials/MCP"). É o caminho usado pelos testes de
+   `materials`/MCP.
+2. **Cliente (recomendada, pendente).** A UI é um navegador, onde a Web Worker
+   API existe: o PDF pode ser extraído no cliente com um worker real e o texto
+   enviado de volta. Bloqueio concreto: a implementação vive em `web/` e exige
+   um caminho de escrita no backend (autoridade/consentimento), fora desta
+   entrega; além disso, o worker atual resolve o módulo por
+   `new URL("./pdf_text.ts", import.meta.url)`, que não existe num bundle de
+   navegador — o cliente precisa do próprio carregador de worker.
+
+Evidência honesta: os testes locais provam `execution:"isolated_worker"` e
+`hard_timeout:true`; a simulação do runtime hospedado (sem `Worker` e com
+`EdgeRuntime` só com `waitUntil`) prova a recusa sem executar o PDF. **Não** foi
+executado na Edge hospedada: o projeto remoto não tem função implantada e a
+implantar exige autorização específica; não há, portanto, prova hospedada.
+
 ## Provas executadas
 
 - `deno check src/pdf_text.ts tests/pdf_text_test.ts` — sem erros.
-- `deno test tests/pdf_text_test.ts` — 7 aprovados, 0 falhas. Fixture sintética
+- `deno test --allow-env --allow-read tests/pdf_text_test.ts` — 9 aprovados,
+  0 falhas. Fixture sintética
   de 3 páginas reais (texto Latin-1 com acentos, texto não latino por nomes de
   glifos e página só com imagem), gerada no próprio teste e **parseada pelo
   pdf.js**: `coverage:complete`, unicode `αβΩАéñ` extraído, página 3 com
   `text_absent` e `image_count:1`. Cobre ainda: paginação/truncamento,
   inválido/vazio/grande/criptografado, PDF hostil com `/OpenAction`, `/AA` e
   `/Names /JavaScript` (nada executado), timeout e abort, e a recusa
-  `worker_unavailable` com o opt-in `allowMainThreadFallback`.
+  `worker_unavailable` com o opt-in `allowMainThreadFallback`. As duas provas
+  de rota hospedada cobrem: recusa sem `Worker` sem executar PDF hostil,
+  variáveis de ambiente (incl. `SUPABASE_URL`/`DENO_DEPLOYMENT_ID`) não ligam a
+  thread principal, `Worker` que lança no construtor é tratado como
+  indisponível e `Worker` que erra ao iniciar devolve
+  `pdf_runtime_unavailable`/`execution:"not_started"` sem `hard_timeout` falso.
 - PDF real de consumidor: página gerada pelo Chromium headless isolado
   (Playwright privado, sem perfil de usuário, sem download de imagem) produziu um
   PDF de 27 920 bytes, 2 páginas, com fontes embutidas; `extractPdfText` retornou
@@ -218,7 +281,13 @@ execute o CLI sob um subprocesso com timeout e kill.
 - Ordem de leitura vem do pdf.js; estrutura marcada (tags), colunas e tabelas não
   são preservadas como semântica.
 - cmaps CJK e fontes padrão exóticas não foram validados com PDFs reais.
-- Rota hospedada Edge não suporta a extração; depende do processo local.
-- `deno check` do repositório inteiro falha hoje em `tests/connections_test.ts`
-  (trabalho de sincronização em andamento, fora deste escopo); os arquivos desta
-  entrega passam isoladamente.
+- Rota hospedada **Supabase Edge** não suporta a extração (ver
+  "Disponibilidade hospedada"); depende de runtime local ou do cliente.
+- PDF acadêmico público real, obtido diretamente por HTTP fora da interface:
+  [Attention Is All You Need, arXiv v7](https://arxiv.org/abs/1706.03762v7),
+  2.215.244 bytes e 15 páginas. `scripts/validate_pdf_real.ts` preservou os bytes
+  no Postgres local e operou ferramentas pelo SDK sobre um socket HTTP real:
+  extração inicial de duas páginas, retomada por cliente novo, preenchimento
+  completo, dono distinto negado e hash alterado recusado. Identidade sintética;
+  não é prova de conta Google/Moodle real nem runtime hospedado. O PDF e a
+  evidência permanecem privados e não recebem a licença MIT do código.

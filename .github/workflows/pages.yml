@@ -1,0 +1,49 @@
+name: Interface GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.3
+      - name: Verificar e construir interface
+        run: |
+          deno task web:check
+          deno task web:build
+      - name: Preparar somente os arquivos públicos
+        id: package
+        env:
+          API_BASE: ${{ vars.ARAHUB_API_BASE }}
+          IDENTITY_ORIGIN: ${{ vars.ARAHUB_IDENTITY_ORIGIN }}
+          UI_URL: ${{ vars.ARAHUB_UI_URL }}
+        run: |
+          deno task ui:prepare "$API_BASE" "$IDENTITY_ORIGIN" "$UI_URL" > "$RUNNER_TEMP/arahub-ui-package.json"
+          deno eval 'import {fileURLToPath} from "node:url"; const result=JSON.parse(await Deno.readTextFile(Deno.args[0])); console.log("path="+fileURLToPath(result.directory));' "$RUNNER_TEMP/arahub-ui-package.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ steps.package.outputs.path }}
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deployment

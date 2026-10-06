@@ -50,7 +50,8 @@ const browser = await chromium.launch({ channel: "chrome", headless: true });
 const errors = [], violations = [], receipts = [];
 try {
   for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
-    let otp = 0, exchange = 0, approved = 0, unavailable = false;
+    let otp = 0, exchange = 0, approved = 0, unavailable = false, moodleRequests = 0;
+    const connections = [];
     const context = await browser.newContext({ viewport });
     await context.addInitScript(() =>
       document.addEventListener("securitypolicyviolation", (e) => {
@@ -110,7 +111,27 @@ try {
         });
       }
       if (request.url() === backend + "/api/context") {
-        return reply({ contexts: [], deltas: [], connections: [] });
+        return reply({ contexts: [], deltas: [], connections });
+      }
+      if (request.url() === backend + "/api/connections/moodle") {
+        assert.equal(request.method(), "POST");
+        const data = request.postDataJSON();
+        assert.ok(request.headers().authorization?.startsWith("Bearer "));
+        assert.equal(data.origin, "https://moodle.fixture.invalid");
+        assert.equal(data.token, "hosted-fixture-marker");
+        const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+        if (moodleRequests === 0) {
+          assert.equal(data.connection_id, undefined);
+          connections.push({
+            id,
+            provider: "moodle",
+            label: data.label,
+            origin: data.origin,
+            state: "connected",
+          });
+        } else assert.equal(data.connection_id, id);
+        moodleRequests++;
+        return reply({ id, renewed: moodleRequests > 1 });
       }
       if (url.origin === identity && url.pathname.startsWith("/auth/v1/")) {
         if (url.pathname.endsWith("/otp")) {
@@ -163,7 +184,22 @@ try {
     assert.equal(new URL(page.url()).searchParams.has("code"), false);
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
     await page.locator("#moodle-setup > summary").click();
-    assert.equal(await page.locator("#moodle-token").isVisible(), false);
+    assert.equal(await page.locator("#moodle-token").isVisible(), true);
+    await page.locator("#moodle-label").fill("Moodle de teste");
+    await page.locator("#moodle-origin").fill("https://moodle.fixture.invalid");
+    await page.locator("#moodle-token").fill("hosted-fixture-marker");
+    await page.getByRole("button", { name: "Conectar Moodle", exact: true }).click();
+    await page.getByRole("button", { name: "Renovar acesso", exact: true }).waitFor();
+    assert.equal(await page.locator("#moodle-token").inputValue(), "");
+    await page.getByRole("button", { name: "Renovar acesso", exact: true }).click();
+    assert.equal(await page.locator("#moodle-origin").getAttribute("readonly"), "");
+    await page.locator("#moodle-token").fill("hosted-fixture-marker");
+    await page.getByRole("button", { name: "Renovar Moodle", exact: true }).click();
+    await page.getByText("Acesso Moodle renovado. A identidade e o histórico foram preservados.", {
+      exact: true,
+    }).waitFor();
+    assert.equal(await page.locator("#moodle-token").inputValue(), "");
+    assert.equal(moodleRequests, 2);
     await page.goto(site + "oauth/consent/?authorization_id=fixture-authorization");
     await page.locator("#consent").waitFor({ state: "visible" });
     assert.match(await page.locator("#consent-details").textContent(), /Assistente de teste/);
@@ -190,7 +226,7 @@ try {
       consent: "provider_stub",
       physical_callbacks: true,
       password_hidden: true,
-      moodle_token_hidden: true,
+      moodle_https_connect_renew: moodleRequests === 2,
       prefix: "/AraHub/",
     });
     await context.close();

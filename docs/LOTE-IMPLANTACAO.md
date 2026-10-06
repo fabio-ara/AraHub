@@ -2,6 +2,8 @@
 
 Este documento prepara a autorização específica exigida pelo mandato. Não registra implantação executada.
 
+Alvos concretos conferidos: projeto Supabase AraHub existente em São Paulo na nova conta; repositório candidato público MIT `fabio-ara/AraHub` e interface `https://fabio-ara.github.io/AraHub/`. Código privado, memória, evidências, ZIP e bootstrap continuam excluídos. A matriz exige autorização para criar/enviar o remoto e iniciar hosting; este lote cobre esses dois passos junto do backend, sem importação privada, cron, app Google ou escritas acadêmicas.
+
 Alvo backend: somente o projeto AraHub Free criado na nova conta e na organização Universidade de Lisboa. Função `arahub`, rotas MCP/discovery e APIs autenticadas, sessão verificada, RLS/cofre existentes. Configurar OAuth Server/consentimento e o cliente pessoal no mesmo alvo; conferir claims reais antes de aceitar o cliente. Aplicar migrations novas somente após provas locais e reconciliação do histórico remoto.
 
 Alvo interface: pacote estático público MIT em GitHub Pages, na conta do titular, plano Free, sem domínio pago, cartão, upgrade ou serviços adicionais. Servido no subpath de projeto (`https://<conta>.github.io/AraHub/`). A URL final será conferida e fixada exatamente em UI_ORIGIN, callback, Auth e CORS. A interface contém somente HTML/CSS/JavaScript genéricos MIT e configuração pública; nenhum arquivo privado, código servidor, dump, token ou memória do usuário.
@@ -12,6 +14,10 @@ Orçamento: custo adicional autorizado proposto zero, sujeito à conferência do
 
 Gates antes de enviar: TypeScript/bundle, testes locais pertinentes, instalação limpa, isolamento, revisão do pacote e credenciais, conferência dos destinos e plano. Gates depois: discovery HTTPS, Auth/consentimento real, cliente MCP novo, sessão revogada e dois donos; provas de provedor e smartphone têm evidência própria.
 
-O lote não concede permissão para importar memória privada, criar repositório remoto, ativar recorrência, configurar app Google ou escrever em contas acadêmicas. Esses alvos permanecem na matriz de autorizações. Login/MFA e entrada de credenciais usam superfícies protegidas e participação humana quando necessária, sem segredos no chat.
+Automação preparada: `.github/workflows/pages.yml`, somente `workflow_dispatch`, actions fixadas por SHA, Deno 2.9.3 e permissões Pages/OIDC apenas no job de publicação. As variáveis públicas `ARAHUB_API_BASE`, `ARAHUB_IDENTITY_ORIGIN` e `ARAHUB_UI_URL` alimentam o empacotador; nunca inserir credenciais nessas variáveis. O artifact contém somente o diretório novo de oito assets, sem manifestos/evidências/dumps. O workflow ainda não foi executado no GitHub.
+
+Atualização SQL: `scripts/prepare_cloud_update.ts` confere que o registro remoto é prefixo exato das migrations locais e gera diretório novo com somente as pendentes. A transação trava o registro e reconfere hashes antes de alterar; replay/drift recusados. Registro remoto com oito hashes reconferido pelo CLI após login; lote de duas migrations preparado privadamente e ensaiado em banco local novo. Não usar o bundle inicial para atualização.
+
+O lote proposto inclui criar/enviar o repositório público indicado e hospedar a interface; depende de autorização específica. Não inclui importar memória privada, ativar recorrência, configurar app Google ou escrever em contas acadêmicas. Login/MFA e entrada de credenciais usam superfícies protegidas e participação humana quando necessária, sem segredos no chat.
 
 Distribuição: `LICENSE.txt` acompanha os assets com a licença MIT do AraHub e as atribuições/licenças do AraLearn e das nove dependências fixadas do bundle. O pacote tem oito arquivos; nenhum manifesto privado é distribuído. Código-fonte completo MIT deve ficar no repositório público pretendido, com revisão de índice/histórico antes do envio. O alvo GitHub candidato é o repositório `AraHub` na conta autenticada do titular; conferir inexistência/visibilidade e autorização específica antes da criação. A escolha do provedor e a licença não constituem evidência de publicação executada.

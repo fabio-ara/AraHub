@@ -1,6 +1,13 @@
 import postgres from "postgres";
 import { HubError, type Principal } from "./contracts.ts";
 export type Db = ReturnType<typeof postgres>;
+// Runtime-only capability. Request JSON and JWT claims cannot manufacture this lease.
+const jobLeases = new WeakMap<Principal, { id: string; attempt: number }>();
+export function withJobLease(p: Principal, id: string, attempt: number): Principal {
+  const leased = { ...p };
+  jobLeases.set(leased, { id, attempt });
+  return leased;
+}
 export function createDb(url: string): Db {
   const host = new URL(url).hostname;
   const local = ["127.0.0.1", "localhost", "[::1]"].includes(host);
@@ -26,6 +33,18 @@ export async function asOwner<T>(
     return await db.begin(async (tx) => {
       await tx`select set_config('request.jwt.claim.sub',${principal.ownerId},true)`;
       await tx`select set_config('request.jwt.claims','{}',true)`;
+      const lease = jobLeases.get(principal);
+      if (lease) {
+        // Fence before assuming the Data API role: lock and renew only an active
+        // attempt. A delayed provider response cannot write after takeover.
+        const active =
+          await tx`update public.hub_jobs set lease_until=clock_timestamp()+interval '2 minutes'
+          where owner_id=${principal.ownerId} and id=${lease.id} and attempts=${lease.attempt}
+          and state='running' and lease_until>clock_timestamp() returning id`;
+        if (!active.length) {
+          throw new HubError("job_conflict", "O lote já mudou. Retome a sincronização.", 409);
+        }
+      }
       await tx`set local role authenticated`;
       return await fn(tx);
     }) as T;

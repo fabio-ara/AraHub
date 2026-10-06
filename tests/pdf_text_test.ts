@@ -351,3 +351,116 @@ Deno.test("opções inválidas falham alto em vez de reduzir limites silenciosam
     (error: unknown) => error instanceof HubError,
   );
 });
+
+/**
+ * Simula o runtime de usuário do Supabase Edge hospedado: sem Web Worker API
+ * (Worker indefinido) e com a superfície de usuário (`EdgeRuntime` expondo
+ * apenas `waitUntil`). Nada além disso permite criar isolamento terminável.
+ */
+async function withHostedUserRuntime<T>(run: () => Promise<T>): Promise<T> {
+  const globals = globalThis as unknown as { Worker?: unknown; EdgeRuntime?: unknown };
+  const originalWorker = globals.Worker;
+  const originalEdgeRuntime = globals.EdgeRuntime;
+  globals.Worker = undefined;
+  globals.EdgeRuntime = { waitUntil: () => {} };
+  try {
+    return await run();
+  } finally {
+    globals.Worker = originalWorker;
+    globals.EdgeRuntime = originalEdgeRuntime;
+  }
+}
+
+Deno.test("A05: rota hospedada (Supabase Edge) recusa extração sem executar o PDF e sem isolar por ambiente", async () => {
+  const fixture = buildFixturePdf(2);
+  await withHostedUserRuntime(async () => {
+    const refused = await extractPdfText(fixture);
+    assert.equal(refused.ok, false);
+    assert.equal(refused.error_code, "worker_unavailable");
+    assert.equal(refused.coverage, "unavailable");
+    assert.equal(refused.execution, "main_thread");
+    assert.equal(refused.hard_timeout, false);
+    assert.equal(refused.pages_returned, 0);
+    assert.deepEqual(refused.pages, []);
+    assert.match(refused.errors[0].message, /hospedada/);
+    assert.match(refused.notes.join(" "), /Web Worker API/);
+    assert.match(refused.limits.join(" "), /cooperativo/);
+
+    // PDF hostil permanece dado: recusado sem executar o JavaScript embutido.
+    const hostile = await extractPdfText(buildHostilePdf());
+    assert.equal(hostile.error_code, "worker_unavailable");
+    assert.equal(
+      (globalThis as unknown as Record<string, unknown>).__arahubPdfScript,
+      undefined,
+    );
+
+    // O opt-in de thread principal não pode ser ligado por variável de ambiente.
+    const envKeys = [
+      "SUPABASE_URL",
+      "DENO_DEPLOYMENT_ID",
+      "ARAHUB_PDF_MAIN_THREAD",
+      "EDGE_RUNTIME_WORKER",
+    ];
+    const saved = new Map<string, string | undefined>();
+    for (const key of envKeys) {
+      saved.set(key, Deno.env.get(key));
+      Deno.env.set(key, "1");
+    }
+    try {
+      const stillRefused = await extractPdfText(fixture);
+      assert.equal(stillRefused.error_code, "worker_unavailable");
+      assert.equal(stillRefused.execution, "main_thread");
+      assert.equal(stillRefused.hard_timeout, false);
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) Deno.env.delete(key);
+        else Deno.env.set(key, value);
+      }
+    }
+  });
+});
+
+Deno.test("A05: Worker presente mas inoperante não declara isolamento nem hard_timeout falso", async () => {
+  const bytes = buildFixturePdf(2);
+  const globals = globalThis as unknown as { Worker?: unknown };
+  const originalWorker = globals.Worker;
+
+  class ThrowingWorker {
+    constructor() {
+      throw new Error("workers indisponíveis");
+    }
+  }
+  try {
+    globals.Worker = ThrowingWorker;
+    const refused = await extractPdfText(bytes);
+    assert.equal(refused.ok, false);
+    assert.equal(refused.error_code, "worker_unavailable");
+    assert.equal(refused.execution, "main_thread");
+    assert.equal(refused.hard_timeout, false);
+    assert.deepEqual(refused.pages, []);
+  } finally {
+    globals.Worker = originalWorker;
+  }
+
+  class ErroringWorker {
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    onerror: ((event: { message?: string }) => void) | null = null;
+    terminate() {}
+    postMessage() {
+      queueMicrotask(() => this.onerror?.({ message: "worker stub não iniciou" }));
+    }
+  }
+  try {
+    globals.Worker = ErroringWorker;
+    const failed = await extractPdfText(bytes);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error_code, "pdf_runtime_unavailable");
+    assert.equal(failed.coverage, "unavailable");
+    assert.equal(failed.execution, "not_started");
+    assert.equal(failed.hard_timeout, false);
+    assert.equal(failed.pages_returned, 0);
+    assert.match(failed.errors[0].message, /Worker isolado falhou ao iniciar/);
+  } finally {
+    globals.Worker = originalWorker;
+  }
+});

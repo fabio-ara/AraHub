@@ -8,11 +8,13 @@
  *   maliciosa com CPU síncrona não ultrapassa o limite rígido. Promise.race
  *   sozinha NÃO limitaria isso: no Deno o pdf.js 6 cai no fake worker (mesma
  *   thread), onde o relógio cooperativo é apenas indicativo.
- * - Sem Worker disponível (ex.: runtime Edge), a extração é RECUSADA com
+ * - Sem Worker disponível (ex.: Supabase Edge hospedado, cujo runtime de
+ *   usuário não expõe a Web Worker API), a extração é RECUSADA com
  *   worker_unavailable e hard_timeout:false. Só um chamador de runtime local,
  *   sob limite externo (subprocesso/servidor), deve optar por
  *   allowMainThreadFallback: true; nesse modo hard_timeout é false e o resultado
- *   nunca é declarado completo por acidente.
+ *   nunca é declarado completo por acidente. A determinação de runtime e as
+ *   fontes primárias estão em docs/ARQUIVOS.md.
  *
  * Cobertura:
  * - Sem OCR. Página sem texto extraído não prova ausência de texto: marcamos
@@ -56,6 +58,19 @@ const ISOLATED_NOTE =
   "Isolamento: worker dedicado e terminável; exceder o limite encerra a thread (limite rígido real).";
 const MAIN_THREAD_NOTE =
   "Execução na thread principal (sem worker terminável): o limite de tempo é cooperativo e não limita CPU síncrona; exige limite externo (subprocesso/worker com terminação).";
+/**
+ * Por que a rota hospedada não habilita extração na thread principal:
+ * - O runtime de usuário do Supabase Edge hospedado não expõe a Web Worker
+ *   API; `EdgeRuntime.userWorkers` (criação de user worker terminável, com
+ *   memoryLimitMb/workerTimeoutMs/cpuTimeHardLimitMs) pertence ao runtime
+ *   principal, não ao código da função.
+ * - Os limites do provedor (CPU ~2 s por requisição, 256 MB, 150 s de relógio
+ *   no Free) encerram o isolate inteiro sem devolver resultado controlado; não
+ *   podem ser promovidos a hard_timeout nem substituem a terminação.
+ * Fontes primárias e rota local/cliente em docs/ARQUIVOS.md.
+ */
+const HOSTED_UNAVAILABLE_NOTE =
+  "Rota hospedada (Supabase Edge): Web Worker API indisponível e sem isolamento terminável acessível pelo código da função; os limites do provedor encerram o isolate em vez de devolver resultado controlado. Extraia em runtime local (worker terminável) ou no cliente; não habilite execução na thread principal por variável de ambiente.";
 
 /**
  * Bootstrap do worker isolado. Neutraliza Worker para forçar o pdf.js ao
@@ -364,6 +379,7 @@ function emptyResult(
   coverage: Coverage,
   message: string,
   context: ResultContext,
+  extraNotes: string[] = [],
 ): PdfTextExtraction {
   return {
     kind: "pdf_text_extraction",
@@ -389,7 +405,7 @@ function emptyResult(
     pages_without_text: 0,
     text_truncated: false,
     limits: context.limits,
-    notes: [OCR_NOTE, IMAGE_NOTE],
+    notes: [OCR_NOTE, IMAGE_NOTE, ...extraNotes],
     content_is_untrusted_data: true,
     byte_length: context.byteLength,
     elapsed_ms: Math.round(performance.now() - context.startedAt),
@@ -825,8 +841,9 @@ export async function extractPdfText(
       return emptyResult(
         "worker_unavailable",
         "unavailable",
-        "Extração exige worker terminável, indisponível neste runtime; use allowMainThreadFallback apenas em runtime local sob limite externo.",
+        "Extração exige worker terminável, indisponível neste runtime; a rota hospedada (Supabase Edge) não expõe Web Worker API nem isolamento terminável à função, então a extração remota é recusada. allowMainThreadFallback só vale em runtime local sob limite externo próprio.",
         { ...preflight, execution: "main_thread", limits: [...limits, MAIN_THREAD_NOTE] },
+        [HOSTED_UNAVAILABLE_NOTE],
       );
     }
     const fallback = await extractPdfBytesInThread(input, resolved);

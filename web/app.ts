@@ -4,6 +4,7 @@ import { renderUiIcon } from "./icons.ts";
 const siteBase = new URL("../", import.meta.url).href;
 const route = (path: string) => sitePath(siteBase, path);
 const localCredentialEntry = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+const moodleCredentialEntry = localCredentialEntry || location.protocol === "https:";
 if (window.top !== window.self) {
   document.documentElement.hidden = true;
   throw new Error("Abra o AraHub em sua própria janela para autorizar alterações.");
@@ -103,8 +104,8 @@ function resetMoodleForm() {
   setAction(el("moodle-submit"), "key", "Conectar Moodle");
 }
 el("synthetic-login").hidden = !cfg.synthetic;
-el("moodle-connect-form").hidden = !cfg.canConnectMoodle || !localCredentialEntry;
-el("moodle-protected-note").hidden = localCredentialEntry;
+el("moodle-connect-form").hidden = !cfg.canConnectMoodle || !moodleCredentialEntry;
+el("moodle-protected-note").hidden = moodleCredentialEntry || !cfg.canConnectMoodle;
 el("google-connect-form").hidden = !cfg.canConnectGoogle;
 if (!supabase) {
   el("login-form").hidden = true;
@@ -237,7 +238,7 @@ async function render() {
           }
         });
         entry.append(disconnect);
-        if (cn.provider === "moodle" && cfg.canConnectMoodle && localCredentialEntry) {
+        if (cn.provider === "moodle" && cfg.canConnectMoodle && moodleCredentialEntry) {
           const renew = document.createElement("button");
           renew.className = "secondary";
           setAction(renew, "key", "Renovar acesso");
@@ -594,11 +595,18 @@ await googleCallback();
 
 el("moodle-connect-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (moodleSubmitting) return;
+  if (moodleSubmitting || !token || !cfg.canConnectMoodle || !moodleCredentialEntry) return;
   moodleSubmitting = true;
   const button = el("moodle-submit") as HTMLButtonElement;
   button.disabled = true;
   const secret = el("moodle-token") as HTMLInputElement;
+  const payload = {
+    label: (el("moodle-label") as HTMLInputElement).value,
+    origin: (el("moodle-origin") as HTMLInputElement).value,
+    token: secret.value,
+    ...(renewingMoodle ? { connection_id: renewingMoodle } : {}),
+  };
+  secret.value = "";
   try {
     const response = await fetch(endpoint("/api/connections/moodle"), {
       method: "POST",
@@ -606,12 +614,7 @@ el("moodle-connect-form").addEventListener("submit", async (e) => {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        label: (el("moodle-label") as HTMLInputElement).value,
-        origin: (el("moodle-origin") as HTMLInputElement).value,
-        token: secret.value,
-        ...(renewingMoodle ? { connection_id: renewingMoodle } : {}),
-      }),
+      body: JSON.stringify(payload),
     });
     secret.value = "";
     const result = await response.json();
