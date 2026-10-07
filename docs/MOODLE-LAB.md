@@ -279,6 +279,49 @@ Os testes de transporte injetado e encerramento do processo não demonstram logi
 na nova origem. A prova nativa desse lote e a cadeia de arquivo pelo ChatGPT
 continuam distintas e precisam de recibos reais após a ativação autorizada.
 
+## Quiz sintético: QUIZ-01/02
+
+O runner `quiz_prove.ts` exercita o REST real do Moodle 4.5.6 em
+`http://localhost:8480`, como estudante B. Cria um curso exclusivo por execução,
+dois quizzes de múltipla escolha e um serviço temporário restrito ao estudante.
+O token é limitado ao contexto desse curso e expira em uma hora. Não altera os
+serviços, tokens ou atividades das outras provas.
+
+Com o Lab já instalado e o manifesto privado disponível:
+
+```powershell
+deno check scripts/lab/quiz_prove.ts
+deno lint scripts/lab/quiz_prove.ts
+docker --host npipe:////./pipe/docker_engine_linux exec arahublab456-webserver-1 php -l /opt/arahub-lab/tools/quiz_fixtures.php
+deno run --cached-only --allow-read --allow-env --allow-net=localhost:8480 --allow-run=docker --allow-write=.private/entrega-1/lab/evidence scripts/lab/quiz_prove.ts --execute
+```
+
+Sem `--execute`, o runner termina sem acessar o Lab. `--manifest=PATH` e
+`--instance=PATH` permitem indicar os arquivos privados; ambos devem corresponder
+ao projeto, UUID e origem guardados. A execução usa o pipe Linux sem mudar o
+contexto global Docker, e o helper é lido do mount existente.
+
+QUIZ-01 compara o estado nativo antes/depois da descoberta e do início
+explicitamente autorizado. QUIZ-02 salva uma resposta sintética, reconecta,
+confere sua persistência, finaliza e testa o vencimento de prazo e as recusas após
+encerramento. O timeout usa um override temporário apenas no quiz e estudante
+próprios; o relógio do sistema não muda. `get_attempt_data` pode avançar uma
+tentativa vencida no Moodle, por isso requer autorização no harness e não integra
+a descoberta passiva.
+
+Os recibos `quiz-suite-*.json` ficam em `.private/entrega-1/lab/evidence/`, com
+checks, IDs, estados, tempos e hashes, sem tokens nem corpos das questões.
+O `finally` remove o override, o serviço e seus tokens. Curso e tentativas ficam
+preservados para inspeção. Após interrupção, use o UUID do recibo com as mesmas
+permissões do comando acima e substitua `--execute` por
+`--cleanup-only --run=UUID`; uma escrita sem resposta nunca é reenviada
+automaticamente.
+
+Esta é uma prova REST no Lab, separada das operações AraHub. O runner também
+verifica que a allowlist e o schema de ações do produto continuam recusando quiz.
+Não demonstra aprovação acadêmica, execução de avaliações pelo AraHub, cadeia
+MCP/host, UI ou uso institucional. Nenhuma função de quiz é habilitada em produção.
+
 ## Referências primárias
 
 - [moodlehq/moodle-docker](https://github.com/moodlehq/moodle-docker), base oficial do ambiente.

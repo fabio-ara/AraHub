@@ -17,12 +17,15 @@ estruturados e fila local; processamento separado de vídeo; preferências, obri
 histórico por ocorrência; interface simplificada. Modelos e fontes privadas permanecem fora da
 distribuição.
 
-Validação da 0.2.1: 211 testes passaram, sem falhas, e dois ignorados possuem gates próprios. A
-0.2.2 passou em 12 testes dirigidos e tipos/Edge; a suíte ampla anterior não foi repetida. Tipos,
-Edge, instalação nova com 14 migrations, dois donos e isolamento passaram. A interface foi
+Validação do código corrente: 230 testes passaram, sem falhas, em 2m56s; dois ignorados possuem
+gates próprios. Tipos e Edge passaram. A suíte inclui a memória 0.2.2, o harness de identidade e
+as políticas locais de acompanhamento. Instalação nova com 14 migrations, dois donos e isolamento
+passaram. A interface foi
 interagida e inspecionada em dois viewports com fixtures. A escala local de 10 mil posts e 100 mil
-observações/ocorrências teve p95 de 183 ms. Backup hospedado por leitura foi restaurado localmente,
-incluindo hashes de 81 arquivos; restauração do provedor Auth não está demonstrada.
+observações/ocorrências teve p95 de 183 ms. O backup hospedado corrente, obtido por leitura, foi
+restaurado em outra base local: 14 migrations, 12 tabelas, 81 hashes binários e RLS com dois donos.
+Cofre e configuração foram recuperados localmente sem gravar segredos em texto aberto; restauração
+do provedor Auth não está demonstrada.
 
 No alvo hospedado existente, 32 verificações de Auth/OAuth/SDK passaram na 0.2.1. As 14 migrations
 foram reconciliadas e os dados anteriores permaneceram íntegros. O plugin instalado expõe 42
@@ -38,9 +41,21 @@ foi conferida por interação e inspeção visual em aba normal do Chrome. Vinte
 negativos passaram. Uma segunda versão Moodle passou pela cadeia SDK, e duas origens físicas com IDs
 iguais foram isoladas em 17 verificações. O reset da segunda instância exigiu recuperação dos
 helpers residuais; recibos preservam a primeira falha e a remoção final conferida, sem afetar o Lab
-original ou os serviços vizinhos. A correção do controlador passou nas guardas dirigidas; não foi
-alegado outro reset completo. Isso não substitui a ponte pelo arquivo do host no aplicativo ChatGPT
-instalado.
+original ou remover serviços vizinhos. A correção do controlador passou nas guardas dirigidas.
+A segunda instância foi depois reprovisionada: health, leitura como estudante e 11 verificações
+da fixture passaram, sem submissões antigas. A reconstrução precisou tratar respostas perdidas
+do Docker por inspeção do efeito; não comprova um `up` único desassistido. Isso não substitui a
+ponte pelo arquivo do host no aplicativo ChatGPT instalado.
+
+Quizzes sintéticos passaram em 31 verificações REST com estudante: descoberta sem tentativa,
+início explícito, salvamento, reconexão, finalização e timeout. Serviço e tokens temporários foram
+removidos; tentativas ficaram como evidência. Isso não habilita avaliações pelo AraHub em produção.
+
+Acompanhamento local ganhou política durável por dono/origem/curso, reservas, pausa e retomada do
+mesmo job. Dezesseis verificações no Moodle Lab incluíram processos distintos, avanço do checkpoint
+e encerramento por prazo. A revisão encontrou e corrigiu a queda entre conclusão do job e registro
+do resultado na política; três regressões SQL cobrem a recuperação. O CLI é finito, exclusivo do
+Lab, sem cron, despachante hospedado ou notificações ativos.
 
 Materiais institucionais atuais: leitura autorizada, processamento e preservação local de 19
 ocorrências/18 binários distintos; recuperação via MCP e isolamento verificados. Comparação de
@@ -53,8 +68,13 @@ reenviado. Status de assignment continua bloqueado em produção por efeitos ind
 sintética não altera essa política. O processador local não é executor remoto nem rotina recorrente
 ativa.
 
-Próximo passo executável: integrar o harness e reconciliar a matriz por nível; enviar o plugin
-preparado quando a pasta AraHub for autorizada no instrumento. Topologia de homologação remota,
+Harness de identidade nativa integrado e publicado, sem exigir nova credencial direta de banco.
+A prévia de virada tem executor privado desativado, recuperação atualizada e configuração real do
+Projeto inspecionada; autorização específica foi solicitada. A importação adicional de materiais
+está recebendo transporte em partes após uma prova somente leitura revelar recusa do corpo
+monolítico. Próximo passo executável: fechar essa correção privada, instalar o plugin quando a
+pasta AraHub for autorizada no instrumento e executar os lotes que receberem autorização.
+Topologia de homologação remota,
 revisão da rota institucional, processamento remoto e virada da memória têm gates próprios.
 Contextos já declarados como testes técnicos ficam fora da retomada, busca e preferências cotidianas
 na 0.2.2. Permanecem acessíveis por consulta explícita, histórico e exportação; nenhum registro foi
@@ -66,4 +86,6 @@ histórico preservado. A atenção distingue colegas presentes de colegas efetiv
 sinaliza material que mudou desde a versão explicitamente vinculada ao rascunho. PDFs retornam
 escopo textual, lacunas visuais e inventário limitado de campos, sem afirmar preenchimento.
 
-Checkpoint operacional detalhado: `.private/entrega-1/STATUS.md`.
+Matriz corrente: 57 cenários aprovados de 66; nove critérios P0 permanecem sem fechamento.
+Cinco pedidos humanos foram enviados e aguardam resposta. Checkpoint operacional detalhado:
+`.private/entrega-1/STATUS.md`; decisões: `.private/entrega-1/PENDENCIAS-HUMANAS.md`.

@@ -1,5 +1,17 @@
 import { asOwner, type Db } from "./db.ts";
 import { type Coverage, HubError, type Principal } from "./contracts.ts";
+import type postgres from "postgres";
+
+/** Runtime-only opt-in; no HTTP/MCP caller accepts this capability. */
+export interface JobClaimGate {
+  readonly policyId: string;
+  reserve(tx: postgres.TransactionSql, job: {
+    id: string;
+    connection_id: string;
+    kind: string;
+    attempts: number;
+  }): Promise<boolean>;
+}
 
 export class Jobs {
   constructor(private db: Db) {}
@@ -13,12 +25,13 @@ export class Jobs {
       ];
     });
   }
-  claim(p: Principal, jobId?: string) {
+  claim(p: Principal, jobId?: string, gate?: JobClaimGate) {
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select id,connection_id,kind from public.hub_jobs where owner_id=${p.ownerId} and (${
-          jobId ?? null
-        }::uuid is null or id=${
+        await tx`select id,connection_id,kind,attempts from public.hub_jobs where owner_id=${p.ownerId}
+        and (coverage->>'followup_policy_id') is not distinct from ${
+          gate?.policyId ?? null
+        }::text and (${jobId ?? null}::uuid is null or id=${
           jobId ?? null
         }::uuid) and attempts<5 and (state in ('pending','partial') or (state='running' and lease_until<now())) order by updated_at for update skip locked limit 1`;
       if (!rows.length) return null;
@@ -31,9 +44,21 @@ export class Jobs {
       if (!lock.acquired) return null;
       const busy =
         await tx`select id,lease_until>clock_timestamp() as active from public.hub_jobs where owner_id=${p.ownerId}
-        and connection_id=${rows[0].connection_id} and kind=${rows[0].kind} and id<>${rows[0].id}
+        and connection_id=${rows[0].connection_id} and
+        (kind=${rows[0].kind} or ${!!gate} or coverage ? 'followup_policy_id') and id<>${rows[0].id}
         and state='running' order by id for update`;
       if (busy.some((row) => row.active)) return null;
+      if (
+        gate && !await gate.reserve(
+          tx,
+          rows[0] as {
+            id: string;
+            connection_id: string;
+            kind: string;
+            attempts: number;
+          },
+        )
+      ) return null;
       // Expired siblings are fenced by state as well as time before a new claim.
       await tx`update public.hub_jobs set state=case when attempts>=5 then 'failed' else 'partial' end,
         lease_until=null where owner_id=${p.ownerId} and connection_id=${rows[0].connection_id}
@@ -63,9 +88,10 @@ export class Jobs {
         : "partial";
       const rows = await tx`update public.hub_jobs set state=${state},cursor=case when ${
         coverage === "complete"
-      } then ${tx.json(JSON.parse(JSON.stringify(cursor)))} else cursor end,coverage=${
+      } then ${tx.json(JSON.parse(JSON.stringify(cursor)))} else cursor end,coverage=
+      (case when coverage ? 'followup_policy_id' then jsonb_build_object('followup_policy_id',coverage->'followup_policy_id') else '{}'::jsonb end) || (${
         tx.json({ status: coverage, ...JSON.parse(JSON.stringify(details)) })
-      },lease_until=null,updated_at=now() where owner_id=${p.ownerId} and id=${id} and attempts=${attempt} and state='running' and lease_until>clock_timestamp() returning id,state,cursor,attempts,coverage`;
+      }::jsonb - 'followup_policy_id'),lease_until=null,updated_at=now() where owner_id=${p.ownerId} and id=${id} and attempts=${attempt} and state='running' and lease_until>clock_timestamp() returning id,state,cursor,attempts,coverage`;
       if (!rows.length) {
         throw new HubError("job_conflict", "O lote já mudou ou não está disponível.", 409);
       }

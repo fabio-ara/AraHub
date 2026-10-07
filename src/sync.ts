@@ -1,9 +1,9 @@
 import { Hub } from "./domain.ts";
 import { asOwner, withJobLease } from "./db.ts";
-import { Jobs } from "./jobs.ts";
+import { type JobClaimGate, Jobs } from "./jobs.ts";
 import { type Coverage, HubError, type Principal } from "./contracts.ts";
 import type { ConnectionService } from "./connections.ts";
-import type { MoodleRecord, MoodleResult } from "./adapters/moodle.ts";
+import type { MoodleDeps, MoodleRecord, MoodleResult } from "./adapters/moodle.ts";
 import { sha256Hex } from "./migration.ts";
 import { JobMetrics, type JobMetricsReport } from "./job_metrics.ts";
 
@@ -108,6 +108,11 @@ export interface SyncRunResult {
 }
 
 export interface SyncOptions {
+  /** Local finite consumer only. Absent in existing HTTP/MCP paths. */
+  readonly execution?: {
+    readonly claim: JobClaimGate;
+    moodleDeps(metrics: JobMetrics): MoodleDeps;
+  };
   /**
    * Orcamento de chamadas da fase de foruns por execucao. Padrao 40. Minimo 2:
    * com 1 o passo gastaria tudo na pagina de discussoes e nunca avancaria uma
@@ -227,7 +232,7 @@ export class Sync {
   constructor(
     private hub: Hub,
     private connections: ConnectionService,
-    options: SyncOptions = {},
+    private options: SyncOptions = {},
   ) {
     this.jobs = new Jobs(hub.db);
     const requested = options.forumCallBudget ?? MAX_SYNC_FORUM_CALLS_PER_RUN;
@@ -267,7 +272,7 @@ export class Sync {
   }
 
   async run(p: Principal, expectedId?: string): Promise<SyncRunResult> {
-    const job = await this.jobs.claim(p, expectedId);
+    const job = await this.jobs.claim(p, expectedId, this.options.execution?.claim);
     if (!job) return { state: "idle" };
     // Uma instancia por tentativa: a contagem fica presa a esta execucao e nao
     // se mistura com lotes simultaneos de outro dono ou de outra conexao.
@@ -304,8 +309,14 @@ export class Sync {
         throw error;
       }
       const failureReport = metrics.report();
+      // Opt-in follow-up must pause an invalid credential even when discovery
+      // failed before a MoodleResult existed. Existing callers keep their result.
+      const failureCoverage: Coverage = this.options.execution && error instanceof HubError &&
+          error.code === "invalid_token"
+        ? "expired"
+        : "unavailable";
       return {
-        job: await this.jobs.finish(p, job.id, job.attempts, "unavailable" as Coverage, null, {
+        job: await this.jobs.finish(p, job.id, job.attempts, failureCoverage, null, {
           reason: "A fonte nao pode ser atualizada. A memoria foi preservada.",
           metrics: failureReport,
         }) as Record<string, unknown>,
@@ -502,9 +513,13 @@ export class Sync {
     directed: boolean,
     metrics: JobMetrics,
   ) {
-    const moodle = await this.connections.moodle(p, job.connection_id, {
-      onRequest: () => metrics.recordCall(),
-    });
+    const moodle = await this.connections.moodle(
+      p,
+      job.connection_id,
+      this.options.execution?.moodleDeps(metrics) ?? {
+        onRequest: () => metrics.recordCall(),
+      },
+    );
     const result = await moodle.listCourses();
     let count = 0;
     for (const c of result.data ?? []) {
@@ -554,9 +569,13 @@ export class Sync {
     directed: boolean,
     metrics: JobMetrics,
   ): Promise<SyncCourseRun> {
-    const moodle = await this.connections.moodle(p, job.connection_id, {
-      onRequest: () => metrics.recordCall(),
-    });
+    const moodle = await this.connections.moodle(
+      p,
+      job.connection_id,
+      this.options.execution?.moodleDeps(metrics) ?? {
+        onRequest: () => metrics.recordCall(),
+      },
+    );
     const connectionId = job.connection_id;
     const gaps: SyncGap[] = [];
     const coverages: Coverage[] = [];
@@ -603,6 +622,9 @@ export class Sync {
 
     // Curso: resolve o titulo pela listagem da conta (uma chamada limitada).
     const listing = await moodle.listCourses();
+    if (this.options.execution && listing.coverage === "expired") {
+      throw new HubError("invalid_token", "A credencial da fonte expirou.");
+    }
     note("courses", listing);
     const courseRecord = (listing.data ?? []).find((c) => numericId(c.id) === courseId) ?? null;
     const courseTitle = courseRecord
