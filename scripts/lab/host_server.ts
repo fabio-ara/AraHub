@@ -14,6 +14,7 @@ import { createHandler } from "../../src/http.ts";
 import { PersistentActionStore } from "../../src/approval_store.ts";
 import type { ConnectionService } from "../../src/connections.ts";
 import { assertLabOwnership, loadLabManifest, MoodleLabAdapter } from "./moodle_lab_adapter.ts";
+import { createHostSessionProbe } from "./host_identity.ts";
 
 const schema = z.object({
   public_origin: z.string().url(),
@@ -71,16 +72,12 @@ async function main() {
   if (local.hostname !== "127.0.0.1" || local.port !== "55432") {
     throw Error("Dados de domínio exigem o banco local exclusivo.");
   }
-  const identityDatabase = Deno.env.get("HOST_LAB_IDENTITY_DATABASE_URL");
-  if (!identityDatabase) {
-    throw Error("Configure a conexão protegida de identidade nativa do alvo aprovado.");
-  }
   const manifest = await loadLabManifest(config.manifest_path);
   assertLabOwnership(manifest, config.instance_path);
   const account = manifest.accounts.labstudenta;
   if (!account?.userid || !account.token) throw Error("Estudante sintético ausente.");
   const lifetime = new AbortController();
-  const db = createDb(database), identityDb = createDb(identityDatabase), hub = new Hub(db);
+  const db = createDb(database), hub = new Hub(db);
   // Existing prepared local context only: this server neither creates real-account
   // fixtures nor imports personal memory merely because credentials are available.
   const scoped = await asOwner(
@@ -98,12 +95,13 @@ async function main() {
   if (scoped.length !== 1) {
     throw Error("Contexto e conexão de homologação local não correspondem ao lote.");
   }
-  const sessionActive = async (owner: string, session: string) => {
-    if (owner !== config.owner_id || Date.now() >= Date.parse(config.expires_at)) return false;
-    const result =
-      await identityDb`select id from auth.sessions where user_id=${owner} and id=${session}`;
-    return result.length === 1;
-  };
+  const sessionActive = createHostSessionProbe({
+    identityOrigin: identity.origin,
+    ownerId: config.owner_id,
+    expiresAt: Date.parse(config.expires_at),
+    signal: lifetime.signal,
+    credential: () => Deno.readTextFile(".private/supabase-cli/access-token"),
+  });
   const auth = {
     issuer: identity.origin + "/auth/v1",
     audience: "authenticated",
@@ -171,7 +169,6 @@ async function main() {
     await Promise.allSettled([
       server.finished,
       db.end({ timeout: 0.5 }),
-      identityDb.end({ timeout: 0.5 }),
     ]);
     clearTimeout(forcedExit);
   };

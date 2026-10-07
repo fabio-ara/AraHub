@@ -261,6 +261,24 @@ a rota institucional. O SDK local não comprova a cadeia do aplicativo ChatGPT
 hospedado. Resultados por versão, inclusive `4.5.15`, ficam nas evidências privadas
 da respectiva instância; não são inferidos dos resultados do baseline.
 
+## Homologação pelo host
+
+`scripts/lab/host_server.ts` é um servidor temporário preparado para o lote de
+homologação. Sua execução externa depende da autorização específica do túnel,
+cliente OAuth e callback. Dados e Moodle ficam locais; a sessão usa a identidade
+nativa do alvo autorizado. Não existe login sintético público.
+
+O lookup de sessão reutiliza a credencial protegida da Management API existente
+para uma consulta fixa `SELECT` em `auth.sessions`. Assinatura e cliente JWT são
+verificados antes dessa consulta. Dono, UUID da sessão, projeto, expiração,
+cancelamento, redirecionamentos e tamanho da resposta são restringidos; falhas
+recusam autenticação. Nenhuma senha de conexão direta ao banco é necessária.
+Esse caminho pertence somente ao harness, sem alterar o backend de produção.
+
+Os testes de transporte injetado e encerramento do processo não demonstram login
+na nova origem. A prova nativa desse lote e a cadeia de arquivo pelo ChatGPT
+continuam distintas e precisam de recibos reais após a ativação autorizada.
+
 ## Referências primárias
 
 - [moodlehq/moodle-docker](https://github.com/moodlehq/moodle-docker), base oficial do ambiente.
