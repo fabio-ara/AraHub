@@ -499,21 +499,37 @@ async function render() {
       ? "Ambiente sintético local. Esta visão não comprova conexão real ou implantação."
       : "";
     renderPreferences(preferences);
-    renderConnectionHealth(c.connections);
+    renderConnectionHealth(
+      c.connections.filter((cn: { provider: string }) => cn.provider === "moodle"),
+    );
     const connections = el("connection-list");
     connections.replaceChildren();
+    const preservedSources = document.createElement("details");
+    preservedSources.id = "preserved-sources";
+    const preservedTitle = document.createElement("summary");
+    preservedSources.append(preservedTitle);
+    const preservedEntries = document.createElement("div");
+    preservedEntries.className = "grid";
+    preservedSources.append(preservedEntries);
+    let preservedCount = 0;
     for (const cn of c.connections) {
+      if (cn.provider !== "moodle") {
+        preservedEntries.append(
+          card(
+            cn.label,
+            cn.provider === "google"
+              ? "Materiais já importados. A autoria e o acesso atual ficam nas ferramentas do ChatGPT."
+              : "Histórico importado com proveniência.",
+          ),
+        );
+        preservedCount++;
+        continue;
+      }
       const entry = card(
         cn.label,
-        `${
-          cn.provider === "moodle"
-            ? "Moodle"
-            : cn.provider === "google"
-            ? "Google"
-            : "Memória importada"
-        } · ${connectionState[cn.state] ?? "Verificar acesso"}`,
+        `Moodle · ${connectionState[cn.state] ?? "Verificar acesso"}`,
       );
-      if (!cfg.synthetic && cn.provider !== "migration") {
+      if (!cfg.synthetic) {
         const disconnect = document.createElement("button");
         disconnect.className = "quiet";
         setAction(disconnect, "offline", "Desconectar");
@@ -592,6 +608,10 @@ async function render() {
       }
       if (controls.childElementCount) entry.append(controls);
       connections.append(entry);
+    }
+    if (preservedCount) {
+      preservedTitle.textContent = `Fontes preservadas (${preservedCount})`;
+      connections.append(preservedSources);
     }
     await renderActions();
     msg("");

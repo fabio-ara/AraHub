@@ -286,6 +286,16 @@ try {
             label: "Moodle de teste",
             origin: "https://moodle.fixture.invalid",
             state: "connected",
+          }, {
+            id: "old-google",
+            provider: "google",
+            label: "Institucional preservado",
+            state: "connected",
+          }, {
+            id: "old-migration",
+            provider: "migration",
+            label: "Histórico importado",
+            state: "connected",
           }],
           coverage: { memory: "persisted", contexts: "complete", deltas: "partial" },
         });
@@ -411,6 +421,9 @@ try {
 
     // Access health and the Moodle connection.
     assert.match(await page.locator("#connection-health").textContent(), /^Acesso: /);
+    assert.equal(await page.locator("#connection-health").textContent(), "Acesso: 1 Conectada.");
+    assert.equal(await page.locator("#preserved-sources").getAttribute("open"), null);
+    assert.equal(await page.locator("#preserved-sources button").count(), 0);
     assert.ok(
       (await page.locator("#connection-list").textContent()).includes("Moodle de teste"),
     );

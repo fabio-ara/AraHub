@@ -4,7 +4,7 @@
  * Toda a matéria relevante da fonte aparece em português legível: conta, destino,
  * texto, arquivos, declaração e as condições que afetam a decisão. Hashes e
  * detalhes técnicos não entram no fluxo. Operação não reconhecida não é aprovada:
- * ganha apresentação histórica e botões indisponíveis.
+ * ganha apresentação informativa sem controles de execução.
  */
 
 export interface ActionFileView {
