@@ -239,6 +239,11 @@ try {
     await page.locator("#workspace").waitFor({ state: "visible" });
     assert.equal(await page.locator("#password").inputValue(), "");
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
+    await page.locator("#moodle-setup > summary").click();
+    await page.locator("#moodle-origin").click();
+    await page.locator("#moodle-origin").fill("fixture@example.invalid");
+    assert.equal(await page.locator("#moodle-origin").inputValue(), "");
+    await page.locator("#moodle-setup > summary").click();
     await page.getByRole("button", { name: "Renovar acesso", exact: true }).first()
       .click();
     assert.equal(

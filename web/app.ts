@@ -904,14 +904,23 @@ await render();
 await consent();
 await googleCallback();
 
+const moodleOrigin = el("moodle-origin") as HTMLInputElement;
+const clearMoodleOriginAutofill = () => {
+  if (!renewingMoodle && moodleOrigin.value.includes("@")) moodleOrigin.value = "";
+};
 for (const event of ["pointerdown", "focus"]) {
-  el("moodle-origin").addEventListener(event, () => {
+  moodleOrigin.addEventListener(event, () => {
     if (renewingMoodle) return;
-    const origin = el("moodle-origin") as HTMLInputElement;
-    origin.readOnly = false;
-    if (origin.value.includes("@") && !origin.value.startsWith("https://")) origin.value = "";
+    moodleOrigin.readOnly = false;
+    clearMoodleOriginAutofill();
   });
 }
+moodleOrigin.addEventListener("input", clearMoodleOriginAutofill);
+(el("moodle-setup") as HTMLDetailsElement).addEventListener("toggle", () => {
+  if ((el("moodle-setup") as HTMLDetailsElement).open) {
+    requestAnimationFrame(clearMoodleOriginAutofill);
+  }
+});
 
 el("moodle-mobile-open").addEventListener("click", () => {
   try {
