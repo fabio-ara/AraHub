@@ -245,8 +245,8 @@ export class Hub {
     }
     return asOwner(this.db, p, async (tx) => {
       const rows = entityId
-        ? await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction from public.hub_files where owner_id=${p.ownerId} and entity_id=${entityId} order by name,id limit 21 offset ${offset}`
-        : await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction from public.hub_files where owner_id=${p.ownerId} order by name,id limit 21 offset ${offset}`;
+        ? await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction - 'pages' as extraction from public.hub_files where owner_id=${p.ownerId} and entity_id=${entityId} order by name,id limit 21 offset ${offset}`
+        : await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction - 'pages' as extraction from public.hub_files where owner_id=${p.ownerId} order by name,id limit 21 offset ${offset}`;
       return { records: rows.slice(0, 20), next_offset: rows.length > 20 ? offset + 20 : null };
     });
   }

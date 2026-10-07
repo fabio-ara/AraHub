@@ -287,6 +287,13 @@ Deno.test("A05 A23: extractPdf grava páginas do PDF preservado e pdfPage lê po
     assert.match(stored.extracted_text ?? "", /\[\[página 1 pdf:page:1\]\]/);
     assert.match(stored.extracted_text ?? "", /sem texto extraído/);
 
+    const listed = await hub.files(owner);
+    const summary = listed.records.find((file) => file.id === seeded.fileId)?.extraction;
+    assert.equal(summary?.coverage, "complete");
+    assert.equal(summary?.page_count, 3);
+    assert.equal(Object.hasOwn(summary ?? {}, "pages"), false);
+    assert.equal(JSON.stringify(listed).includes(LATIN_PAGE_TEXT), false);
+
     const page1 = await materials.pdfPage(owner, seeded.fileId, hash, 1);
     assert.equal(page1.page.page, 1);
     assert.equal(page1.page.locator, "pdf:page:1");

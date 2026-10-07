@@ -315,7 +315,8 @@ async function loadPdfs(append = false) {
           entry.querySelector("p")!.textContent = result.memory.complete
             ? "Texto preservado"
             : "Texto incompleto";
-          await loadPdfs(); // Reload the durable next page before a continuation.
+          // A complete item needs no cursor refresh; keep later list pages visible.
+          if (!result.memory.complete) await loadPdfs();
         } catch (e) {
           extract.disabled = false;
           msg(
