@@ -49,11 +49,48 @@ export const DEFAULT_PDF_TOTAL_CHARS = 400_000;
 export const MAX_PDF_TOTAL_CHARS = 1_000_000;
 export const DEFAULT_PDF_TIMEOUT_MS = 15_000;
 export const MAX_PDF_TIMEOUT_MS = 120_000;
+export const MAX_PDF_FORM_FIELDS = 256;
+export const MAX_PDF_FIELD_NAME_CHARS = 256;
+export const MAX_PDF_FIELD_TYPE_CHARS = 32;
+export const MAX_PDF_FORM_COUNT = 1_000_000;
+
+/** complete qualifies extraction of page text, never semantic/visual reading. */
+export const PDF_READING_SCOPE = {
+  coverage_scope: "text_extraction",
+  visual_analysis: "not_performed",
+} as const;
+
+export interface PdfFormMetadata {
+  status: "unknown" | "inspected" | "partial";
+  /** Named AcroForm fields, not widget count; null means unknown, never zero. */
+  field_count: number | null;
+  fields: Array<{ name: string; type: string | null }>;
+  details_truncated: boolean;
+  has_xfa: boolean | null;
+  scope: "acroform";
+  interaction: "not_performed";
+  source: "unknown" | "pdfjs" | "browser_client";
+}
+
+export function unknownPdfForms(): PdfFormMetadata {
+  return {
+    status: "unknown",
+    field_count: null,
+    fields: [],
+    details_truncated: false,
+    has_xfa: null,
+    scope: "acroform",
+    interaction: "not_performed",
+    source: "unknown",
+  };
+}
 
 const OCR_NOTE =
   "Sem OCR: página sem texto extraído não prova ausência de texto (pode haver texto em imagem, camada não extraível ou formulário).";
 const IMAGE_NOTE =
   "Imagens, assinaturas, anexos e fórmulas não são interpretados; apenas a contagem de pinturas de imagem é relatada.";
+const FORM_NOTE =
+  "Formulários: somente inventário limitado de nomes/tipos AcroForm; valores e ações não são retornados, interpretados, preenchidos ou executados. XFA não é processado. Cobertura complete refere-se à extração textual, não à leitura visual ou à conclusão de questionário.";
 const ISOLATED_NOTE =
   "Isolamento: worker dedicado e terminável; exceder o limite encerra a thread (limite rígido real).";
 const MAIN_THREAD_NOTE =
@@ -138,6 +175,9 @@ export interface PdfTextExtraction {
   ok: boolean;
   error_code?: PdfExtractionCode;
   coverage: Coverage;
+  coverage_scope: "text_extraction";
+  visual_analysis: "not_performed";
+  forms: PdfFormMetadata;
   /** Onde a extração rodou. hard_timeout só é confiável em isolated_worker. */
   execution: PdfExecution;
   /** true somente quando o limite é imposto por terminação de worker. */
@@ -408,6 +448,8 @@ function emptyResult(
     ok: false,
     error_code: code,
     coverage,
+    ...PDF_READING_SCOPE,
+    forms: unknownPdfForms(),
     execution: context.execution,
     hard_timeout: context.hardTimeout,
     page_count: context.pageCount ?? null,
@@ -427,7 +469,7 @@ function emptyResult(
     pages_without_text: 0,
     text_truncated: false,
     limits: context.limits,
-    notes: [OCR_NOTE, IMAGE_NOTE, ...extraNotes],
+    notes: [OCR_NOTE, IMAGE_NOTE, FORM_NOTE, ...extraNotes],
     content_is_untrusted_data: true,
     byte_length: context.byteLength,
     elapsed_ms: Math.round(performance.now() - context.startedAt),
@@ -454,6 +496,56 @@ export function pdfExtractionToText(result: PdfTextExtraction): string {
     );
   }
   return parts.join("\n");
+}
+
+/**
+ * pdf.js 6.4.299 getFieldObjects is read-only: a Map of named AcroForm fields.
+ * The returned objects may include values/actions; copy ONLY name and type.
+ * https://mozilla.github.io/pdf.js/api/draft/api.js.html (getFieldObjects).
+ * All parsing remains inside the existing terminable worker/deadline.
+ */
+async function inspectPdfForms(
+  doc: Awaited<ReturnType<PdfLib["getDocument"]>["promise"]>,
+  deadlineAt: number,
+  signal?: AbortSignal,
+): Promise<PdfFormMetadata> {
+  const result = unknownPdfForms();
+  try {
+    const { info } = await withDeadline(doc.getMetadata(), deadlineAt, signal);
+    const metadata = info as { IsXFAPresent?: unknown; IsAcroFormPresent?: unknown };
+    if (typeof metadata.IsXFAPresent === "boolean") result.has_xfa = metadata.IsXFAPresent;
+    const raw = await withDeadline(doc.getFieldObjects(), deadlineAt, signal);
+    // null can also mean malformed/unavailable field data despite declared fields.
+    if (raw === null && metadata.IsAcroFormPresent !== false) return result;
+    if (raw !== null && !(raw instanceof Map)) return result;
+    const count = raw?.size ?? 0;
+    result.field_count = count <= MAX_PDF_FORM_COUNT ? count : null;
+    result.details_truncated = count > MAX_PDF_FORM_FIELDS;
+    for (const [name, objects] of raw ?? []) {
+      checkInterruption(signal, deadlineAt);
+      if (result.fields.length >= MAX_PDF_FORM_FIELDS) break;
+      if (typeof name !== "string" || !Array.isArray(objects)) return unknownPdfForms();
+      const cleanName = sanitizeText(name);
+      const types = new Set<string>();
+      for (const field of objects.slice(0, MAX_PDF_FORM_FIELDS)) {
+        const type = (field as { type?: unknown } | null)?.type;
+        if (typeof type === "string") types.add(sanitizeText(type));
+      }
+      const type = types.size === 1 ? [...types][0] : types.size > 1 ? "mixed" : null;
+      result.details_truncated ||= cleanName.length > MAX_PDF_FIELD_NAME_CHARS ||
+        (type?.length ?? 0) > MAX_PDF_FIELD_TYPE_CHARS || objects.length > MAX_PDF_FORM_FIELDS;
+      result.fields.push({
+        name: cleanName.slice(0, MAX_PDF_FIELD_NAME_CHARS),
+        type: type === null ? null : type.slice(0, MAX_PDF_FIELD_TYPE_CHARS),
+      });
+    }
+    result.status = result.details_truncated || result.has_xfa ? "partial" : "inspected";
+    result.source = "pdfjs";
+    return result;
+  } catch (error) {
+    if (error instanceof PdfDeadlineError || error instanceof PdfAbortError) throw error;
+    return { ...unknownPdfForms(), has_xfa: result.has_xfa }; // Never retain an incomplete count.
+  }
 }
 
 /** Núcleo da extração; roda na thread atual e nunca cria worker. */
@@ -508,6 +600,7 @@ async function extractPdfBytesInThread(
   let pageCount: number | null = null;
   let interruptedCode: "timeout" | "aborted" | undefined;
   let finalCoverage: Coverage = "complete";
+  let forms = unknownPdfForms();
 
   const data = new Uint8Array(input.byteLength);
   data.set(input);
@@ -646,6 +739,20 @@ async function extractPdfBytesInThread(
         omitted.add(number);
       }
     }
+    if (!interruptedCode) {
+      try {
+        forms = await inspectPdfForms(doc, deadlineAt, options.signal);
+      } catch (error) {
+        if (!(error instanceof PdfDeadlineError || error instanceof PdfAbortError)) throw error;
+        interruptedCode = error instanceof PdfAbortError ? "aborted" : "timeout";
+        issues.push({
+          scope: "document",
+          page: null,
+          code: interruptedCode,
+          message: "Inventário de formulário interrompido; metadados desconhecidos.",
+        });
+      }
+    }
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     let code: PdfExtractionCode = "unreadable";
@@ -699,6 +806,8 @@ async function extractPdfBytesInThread(
     ok: interruptedCode === undefined,
     ...(interruptedCode ? { error_code: interruptedCode } : {}),
     coverage: finalCoverage,
+    ...PDF_READING_SCOPE,
+    forms,
     execution: "main_thread",
     hard_timeout: false,
     page_count: pageCount,
@@ -718,7 +827,7 @@ async function extractPdfBytesInThread(
     pages_without_text: withoutText,
     text_truncated: textTruncated,
     limits,
-    notes: [OCR_NOTE, IMAGE_NOTE],
+    notes: [OCR_NOTE, IMAGE_NOTE, FORM_NOTE],
     content_is_untrusted_data: true,
     byte_length: input.byteLength,
     elapsed_ms: Math.round(performance.now() - startedAt),

@@ -23,6 +23,7 @@ import { HubError } from "../contracts.ts";
 import type { Coverage, Provenance } from "../contracts.ts";
 import { request as httpsRequest } from "node:https";
 import { PinnedHttpError, sendPinnedHttp } from "./pinned_http.ts";
+import { sanitizeHtmlDocument } from "../document_text.ts";
 
 // --- Tipos fundamentais ----------------------------------------------------
 
@@ -566,6 +567,53 @@ export function sanitizeHtml(
   return { html, text, truncated };
 }
 
+/** Plain text for preserved HTML. Reuse the document tokenizer; never execute
+ * markup or fetch references. Resolve links against the credential-free source
+ * URL, so a chapter's relative links retain their origin in offline MCP reads.
+ */
+function preservedHtmlText(raw: string, sourceUrl: string, token: string): {
+  text: string;
+  truncated: boolean;
+} {
+  const sanitized = sanitizeHtmlDocument(raw, MAX_HTML_CHARS);
+  type Element = typeof sanitized.root;
+  const parts: string[] = [];
+  let length = 0;
+  const append = (value: string) => {
+    if (length > MAX_TEXT_CHARS) return;
+    parts.push(value);
+    length += value.length;
+  };
+  const walk = (node: Element) => {
+    for (const child of node.children) {
+      if (typeof child === "string") append(child);
+      else walk(child);
+    }
+    if (node.name === "a" && node.attrs.href) {
+      try {
+        const target = new URL(node.attrs.href, sourceUrl);
+        if (["http:", "https:"].includes(target.protocol) && !target.username && !target.password) {
+          for (const key of [...target.searchParams.keys()]) {
+            if (SECRET_KEYS.has(key.toLowerCase())) target.searchParams.delete(key);
+          }
+          append(" (" + redactString(target.href, token) + ")");
+        }
+      } catch { /* Invalid references remain labels, never actionable URLs. */ }
+    }
+    if (
+      ["p", "div", "li", "br", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6"].includes(
+        node.name,
+      )
+    ) append("\n");
+  };
+  walk(sanitized.root);
+  const text = redactString(parts.join("").trim(), token);
+  return {
+    text: text.slice(0, MAX_TEXT_CHARS),
+    truncated: sanitized.truncated || text.length > MAX_TEXT_CHARS,
+  };
+}
+
 // --- Erros -----------------------------------------------------------------
 
 const MOODLE_CODE_MAP: Readonly<Record<string, MoodleErrorCode>> = {
@@ -573,6 +621,7 @@ const MOODLE_CODE_MAP: Readonly<Record<string, MoodleErrorCode>> = {
   accessexception: "permission_denied",
   nopermissions: "permission_denied",
   requireloginerror: "permission_denied",
+  errorcoursecontextnotvalid: "permission_denied",
   servicenotavailable: "function_unavailable",
   invalidrecord: "not_found",
   invalidcourseid: "not_found",
@@ -2060,11 +2109,17 @@ export class MoodleAdapter {
         (contentType ?? "").split(";")[0].trim() ||
         "application/octet-stream";
       let text: string | undefined;
+      let truncated = false;
       if (isTextualMime(mimetype) && bytes.byteLength <= MAX_TEXT_DECODE_BYTES) {
         const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-        text = mimetype.toLowerCase().includes("html")
-          ? sanitizeHtml(decoded).text
-          : decoded.slice(0, MAX_TEXT_CHARS);
+        if (mimetype.toLowerCase().includes("html")) {
+          const extracted = preservedHtmlText(decoded, record.url, this.token);
+          text = extracted.text;
+          truncated = extracted.truncated;
+        } else {
+          text = redactString(decoded.slice(0, MAX_TEXT_CHARS), this.token);
+          truncated = decoded.length > MAX_TEXT_CHARS;
+        }
       }
       const binary: MoodleBinary = {
         ...record,
@@ -2075,7 +2130,7 @@ export class MoodleAdapter {
         bytes,
         text,
       };
-      return { data: binary, warnings: [] };
+      return { data: binary, warnings: [], truncated };
     });
   }
 }

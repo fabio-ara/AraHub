@@ -9,6 +9,7 @@ import {
 import { createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
 import { HubError } from "../src/contracts.ts";
+import { proveFileLimits, proveFileRenewal, recordFileProof } from "../scripts/lab/file_prove.ts";
 
 Deno.test("host file schema, byte identification and safe names", async () => {
   assert.deepEqual(
@@ -33,6 +34,14 @@ Deno.test("host file schema, byte identification and safe names", async () => {
     () => artifactType(new TextEncoder().encode("<script>alert(1)</script>")),
     HubError,
   );
+});
+
+Deno.test("FILE-03: expired hostFile renewed with same file_id, real HTTP parser and SQL", async () => {
+  await recordFileProof(await proveFileRenewal());
+});
+
+Deno.test("FILE-05: effective minimum, Unicode collisions and bounded HTTP stream through SQL", async () => {
+  await recordFileProof(await proveFileLimits());
 });
 Deno.test("artifact private bytes port + host transport: isolation, idempotency, SSRF, redirect and no URL retention", async () => {
   const db = createDb(

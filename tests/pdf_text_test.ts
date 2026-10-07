@@ -7,7 +7,13 @@
  * glifos (grego/cirílico) e uma página apenas com imagem, sem texto.
  */
 import assert from "node:assert/strict";
-import { extractPdfText, pdfExtractionToText } from "../src/pdf_text.ts";
+import {
+  extractPdfText,
+  MAX_PDF_FIELD_NAME_CHARS,
+  MAX_PDF_FORM_FIELDS,
+  pdfExtractionToText,
+  runPdfExtractionInThread,
+} from "../src/pdf_text.ts";
 import { HubError } from "../src/contracts.ts";
 
 /** Codifica texto como bytes Latin-1 (um byte por code unit). */
@@ -65,7 +71,7 @@ const UNICODE_PAGE_TEXT = "αβΩАéñ";
  * PDF com pageCount páginas: a primeira tem texto Latin-1, as intermediárias
  * texto por nomes de glifos (unicode não latino) e a última apenas uma imagem.
  */
-function buildFixturePdf(pageCount = 3): Uint8Array {
+function buildFixturePdf(pageCount = 3, formFields = 0, longName = false): Uint8Array {
   if (pageCount < 2) throw new Error("a fixture exige ao menos duas páginas");
   const objects: string[] = [];
   const kids: string[] = [];
@@ -101,6 +107,21 @@ function buildFixturePdf(pageCount = 3): Uint8Array {
   const imageBytes = "ABCDEFGHIJKL";
   objects[imageObject] =
     `<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${imageBytes.length} >>\nstream\n${imageBytes}\nendstream`;
+  if (formFields) {
+    const refs = Array.from({ length: formFields }, (_, i) => `${imageObject + 1 + i} 0 R`);
+    objects[1] = `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [${
+      refs.join(" ")
+    }] /DA (/F1 10 Tf 0 g) /DR << /Font << /F1 ${fontWinAnsi} 0 R >> >> >> >>`;
+    objects[3] = objects[3].replace(/>>$/, `/Annots [${refs.join(" ")}] >>`);
+    for (let i = 0; i < formFields; i++) {
+      const name = i === 0 && longName ? "n".repeat(MAX_PDF_FIELD_NAME_CHARS + 10) : `field_${i}`;
+      objects[imageObject + 1 + i] = `<< /Type /Annot /Subtype /Widget /FT /${
+        i % 2 ? "Btn" : "Tx"
+      } /T (${name}) /V ${
+        i % 2 ? "/Off" : "(private_field_value)"
+      } /Rect [20 20 90 40] /P 3 0 R /F 4 /AA << /K << /S /JavaScript /JS (globalThis.__arahubFormScript = true;) >> >> >>`;
+    }
+  }
   return assemblePdf(objects);
 }
 
@@ -145,6 +166,10 @@ Deno.test("A23: PDF real de três páginas — texto por página, unicode, pági
   assert.equal(result.ok, true);
   assert.equal(result.error_code, undefined);
   assert.equal(result.coverage, "complete");
+  assert.equal(result.coverage_scope, "text_extraction");
+  assert.equal(result.visual_analysis, "not_performed");
+  assert.equal(result.forms.status, "inspected");
+  assert.equal(result.forms.field_count, 0); // actually inspected, not a legacy default
   assert.equal(result.page_count, 3);
   assert.equal(result.pages_returned, 3);
   assert.equal(result.pages.length, 3);
@@ -192,6 +217,78 @@ Deno.test("A23: PDF real de três páginas — texto por página, unicode, pági
 
   const again = await extractPdfText(bytes);
   assert.deepEqual(again.pages.map((page) => page.text), result.pages.map((page) => page.text));
+});
+
+Deno.test("MAT04: AcroForm expõe somente nomes/tipos; imagem, valores e ações não viram leitura", async () => {
+  const bytes = buildFixturePdf(3, 2);
+  const before = bytes.slice();
+  const result = await extractPdfText(bytes);
+  assert.equal(result.ok, true);
+  assert.equal(result.coverage, "complete");
+  assert.equal(result.coverage_scope, "text_extraction");
+  assert.equal(result.visual_analysis, "not_performed");
+  assert.equal(result.pages_without_text, 1);
+  assert.equal(result.ocr, "not_performed");
+  assert.equal(result.forms.status, "inspected");
+  assert.equal(result.forms.field_count, 2);
+  assert.deepEqual(result.forms.fields, [
+    { name: "field_0", type: "text" },
+    { name: "field_1", type: "checkbox" },
+  ]);
+  assert.equal(result.forms.interaction, "not_performed");
+  assert.equal(result.forms.source, "pdfjs");
+  assert.equal(result.forms.has_xfa, false);
+  assert.doesNotMatch(JSON.stringify(result.forms), /private_field_value|actions|JavaScript/);
+  assert.equal((globalThis as unknown as Record<string, unknown>).__arahubFormScript, undefined);
+  assert.deepEqual(bytes, before);
+});
+
+Deno.test("MAT04: inventário limita quantidade/nomes; falha nunca inventa zero campos", async () => {
+  const result = await extractPdfText(buildFixturePdf(2, MAX_PDF_FORM_FIELDS + 1, true));
+  assert.equal(result.forms.field_count, MAX_PDF_FORM_FIELDS + 1);
+  assert.equal(result.forms.fields.length, MAX_PDF_FORM_FIELDS);
+  assert.equal(result.forms.fields[0].name.length, MAX_PDF_FIELD_NAME_CHARS);
+  assert.equal(result.forms.details_truncated, true);
+  assert.equal(result.forms.status, "partial");
+  for (const bytes of [new Uint8Array(), buildEncryptedPdf()]) {
+    const failed = await extractPdfText(bytes);
+    assert.equal(failed.forms.status, "unknown");
+    assert.equal(failed.forms.field_count, null);
+    assert.deepEqual(failed.forms.fields, []);
+    assert.equal(failed.coverage_scope, "text_extraction");
+  }
+});
+
+Deno.test("MAT04: indisponibilidade da API de campos mantém texto e inventário desconhecido", async () => {
+  // Fault injection at the parser API boundary; actual PDFs are covered above.
+  const lib = {
+    OPS: {},
+    getDocument: () => ({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage: () =>
+          Promise.resolve({
+            getViewport: () => ({ width: 100, height: 100 }),
+            getTextContent: () => Promise.resolve({ items: [{ str: "fixture" }] }),
+            getOperatorList: () => Promise.resolve({ fnArray: [] }),
+            cleanup() {},
+          }),
+        getMetadata: () =>
+          Promise.resolve({ info: { IsAcroFormPresent: true, IsXFAPresent: false } }),
+        getFieldObjects: () => Promise.reject(new Error("API unavailable")),
+        cleanup: () => Promise.resolve(),
+      }),
+      destroy: () => Promise.resolve(),
+    }),
+  } as unknown as NonNullable<Parameters<typeof runPdfExtractionInThread>[2]>;
+  const result = await runPdfExtractionInThread(new Uint8Array([1]), {}, lib);
+  assert.equal(result.pages[0].text, "fixture");
+  assert.equal(result.coverage_scope, "text_extraction");
+  assert.equal(result.forms.status, "unknown");
+  assert.equal(result.forms.field_count, null);
+  assert.deepEqual(result.forms.fields, []);
+  assert.equal(result.forms.has_xfa, false);
+  assert.equal(result.hard_timeout, false); // direct injected API, not an isolation proof
 });
 
 Deno.test("A23: limites de páginas e de caracteres declaram omissão e cobertura parcial", async () => {

@@ -23,6 +23,12 @@ import { Hub } from "../src/domain.ts";
 import { Materials } from "../src/materials.ts";
 import { sha256Hex } from "../src/migration.ts";
 import { HubError, type Principal } from "../src/contracts.ts";
+import {
+  extractPdfText,
+  MAX_PDF_FORM_FIELDS,
+  pdfExtractionToText,
+  type PdfFormMetadata,
+} from "../src/pdf_text.ts";
 
 const DB_URL = "postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub";
 const LATIN_PAGE_TEXT = "Relatório AraHub página 1: ação e coração";
@@ -76,7 +82,7 @@ function assemblePdf(objects: string[], trailerExtra = ""): Uint8Array {
 }
 
 /** PDF de três páginas: texto Latin-1, texto por glifos e página só com imagem. */
-function buildFixturePdf(): Uint8Array {
+function buildFixturePdf(interactive = false): Uint8Array {
   const pageCount = 3;
   const objects: string[] = [];
   const kids: string[] = [];
@@ -112,6 +118,16 @@ function buildFixturePdf(): Uint8Array {
   const imageBytes = "ABCDEFGHIJKL";
   objects[imageObject] =
     `<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${imageBytes.length} >>\nstream\n${imageBytes}\nendstream`;
+  if (interactive) {
+    const first = imageObject + 1, second = first + 1;
+    objects[1] =
+      `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [${first} 0 R ${second} 0 R] /DA (/F1 10 Tf 0 g) /DR << /Font << /F1 ${fontWinAnsi} 0 R >> >> >> >>`;
+    objects[3] = objects[3].replace(/>>$/, `/Annots [${first} 0 R ${second} 0 R] >>`);
+    objects[first] =
+      "<< /Type /Annot /Subtype /Widget /FT /Tx /T (answer) /V () /Rect [20 20 90 40] /P 3 0 R /F 4 >>";
+    objects[second] =
+      "<< /Type /Annot /Subtype /Widget /FT /Btn /T (confirmation) /V /Off /Rect [100 20 120 40] /P 3 0 R /F 4 >>";
+  }
   return assemblePdf(objects);
 }
 
@@ -232,6 +248,128 @@ async function readStored(
 function isHubError(code: string) {
   return (error: unknown) => error instanceof HubError && error.code === code;
 }
+
+Deno.test("MAT04 SQL: inventário read-only e escopo textual sobrevivem leitura e retry menor", async () => {
+  const db = createDb(DB_URL), hub = new Hub(db), materials = new Materials(hub);
+  const owner = { ownerId: crypto.randomUUID() };
+  try {
+    await db`insert into auth.users(id) values(${owner.ownerId})`;
+    const bytes = buildFixturePdf(true);
+    const seeded = await seedFile(db, owner.ownerId, bytes);
+    const run = await materials.extractPdf(owner, seeded.fileId, seeded.hash);
+    assert.equal(run.memory.complete, true); // retained backward-compatible TEXT coverage
+    assert.equal(run.memory.coverage_scope, "text_extraction");
+    assert.equal(run.memory.visual_analysis, "not_performed");
+    assert.equal(run.memory.forms.field_count, 2);
+    assert.equal(run.memory.forms.interaction, "not_performed");
+    const page = await materials.pdfPage(owner, seeded.fileId, seeded.hash, 3);
+    assert.equal(page.page.text_absent, true);
+    assert.equal(page.images_not_interpreted, true);
+    assert.equal(page.coverage_scope, "text_extraction");
+    assert.deepEqual(page.forms, run.memory.forms);
+    const text = await hub.fileText(owner, seeded.fileId, seeded.hash) as unknown as {
+      extraction: { forms: PdfFormMetadata; coverage_scope: string };
+    };
+    assert.deepEqual(text.extraction.forms, run.memory.forms);
+    assert.equal(text.extraction.coverage_scope, "text_extraction");
+    const before = await readStored(db, seeded.fileId);
+    const retry = await materials.extractPdf(owner, seeded.fileId, seeded.hash, 1);
+    assert.equal(retry.memory_updated, false);
+    assert.deepEqual((await readStored(db, seeded.fileId)).extraction, before.extraction);
+    assert.deepEqual(retry.memory.forms, run.memory.forms);
+  } finally {
+    await db`delete from auth.users where id=${owner.ownerId}`;
+    await db.end();
+  }
+});
+
+Deno.test("MAT04 SQL: legado desconhecido, upgrade sem regravar texto e cliente não forja inventário local", async () => {
+  const db = createDb(DB_URL), hub = new Hub(db), materials = new Materials(hub);
+  const owner = { ownerId: crypto.randomUUID() };
+  try {
+    await db`insert into auth.users(id) values(${owner.ownerId})`;
+    const bytes = buildFixturePdf(true);
+    const run = await extractPdfText(bytes);
+    const legacy: Record<string, unknown> = { ...run };
+    delete legacy.forms;
+    delete legacy.coverage_scope;
+    delete legacy.visual_analysis;
+    const seeded = await seedFile(db, owner.ownerId, bytes, {
+      extraction: legacy,
+      extractedText: pdfExtractionToText(run),
+    });
+    const oldPage = await materials.pdfPage(owner, seeded.fileId, seeded.hash, 1);
+    assert.equal(oldPage.forms.status, "unknown");
+    assert.equal(oldPage.forms.field_count, null);
+    assert.equal(oldPage.coverage_scope, "text_extraction");
+    const old = await readStored(db, seeded.fileId);
+    const upgraded = await materials.extractPdf(owner, seeded.fileId, seeded.hash);
+    assert.equal(upgraded.memory_updated, true);
+    assert.equal(upgraded.memory.pages_added, 0);
+    assert.equal(upgraded.memory.pages_updated, 0);
+    assert.equal(upgraded.memory.forms.field_count, 2);
+    assert.equal((await readStored(db, seeded.fileId)).extracted_text, old.extracted_text);
+    // A browser payload may assert "pdfjs" but it must be recorded as unverified client data.
+    const forged = structuredClone(run);
+    forged.forms.field_count = 0;
+    forged.forms.fields = [];
+    forged.pages[0].text += " extra client text";
+    forged.pages[0].char_count = forged.pages[0].text.length;
+    const client = await materials.commitClientPdf(owner, seeded.fileId, seeded.hash, forged);
+    assert.equal(client.extraction.forms.source, "browser_client");
+    assert.equal(client.provenance.verified, false);
+    assert.equal(client.memory.forms.source, "pdfjs");
+    assert.equal(client.memory.forms.field_count, 2);
+    assert.equal(
+      (await materials.pdfPage(owner, seeded.fileId, seeded.hash, 1)).forms.field_count,
+      2,
+    );
+    const read = await hub.fileText(owner, seeded.fileId, seeded.hash) as unknown as {
+      extraction: { forms: PdfFormMetadata };
+    };
+    assert.equal(read.extraction.forms.field_count, 2);
+    const prior = await readStored(db, seeded.fileId);
+    const badForms = [
+      { ...run.forms, status: "unknown", field_count: 0 },
+      { ...run.forms, fields: Array(MAX_PDF_FORM_FIELDS + 1).fill({ name: "n", type: "text" }) },
+      { ...run.forms, fields: [{ name: "n".repeat(257), type: "text" }] },
+      { ...run.forms, field_count: 0 },
+      { ...run.forms, interaction: "performed" },
+      { ...run.forms, fields: [{ name: "n", type: "text", value: "forged" }] },
+    ];
+    for (const forms of badForms) {
+      await assert.rejects(
+        () => materials.commitClientPdf(owner, seeded.fileId, seeded.hash, { ...run, forms }),
+        isHubError("invalid_extraction"),
+      );
+    }
+    for (
+      const invalid of [{ coverage_scope: "document_read" }, { visual_analysis: "performed" }, {
+        hard_timeout: false,
+      }]
+    ) {
+      await assert.rejects(
+        () => materials.commitClientPdf(owner, seeded.fileId, seeded.hash, { ...run, ...invalid }),
+        isHubError("invalid_extraction"),
+      );
+    }
+    assert.deepEqual(await readStored(db, seeded.fileId), prior);
+    // Old clients omit the new fields; accept them without inventing a zero-field inventory.
+    const legacySeed = await seedFile(db, owner.ownerId, bytes);
+    const legacyClient = await materials.commitClientPdf(
+      owner,
+      legacySeed.fileId,
+      legacySeed.hash,
+      legacy,
+    );
+    assert.equal(legacyClient.extraction.forms.field_count, null);
+    assert.equal(legacyClient.memory.forms.status, "unknown");
+    assert.equal(legacyClient.memory.coverage_scope, "text_extraction");
+  } finally {
+    await db`delete from auth.users where id=${owner.ownerId}`;
+    await db.end();
+  }
+});
 
 Deno.test("A05 A23: extractPdf grava páginas do PDF preservado e pdfPage lê por página (SQL real)", async () => {
   const db = createDb(DB_URL), hub = new Hub(db);

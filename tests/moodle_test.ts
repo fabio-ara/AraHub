@@ -285,6 +285,102 @@ Deno.test("erros do Moodle mapeiam cobertura distinta", async () => {
   assert.equal(completion.error_detail?.moodle_code, "nocriteriaset");
 });
 
+Deno.test("READ05: contexto de curso revogado significa denied/permission_denied", async () => {
+  const { adapter } = adapterWith(siteFirst(() =>
+    json({
+      exception: "moodle_exception",
+      errorcode: "errorcoursecontextnotvalid",
+      message: "contexto inválido",
+    })
+  ));
+  const result = await adapter.getCourseContents(1);
+  assert.equal(result.coverage, "denied");
+  assert.equal(result.error_code, "permission_denied");
+  assert.equal(result.error_detail?.moodle_code, "errorcoursecontextnotvalid");
+  assert.equal(result.data, null);
+});
+
+Deno.test("READ03: texto HTML conserva links com origem e descarta execução e credenciais", async () => {
+  const fileUrl = ORIGIN + "/webservice/pluginfile.php/7/mod_book/chapter/2/index.html";
+  const html =
+    `<h2>Capítulo</h2><p>Prazo <a href="/mod/page/view.php?id=9&amp;wstoken=${TOKEN}&amp;SeSsKeY=private">Página</a></p>` +
+    '<a href="notes.html#prazo">Relativo</a><table><tr><td><a href="https://example.org/ref?access_token=hidden&amp;q=ok">Fonte</a></td></tr></table>' +
+    '<script>evil()</script><a href="jav&#x61;script:bad()">JS</a><a href="data:text/html,bad">Data</a>' +
+    '<a href="https://user:password@example.org/">Credencial</a><a href="//user:password@example.org/">Credencial relativa</a>' +
+    `<p>${TOKEN}</p><img src="https://external.invalid/image" onerror="handler()">`;
+  const { adapter, transport } = adapterWith(
+    siteFirst((url) =>
+      url.includes("pluginfile.php")
+        ? new Response(html, { headers: { "content-type": "text/html" } })
+        : json([{
+          id: 7,
+          contents: [{
+            type: "file",
+            filename: "index.html",
+            fileurl: fileUrl,
+            mimetype: "text/html",
+          }],
+        }])
+    ),
+  );
+  await adapter.getBooks([1]);
+  const binary = unwrap(await adapter.downloadFile(adapter.listRegisteredFiles()[0].file_id));
+  assert.ok(binary.text?.includes("Página (" + ORIGIN + "/mod/page/view.php?id=9)"));
+  assert.ok(
+    binary.text?.includes("Relativo (" + fileUrl.replace("index.html", "notes.html#prazo") + ")"),
+  );
+  assert.ok(binary.text?.includes("Fonte (https://example.org/ref?q=ok)"));
+  for (
+    const bad of [
+      TOKEN,
+      "wstoken",
+      "SeSsKeY",
+      "private",
+      "hidden",
+      "access_token",
+      "evil()",
+      "bad()",
+      "data:text",
+      "user:password",
+      "handler()",
+    ]
+  ) {
+    assert.ok(!binary.text?.includes(bad), bad);
+  }
+  assert.equal(new TextDecoder().decode(binary.bytes), html);
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(html)),
+  );
+  assert.equal(binary.sha256, [...digest].map((b) => b.toString(16).padStart(2, "0")).join(""));
+  assert.equal(transport.calls.length, 3);
+  assert.ok(transport.calls.every((c) => new URL(c.url).origin === ORIGIN));
+});
+
+Deno.test("READ03: limite do texto preservado informa truncamento", async () => {
+  const fileUrl = ORIGIN + "/webservice/pluginfile.php/7/mod_book/chapter/2/index.html";
+  const { adapter } = adapterWith(
+    siteFirst((url) =>
+      url.includes("pluginfile.php")
+        ? new Response("<p>" + "a".repeat(110000) + "</p>", {
+          headers: { "content-type": "text/html" },
+        })
+        : json([{
+          id: 7,
+          contents: [{
+            type: "file",
+            filename: "index.html",
+            fileurl: fileUrl,
+            mimetype: "text/html",
+          }],
+        }])
+    ),
+  );
+  await adapter.getBooks([1]);
+  const result = await adapter.downloadFile(adapter.listRegisteredFiles()[0].file_id);
+  assert.equal(result.truncated, true);
+  assert.equal(result.data?.text?.length, 100000);
+});
+
 Deno.test("timeout, parsing_error e limite de bytes", async () => {
   const timeout = adapterWith(() => {
     throw new DOMException("tempo esgotado", "AbortError");

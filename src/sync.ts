@@ -375,6 +375,42 @@ export class Sync {
     });
   }
 
+  /** One current section per module. Old structural edges are explicitly
+   * historical; re-entering a section reactivates its row. This uses the existing
+   * owner-scoped UPDATE grant (no DELETE privilege or schema change). Source
+   * observations remain append-only and retain each A→B→A occurrence.
+   */
+  private async relateModule(
+    p: Principal,
+    connectionId: string,
+    sectionId: string,
+    moduleId: string,
+    evidence: Record<string, unknown>,
+  ): Promise<void> {
+    await asOwner(this.hub.db, p, async (tx) => {
+      const scoped = await tx`select m.id from public.hub_entities m
+        join public.hub_entities s on s.owner_id=m.owner_id and s.connection_id=m.connection_id
+        where m.owner_id=${p.ownerId} and m.connection_id=${connectionId}
+        and m.id=${moduleId} and m.kind='module' and s.id=${sectionId} and s.kind='section'
+        and m.state->>'course_id'=s.state->>'course_id' for update of m`;
+      if (!scoped.length) throw new HubError("not_found", "Módulo/seção fora da conexão.", 404);
+      await tx`update public.hub_relations r set kind='previous_has_module'
+        where r.owner_id=${p.ownerId} and r.to_id=${moduleId} and r.kind='has_module'
+        and r.from_id<>${sectionId} and exists(select 1 from public.hub_entities s
+          where s.owner_id=r.owner_id and s.id=r.from_id and s.connection_id=${connectionId} and s.kind='section')`;
+      const reactivated = await tx`update public.hub_relations set kind='has_module',evidence=${
+        tx.json(jsonable(evidence))
+      }
+        where owner_id=${p.ownerId} and from_id=${sectionId} and to_id=${moduleId}
+        and kind='previous_has_module' returning to_id`;
+      if (!reactivated.length) {
+        await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence)
+          values(${p.ownerId},${sectionId},${moduleId},'has_module',${tx.json(jsonable(evidence))})
+          on conflict(owner_id,from_id,to_id,kind) do update set evidence=excluded.evidence`;
+      }
+    });
+  }
+
   // -- Checkpoint duravel da travessia de foruns --------------------------
 
   /**
@@ -674,11 +710,11 @@ export class Sync {
           contents.coverage,
           contents.observed_at,
         );
-        await this.relate(
+        await this.relateModule(
           p,
+          connectionId,
           sectionEntity.id as string,
           moduleEntity.id as string,
-          "has_module",
           evidenceOf(connectionId, sectionLocator, "structure", contents.observed_at),
         );
         bump("relations");

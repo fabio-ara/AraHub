@@ -101,8 +101,17 @@ function observe(
   observedAt: string,
 ) {
   return asOwner(db, { ownerId }, async (tx) => {
+    const [source] =
+      await tx`select connection_id from public.hub_entities where owner_id=${ownerId} and id=${entityId}`;
     await tx`insert into public.hub_observations(owner_id,entity_id,content,content_hash,provenance,coverage,observed_at)
-      values(${ownerId},${entityId},${tx.json(content as postgres.JSONValue)},${hash},${tx.json({ system: "synthetic", locator: "fixture:attention" })},'complete',${observedAt}::text::timestamptz)
+      values(${ownerId},${entityId},${tx.json(content as postgres.JSONValue)},${hash},${
+      tx.json({
+        system: "moodle",
+        connection_id: source.connection_id,
+        fixture: true,
+        locator: "fixture:attention",
+      })
+    },'complete',${observedAt}::text::timestamptz)
       on conflict(owner_id,entity_id,content_hash) do nothing`;
   });
 }
@@ -110,16 +119,318 @@ function observe(
 function relate(db: Db, ownerId: string, from: string, to: string, kind: string) {
   return asOwner(db, { ownerId }, async (tx) => {
     await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence)
-      values(${ownerId},${from},${to},${kind},${tx.json({ system: "synthetic", source: "fixture" })})`;
+      values(${ownerId},${from},${to},${kind},${
+      tx.json({ system: "synthetic", source: "fixture" })
+    })`;
   });
 }
 
 function setState(db: Db, ownerId: string, entityId: string, patch: unknown) {
   return asOwner(db, { ownerId }, async (tx) => {
-    await tx`update public.hub_entities set state=state || ${tx.json(patch as postgres.JSONValue)}::jsonb
+    await tx`update public.hub_entities set state=state || ${
+      tx.json(patch as postgres.JSONValue)
+    }::jsonb
       where owner_id=${ownerId} and id=${entityId}`;
   });
 }
+
+Deno.test("FORUM-02: só respostas observadas a dois colegas distintos satisfazem a quantidade", async () => {
+  const db = createDb(LOCAL_DB), hub = new Hub(db), attention = new Attention(hub);
+  const owner = { ownerId: crypto.randomUUID() }, other = { ownerId: crypto.randomUUID() };
+  try {
+    await db`insert into auth.users(id) values(${owner.ownerId}),(${other.ownerId})`;
+    const conn = await hub.connect(owner, "moodle", "Fórum fixture", null, "7");
+    const forum = await hub.entity(owner, conn.id, "forum", "forum:201", "Comentar dois colegas");
+    const discussion = await hub.entity(
+      owner,
+      conn.id,
+      "discussion",
+      "discussion:301",
+      "Discussão",
+    );
+    await relate(db, owner.ownerId, forum.id, discussion.id, "has_discussion");
+    await observe(
+      db,
+      owner.ownerId,
+      forum.id,
+      { intro: "Comente dois colegas distintos." },
+      "forum-02",
+      NOW,
+    );
+    const obs = (await hub.observations(owner, forum.id)).records[0];
+    await attention.recordRequirement(owner, {
+      source_entity_id: forum.id,
+      requirement_key: "comentarios",
+      observation_id: String(obs.id),
+      content_hash: "forum-02",
+      excerpt: "Comente dois colegas distintos.",
+      action: "responder a colegas",
+      quantity: { kind: "colleagues_distinct", at_least: 2 },
+    });
+    const addPost = async (
+      id: number,
+      author: number,
+      parent: number,
+      observed = true,
+      coverage = "complete",
+    ) => {
+      const raw = { id, author: { id: author }, parentid: parent, message: "Comentário fixture" };
+      const state = {
+        post_id: id,
+        author_userid: author,
+        parent,
+        discussion_id: 301,
+        provider_record: raw,
+      };
+      const entity = await hub.entity(owner, conn.id, "post", `post:${id}`, "Post fixture", state);
+      await asOwner(db, owner, async (tx) => {
+        await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence)
+          values(${owner.ownerId},${discussion.id},${entity.id},'has_post','{}')
+          on conflict(owner_id,from_id,to_id,kind) do nothing`;
+      });
+      if (observed) {
+        await asOwner(db, owner, async (tx) => {
+          await tx`insert into public.hub_observations(owner_id,entity_id,content,content_hash,provenance,coverage)
+          values(${owner.ownerId},${entity.id},${tx.json(raw)},${"post-" + id},${
+            tx.json({
+              system: "moodle",
+              connection_id: conn.id,
+              discussion_id: 301,
+              post_id: id,
+              fixture: true,
+            })
+          },${coverage})
+          on conflict(owner_id,entity_id,content_hash) do nothing`;
+        });
+      }
+      return entity;
+    };
+    await addPost(1, 7, 0);
+    await addPost(2, 11, 0);
+    await addPost(3, 12, 0);
+    await addPost(4, 13, 0);
+    const check = async (expected: number) => {
+      const view = await attention.overview(owner, {});
+      const obligation = findOf(view, forum.id);
+      assert.equal(obligation.colleagues!.distinct_colleagues, 3);
+      assert.equal(obligation.colleagues!.colleagues_answered_by_owner, expected);
+      assert.equal(obligation.colleague_requirements[0].observed_distinct_colleagues, expected);
+      assert.equal(obligation.colleague_requirements[0].observed_meets_at_least, expected >= 2);
+    };
+    await check(0); // Existing classmates alone do not satisfy participation.
+    const ctx = await hub.createContext(owner, "Rascunho de resposta");
+    await hub.recordDelta(owner, {
+      context_id: ctx.id,
+      expected_version: 0,
+      idempotency_key: crypto.randomUUID(),
+      kind: "artifact",
+      evidence_kind: "interpretation",
+      content: "Rascunho para responder ao colega 11",
+      provenance: [],
+      scope: { entity_id: forum.id },
+    });
+    await addPost(5, 7, 1); // Reply to oneself.
+    await addPost(6, 7, 3, false); // State projection without observed publication.
+    await check(0);
+    const firstReply = await addPost(7, 7, 2);
+    await check(1);
+    await relate(db, owner.ownerId, forum.id, firstReply.id, "has_post"); // Same post via two graph paths.
+    await addPost(7, 7, 2); // Provider replay must be idempotent.
+    await addPost(8, 7, 2); // Second real reply to the same classmate still counts one.
+    await check(1);
+    await addPost(9, 7, 3, true, "partial"); // A preserved post can be valid in a partial page.
+    await check(2);
+    const final = findOf(await attention.overview(owner, {}), forum.id);
+    assert.equal(final.colleagues!.observed_posts, 8); // 1..9 except unobserved 6; graph duplicate excluded.
+    assert.equal(final.colleagues!.owner_posts, 5);
+    assert.deepEqual((await attention.overview(other, {})).obligations, []);
+  } finally {
+    await db`delete from auth.users where id in (${owner.ownerId},${other.ownerId})`;
+    await db.end();
+  }
+});
+
+Deno.test("MAT-05: dependências versionadas, contexto/dono, hash vigente e cobertura limitada", async () => {
+  const db = createDb(LOCAL_DB), hub = new Hub(db), attention = new Attention(hub);
+  const owner = { ownerId: crypto.randomUUID() }, other = { ownerId: crypto.randomUUID() };
+  try {
+    await db`insert into auth.users(id) values(${owner.ownerId}),(${other.ownerId})`;
+    const conn = await hub.connect(owner, "moodle", "Fixture MAT-05", null, "7");
+    const foreignConn = await hub.connect(other, "moodle", "Outra conta", null, "8");
+    await db`update public.hub_connections set state='connected' where id=${conn.id} and owner_id=${owner.ownerId}`;
+    const ctx = await hub.createContext(owner, "Rascunhos A");
+    const ctxB = await hub.createContext(owner, "Rascunhos B");
+    const task = await hub.entity(owner, conn.id, "assignment", "mat:task", "Tarefa");
+    const taskRel = await hub.entity(
+      owner,
+      conn.id,
+      "assignment",
+      "mat:relation",
+      "Tarefa por relação",
+    );
+    const source = await hub.entity(owner, conn.id, "resource", "mat:source", "Material");
+    const stable = await hub.entity(owner, conn.id, "resource", "mat:stable", "Material estável");
+    const unrelated = await hub.entity(
+      owner,
+      conn.id,
+      "resource",
+      "mat:unrelated",
+      "Material sem vínculo",
+    );
+    const related = await hub.entity(owner, conn.id, "resource", "mat:related", "Material exigido");
+    const foreign = await hub.entity(
+      other,
+      foreignConn.id,
+      "resource",
+      "mat:foreign",
+      "Fonte privada alheia",
+    );
+    const oldAt = new Date(Date.now() - 60_000).toISOString();
+    const observeVersion = async (
+      entityId: string,
+      hash: string,
+      at: string,
+      ownerId = owner.ownerId,
+    ) => {
+      const content = { requirement: hash };
+      await observe(db, ownerId, entityId, content, hash, at);
+      await setState(db, ownerId, entityId, { provider_record: content });
+      return (await hub.observations({ ownerId }, entityId)).records[0];
+    };
+    const a = await observeVersion(source.id, "material-v1", oldAt);
+    const same = await observeVersion(stable.id, "stable-v1", oldAt);
+    const baseRel = await observeVersion(related.id, "related-v1", oldAt);
+    const baseUnrelated = await observeVersion(unrelated.id, "unrelated-v1", oldAt);
+    const baseForeign = await observeVersion(foreign.id, "foreign-v1", oldAt, other.ownerId);
+    await asOwner(db, owner, async (tx) => {
+      for (const context of [ctx, ctxB]) {
+        for (const entity of [task, taskRel]) {
+          await tx`insert into public.hub_context_targets(owner_id,context_id,entity_id)
+          values(${owner.ownerId},${context.id},${entity.id})`;
+        }
+      }
+      // Only a hash qualified against the same material can establish a baseline.
+      await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence) values
+        (${owner.ownerId},${taskRel.id},${related.id},'required_material',${
+        tx.json({
+          source_observation_id: baseRel.id,
+          content_hash: "related-v1",
+          context_id: ctx.id,
+        })
+      }),
+        (${owner.ownerId},${task.id},${unrelated.id},'required_material',${
+        tx.json({ source_observation_id: baseUnrelated.id })
+      }),
+        (${owner.ownerId},${task.id},${stable.id},'required_material',${
+        tx.json({ source_observation_id: a.id, content_hash: "material-v1" })
+      })`;
+    });
+    let version = 0;
+    const artifact = (
+      target: string,
+      provenance: Array<{ system: string; locator: string; version?: string }>,
+    ) =>
+      hub.recordDelta(owner, {
+        idempotency_key: crypto.randomUUID(),
+        context_id: ctx.id,
+        expected_version: version++,
+        kind: "artifact",
+        evidence_kind: "interpretation",
+        content: "Rascunho fixture",
+        scope: { entity_id: target },
+        provenance,
+      });
+    const reference = (
+      id: unknown,
+      version: string,
+    ) => [{ system: "synthetic", locator: `hub:observation:${id}`, version }];
+    const draft = await artifact(task.id, reference(a.id, "material-v1"));
+    await artifact(task.id, reference(same.id, "stable-v1"));
+    await artifact(task.id, reference(a.id, "wrong-hash"));
+    await artifact(task.id, reference(baseForeign.id, "foreign-v1"));
+    const relationDraft = await artifact(taskRel.id, []);
+    const otherContextDraft = await hub.recordDelta(owner, {
+      idempotency_key: crypto.randomUUID(),
+      context_id: ctxB.id,
+      expected_version: 0,
+      kind: "artifact",
+      evidence_kind: "interpretation",
+      content: "Outro contexto",
+      scope: { entity_id: task.id },
+      provenance: reference(a.id, "material-v1"),
+    });
+    const changedAt = new Date().toISOString();
+    const b = await observeVersion(source.id, "material-v2", changedAt);
+    await observeVersion(stable.id, "stable-v1", changedAt); // Same hash, new occurrence.
+    await observeVersion(unrelated.id, "unrelated-v2", changedAt);
+    await observeVersion(related.id, "related-v2", changedAt);
+    await observeVersion(foreign.id, "foreign-v2", changedAt, other.ownerId);
+    type Change = {
+      entity_id: string;
+      draft_id: string;
+      context_id: string;
+      material_entity_id: string;
+      dependency_basis: string;
+      baseline: { content_hash: string };
+      current: { observation_id: string; content_hash: string };
+      source_uncertainties: string[];
+    };
+    const changes = (view: Awaited<ReturnType<Attention["overview"]>>) =>
+      view.attention
+        .filter((row) =>
+          (row as { kind: string }).kind === "material_dependency_changed"
+        ) as Change[];
+    const view = await attention.overview(owner, { context_id: ctx.id });
+    const alerts = changes(view);
+    assert.equal(alerts.length, 2);
+    const direct = alerts.find((row) => row.draft_id === draft.id)!;
+    assert.equal(direct.entity_id, task.id);
+    assert.equal(direct.context_id, ctx.id);
+    assert.equal(direct.material_entity_id, source.id);
+    assert.equal(direct.baseline.content_hash, "material-v1");
+    assert.equal(direct.current.content_hash, "material-v2");
+    assert.equal(direct.current.observation_id, b.id);
+    assert.deepEqual(direct.source_uncertainties, []);
+    assert.equal(
+      alerts.find((row) => row.draft_id === relationDraft.id)!.dependency_basis,
+      "required_material",
+    );
+    assert.ok(!JSON.stringify(view).includes(otherContextDraft.id));
+    assert.ok(!JSON.stringify(view).includes(foreign.id));
+    assert.ok(!JSON.stringify(view).includes(baseForeign.id));
+    assert.equal(findOf(view, taskRel.id).state.drafts.length, 1);
+    assert.equal(changes(await attention.overview(owner, { context_id: ctxB.id })).length, 1);
+    assert.deepEqual(changes(await attention.overview(other, { context_id: ctx.id })), []);
+
+    // A→B→A: current occurrence wins; a past differing snapshot cannot keep the alert alive.
+    await observeVersion(source.id, "material-v1", new Date(Date.now() + 1).toISOString());
+    const reverted = changes(await attention.overview(owner, { context_id: ctx.id }));
+    assert.equal(reverted.length, 1);
+    assert.equal(reverted[0].draft_id, relationDraft.id);
+    assert.equal((await hub.observations(owner, source.id)).records.length, 3);
+    await db`update public.hub_connections set state='revoked' where owner_id=${owner.ownerId} and id=${conn.id}`;
+    const uncertain = changes(await attention.overview(owner, { context_id: ctx.id }));
+    assert.ok(uncertain[0].source_uncertainties.includes("source_access_not_current"));
+
+    // Sixth older artifact must produce explicit partial coverage, not a false complete claim.
+    for (let n = 0; n < 2; n++) await artifact(task.id, []);
+    const bounded = await attention.overview(owner, { context_id: ctx.id });
+    const boundedTask = findOf(bounded, task.id);
+    assert.equal(boundedTask.state.drafts.length, 5);
+    assert.ok(boundedTask.gaps.some((gap) => gap.includes("5 rascunhos")));
+    // The same bound also applies to explicit source references in one artifact.
+    const refs = Array.from({ length: 21 }, () => reference(same.id, "stable-v1")[0]);
+    await artifact(taskRel.id, refs);
+    const boundedReferences = findOf(
+      await attention.overview(owner, { context_id: ctx.id }),
+      taskRel.id,
+    );
+    assert.ok(boundedReferences.gaps.some((gap) => gap.includes("20 referências")));
+  } finally {
+    await db`delete from auth.users where id in (${owner.ownerId},${other.ownerId})`;
+    await db.end();
+  }
+});
 
 Deno.test("atenção: obrigações com prazos múltiplos e colegas distintos (Postgres sintético)", async () => {
   const db = createDb(LOCAL_DB), hub = new Hub(db), attention = new Attention(hub);
@@ -143,7 +454,14 @@ Deno.test("atenção: obrigações com prazos múltiplos e colegas distintos (Po
       "Discussão",
       { course_id: 1, forum_id: 5, discussion_id: 9, provider_record: discussionRecord },
     );
-    await observe(db, owner.ownerId, discussion.id, discussionRecord, "hash-discussion-1", "2026-10-09T10:01:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      discussion.id,
+      discussionRecord,
+      "hash-discussion-1",
+      "2026-10-09T10:01:00Z",
+    );
     await relate(db, owner.ownerId, forum.id, discussion.id, "has_discussion");
     const posts: Array<Record<string, unknown>> = [
       { post_id: 1, author_userid: 7, parent: 0 },
@@ -161,7 +479,14 @@ Deno.test("atenção: obrigações com prazos múltiplos e colegas distintos (Po
         "Post " + post.post_id,
         state,
       );
-      await observe(db, owner.ownerId, entity.id, state, "hash-post-" + index, "2026-10-09T10:02:0" + index + "Z");
+      await observe(
+        db,
+        owner.ownerId,
+        entity.id,
+        state,
+        "hash-post-" + index,
+        "2026-10-09T10:02:0" + index + "Z",
+      );
       await relate(db, owner.ownerId, discussion.id, entity.id, "has_post");
     }
     const assignmentRecord = { id: 3, name: "Trabalho 1", duedate: DUE, cutoffdate: CUTOFF };
@@ -173,7 +498,14 @@ Deno.test("atenção: obrigações com prazos múltiplos e colegas distintos (Po
       "Trabalho 1",
       { course_id: 1, instance_id: 3, provider_record: assignmentRecord },
     );
-    await observe(db, owner.ownerId, assignment.id, assignmentRecord, "hash-assignment-a", "2026-10-09T11:00:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      assignment.id,
+      assignmentRecord,
+      "hash-assignment-a",
+      "2026-10-09T11:00:00Z",
+    );
     const context = await hub.createContext(owner, "Contexto sintético");
     await hub.recordDelta(owner, {
       idempotency_key: "draft-" + crypto.randomUUID(),
@@ -197,7 +529,14 @@ Deno.test("atenção: obrigações com prazos múltiplos e colegas distintos (Po
       "Trabalho 2",
       { course_id: 1, instance_id: 4, provider_record: bareRecord },
     );
-    await observe(db, owner.ownerId, bare.id, bareRecord, "hash-assignment-b", "2026-10-09T11:05:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      bare.id,
+      bareRecord,
+      "hash-assignment-b",
+      "2026-10-09T11:05:00Z",
+    );
 
     const result = await attention.overview(owner, {}, { now: NOW });
     assert.equal(result.content_is_untrusted_data, true);
@@ -287,7 +626,8 @@ Deno.test("atenção: apresentado/lido local, marca nativa separada e reversão 
     assert.equal(presented.moodle_mark, false);
     assert.equal(presented.source_writes, false);
     assert.equal(
-      (presented.presented as Array<{ presented: { content_hash: string } }>)[0].presented.content_hash,
+      (presented.presented as Array<{ presented: { content_hash: string } }>)[0].presented
+        .content_hash,
       "hash-a",
     );
     const afterPresented = await attention.overview(owner, {}, { now: NOW });
@@ -336,11 +676,18 @@ Deno.test("atenção: apresentado/lido local, marca nativa separada e reversão 
       { provider_record: abaRecord },
     );
     await observe(db, owner.ownerId, aba.id, abaRecord, "hash-aba-a", "2026-10-09T13:00:00Z");
-    await observe(db, owner.ownerId, aba.id, {
-      id: 6,
-      name: "Trabalho revertido",
-      duedate: CUTOFF,
-    }, "hash-aba-b", "2026-10-10T13:00:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      aba.id,
+      {
+        id: 6,
+        name: "Trabalho revertido",
+        duedate: CUTOFF,
+      },
+      "hash-aba-b",
+      "2026-10-10T13:00:00Z",
+    );
     await observe(db, owner.ownerId, aba.id, abaRecord, "hash-aba-a", "2026-10-11T13:00:00Z");
     const afterAba = await attention.overview(owner, {}, { now: NOW });
     const abaObligation = findOf(afterAba, aba.id);
@@ -363,7 +710,14 @@ Deno.test("atenção: apresentado/lido local, marca nativa separada e reversão 
       "Drift",
       { provider_record: { id: 7, name: "Drift", duedate: DUE } },
     );
-    await observe(db, owner.ownerId, drift.id, { id: 7, name: "Drift", duedate: CUTOFF }, "hash-drift-b", "2026-10-09T15:00:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      drift.id,
+      { id: 7, name: "Drift", duedate: CUTOFF },
+      "hash-drift-b",
+      "2026-10-09T15:00:00Z",
+    );
     const afterDrift = await attention.overview(owner, {}, { now: NOW });
     const driftObligation = findOf(afterDrift, drift.id);
     assert.equal(driftObligation.basis, "current_state_with_unrecorded_reobservation");
@@ -397,8 +751,11 @@ Deno.test("atenção: obrigações interpretadas e recibo de ação acadêmica (
       { provider_record: forumRecord },
     );
     const observation = await asOwner(db, owner, async (tx) => {
-      const rows = await tx`insert into public.hub_observations(owner_id,entity_id,content,content_hash,provenance,coverage,observed_at)
-        values(${owner.ownerId},${forum.id},${tx.json(forumRecord)},'hash-forum-intro',${tx.json({ system: "synthetic", locator: "fixture:forum/5" })},'complete',now())
+      const rows =
+        await tx`insert into public.hub_observations(owner_id,entity_id,content,content_hash,provenance,coverage,observed_at)
+        values(${owner.ownerId},${forum.id},${tx.json(forumRecord)},'hash-forum-intro',${
+          tx.json({ system: "synthetic", locator: "fixture:forum/5" })
+        },'complete',now())
         returning id`;
       return rows[0];
     });
@@ -473,6 +830,7 @@ Deno.test("atenção: obrigações interpretadas e recibo de ação acadêmica (
         "Post " + post.post_id,
         state,
       );
+      await observe(db, owner.ownerId, entity.id, state, "requirement-post-" + post.post_id, NOW);
       await relate(db, owner.ownerId, discussion.id, entity.id, "has_post");
     }
 
@@ -502,8 +860,8 @@ Deno.test("atenção: obrigações interpretadas e recibo de ação acadêmica (
     const comparison = forumObligation.colleague_requirements[0];
     assert.equal(comparison.requirement_key, "comentarios-colegas");
     assert.equal(comparison.required_at_least, 2);
-    assert.equal(comparison.observed_distinct_colleagues, 2);
-    assert.equal(comparison.observed_meets_at_least, true);
+    assert.equal(comparison.observed_distinct_colleagues, 0);
+    assert.equal(comparison.observed_meets_at_least, false);
     assert.ok(!kindsOf(result, forum.id).includes("requirement_not_interpreted"));
     assert.deepEqual(forumObligation.gaps, []);
 
@@ -516,14 +874,26 @@ Deno.test("atenção: obrigações interpretadas e recibo de ação acadêmica (
       "Trabalho",
       { course_id: 3, coursemodule: 41, instance_id: 8, provider_record: assignmentRecord },
     );
-    await observe(db, owner.ownerId, assignment.id, assignmentRecord, "hash-assignment-8", "2026-10-09T14:00:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      assignment.id,
+      assignmentRecord,
+      "hash-assignment-8",
+      "2026-10-09T14:00:00Z",
+    );
     const beforeReceipt = await attention.overview(owner, {}, { now: NOW });
     assert.ok(kindsOf(beforeReceipt, assignment.id).includes("submission_evidence_missing"));
 
     // Recibo real: snapshot e alvo vêm do próprio PersistentActionStore.
     // MoodleActions grava target "course/cmid/instance", não um localizador de URL.
     const store = new PersistentActionStore(db, { sessionActive: () => Promise.resolve(true) });
-    const prepareReceipt = (operation: string, target: string, revision: string, content: unknown) =>
+    const prepareReceipt = (
+      operation: string,
+      target: string,
+      revision: string,
+      content: unknown,
+    ) =>
       store.prepare(owner, {
         connectionId: conn.id,
         operation,
@@ -593,7 +963,14 @@ Deno.test("atenção: obrigações interpretadas e recibo de ação acadêmica (
       "Outro",
       { provider_record: { id: 9, name: "Outro" }, completion: true },
     );
-    await observe(db, owner.ownerId, nativeOnly.id, { id: 9, name: "Outro" }, "hash-assignment-9", "2026-10-09T14:05:00Z");
+    await observe(
+      db,
+      owner.ownerId,
+      nativeOnly.id,
+      { id: 9, name: "Outro" },
+      "hash-assignment-9",
+      "2026-10-09T14:05:00Z",
+    );
     const withNative = await attention.overview(owner, {}, { now: NOW });
     const nativeObligation = findOf(withNative, nativeOnly.id);
     assert.equal(nativeObligation.state.native_platform.entity_completion, true);

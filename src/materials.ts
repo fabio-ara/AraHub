@@ -7,13 +7,20 @@ import type { MoodleRecord } from "./adapters/moodle.ts";
 import {
   DEFAULT_PDF_MAX_BYTES,
   extractPdfText,
+  MAX_PDF_FIELD_NAME_CHARS,
+  MAX_PDF_FIELD_TYPE_CHARS,
+  MAX_PDF_FORM_COUNT,
+  MAX_PDF_FORM_FIELDS,
   MAX_PDF_MAX_PAGES,
   MAX_PDF_PAGE_CHARS,
   MAX_PDF_TOTAL_CHARS,
+  PDF_READING_SCOPE,
   pdfExtractionToText,
+  type PdfFormMetadata,
   pdfPageLocator,
   type PdfPageText,
   type PdfTextExtraction,
+  unknownPdfForms,
 } from "./pdf_text.ts";
 import { sha256Hex } from "./migration.ts";
 import { z } from "zod";
@@ -50,6 +57,33 @@ const CLIENT_LIMIT_NOTE =
   "Execução no navegador: 50 páginas por padrão (máximo 500 por lote), 20 000 caracteres por página (máximo 100 000) e 400 000 no total (máximo 1 000 000).";
 
 const finiteNumber = z.number().finite();
+const pdfFormSchema = z.object({
+  status: z.enum(["unknown", "inspected", "partial"]),
+  field_count: z.number().int().min(0).max(MAX_PDF_FORM_COUNT).nullable(),
+  fields: z.array(
+    z.object({
+      name: z.string().max(MAX_PDF_FIELD_NAME_CHARS),
+      type: z.string().max(MAX_PDF_FIELD_TYPE_CHARS).nullable(),
+    }).strict(),
+  ).max(MAX_PDF_FORM_FIELDS),
+  details_truncated: z.boolean(),
+  has_xfa: z.boolean().nullable(),
+  scope: z.literal("acroform"),
+  interaction: z.literal("not_performed"),
+  source: z.enum(["unknown", "pdfjs", "browser_client"]),
+}).strict().refine((form) => {
+  if (form.status === "unknown") {
+    return form.field_count === null &&
+      form.fields.length === 0 && !form.details_truncated && form.source === "unknown";
+  }
+  if (form.source === "unknown") return false;
+  if (form.field_count !== null && form.field_count < form.fields.length) return false;
+  if (form.status === "inspected") {
+    return form.field_count === form.fields.length &&
+      !form.details_truncated && form.has_xfa !== true;
+  }
+  return form.details_truncated || form.has_xfa === true;
+}, "Inventário de formulário inconsistente.");
 const pdfIssueSchema = z.object({
   scope: z.enum(["document", "page"]),
   page: z.number().int().min(1).max(MAX_CLIENT_DOCUMENT_PAGES).nullable(),
@@ -95,6 +129,9 @@ const clientExtractionSchema = z.object({
     "timeout",
     "parsing_error",
   ]),
+  coverage_scope: z.literal("text_extraction").optional(),
+  visual_analysis: z.literal("not_performed").optional(),
+  forms: pdfFormSchema.optional(),
   execution: z.literal("isolated_worker"),
   hard_timeout: z.literal(true),
   page_count: z.number().int().min(0).max(MAX_CLIENT_DOCUMENT_PAGES).nullable(),
@@ -303,6 +340,17 @@ function normalizeClientExtraction(
     ok: input.ok,
     ...(input.error_code !== undefined ? { error_code: input.error_code } : {}),
     coverage,
+    ...PDF_READING_SCOPE,
+    forms: input.forms
+      ? {
+        ...input.forms,
+        fields: input.forms.fields.map((field) => ({
+          name: sanitizeClientText(field.name),
+          type: field.type === null ? null : sanitizeClientText(field.type),
+        })),
+        source: input.forms.status === "unknown" ? "unknown" : "browser_client",
+      }
+      : unknownPdfForms(),
     execution: "isolated_worker",
     hard_timeout: true,
     page_count: input.page_count,
@@ -424,6 +472,22 @@ function mergePdfPages(prior: StoredPage[], run: PdfPageText[]): PageMerge {
 function priorCoverage(extraction: unknown, fallback: Coverage): Coverage {
   const coverage = (extraction as { coverage?: unknown } | null)?.coverage;
   return typeof coverage === "string" ? coverage as Coverage : fallback;
+}
+
+/** Legacy absence/malformed metadata stays unknown. No inferred zero fields. */
+function storedPdfForms(extraction: unknown): PdfFormMetadata {
+  const parsed = pdfFormSchema.safeParse((extraction as { forms?: unknown } | null)?.forms);
+  return parsed.success ? parsed.data : unknownPdfForms();
+}
+
+function mergePdfForms(prior: PdfFormMetadata, incoming: PdfFormMetadata): PdfFormMetadata {
+  const strength = (form: PdfFormMetadata) =>
+    form.status === "unknown"
+      ? 0
+      : (form.source === "pdfjs" ? 10 : 0) + (form.status === "inspected" ? 2 : 1);
+  // A client cannot replace a locally inspected inventory by claiming source=pdfjs:
+  // normalizeClientExtraction has already replaced that claim with browser_client.
+  return strength(incoming) > strength(prior) ? incoming : prior;
 }
 
 /**
@@ -577,16 +641,25 @@ export class Materials {
         ? priorCoverage(locked, run.coverage)
         : mergedCoverage(merge.pages, pageCount, run);
       let memory_updated = false;
+      const previousForms = storedPdfForms(locked);
+      const forms = mergePdfForms(previousForms, run.forms);
       if (merge.pages.length && !merge.unchanged) {
         const memory = buildStoredExtraction(run, merge, coverage, pageCount, extra);
+        memory.forms = forms;
         await tx`update public.hub_files set extracted_text=${
           pdfExtractionToText(memory)
         },extraction=${
           tx.json(JSON.parse(JSON.stringify(memory)))
         } where owner_id=${p.ownerId} and id=${fileId} and sha256=${hash}`;
         memory_updated = true;
+      } else if (forms !== previousForms) {
+        // Upgrade only inventory/qualifiers; keep stronger text, coverage and its provenance.
+        const memory = { ...locked, ...PDF_READING_SCOPE, forms };
+        await tx`update public.hub_files set extraction=${tx.json(memory)}
+          where owner_id=${p.ownerId} and id=${fileId} and sha256=${hash}`;
+        memory_updated = true;
       }
-      return { memory_updated, merge, coverage };
+      return { memory_updated, merge, coverage, forms };
     });
   }
   async extractPdf(p: Principal, fileId: string, hash: string, maxPages = 50) {
@@ -623,6 +696,8 @@ export class Materials {
       extraction: { ...result, pages: result.pages.map(({ text: _text, ...page }) => page) },
       memory: {
         coverage: outcome.coverage,
+        ...PDF_READING_SCOPE,
+        forms: outcome.forms,
         complete: outcome.coverage === "complete",
         text_available: outcome.merge.pages.some(pageHasText),
         pages: outcome.merge.pages.length,
@@ -659,6 +734,9 @@ export class Materials {
       sha256: hash,
       page: page ?? null,
       coverage: page ? file.extraction.coverage : "page_not_extracted",
+      ...PDF_READING_SCOPE,
+      forms: storedPdfForms(file.extraction),
+      images_not_interpreted: true,
       limits: file.extraction.limits ?? [],
       ocr: file.extraction.ocr ?? "not_performed",
       content_is_untrusted_data: true,
@@ -776,6 +854,8 @@ export class Materials {
       },
       memory: {
         coverage: outcome.coverage,
+        ...PDF_READING_SCOPE,
+        forms: outcome.forms,
         complete: outcome.coverage === "complete",
         text_available: outcome.merge.pages.some(pageHasText),
         pages: outcome.merge.pages.length,

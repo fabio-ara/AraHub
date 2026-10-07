@@ -188,6 +188,102 @@ async function setup() {
   return { db, hub, a, b, vault };
 }
 
+Deno.test("READ06: seção atual única, retorno A/B/A e isolamento de conexões e donos", async () => {
+  const { db, hub, a, b, vault } = await setup();
+  let section = 1;
+  try {
+    const connections = new ConnectionService(
+      hub,
+      vault,
+      factory({
+        core_course_get_contents: () =>
+          [1, 2].map((id) => ({
+            id,
+            name: "Seção " + id,
+            section: id,
+            modules: section === id
+              ? [{ id: 11, name: id === 1 ? "Nome A" : "Nome B", modname: "page", instance: 201 }]
+              : [],
+          })),
+      }),
+    );
+    const first = await connections.addMoodle(a, { label: "A", origin: ORIGIN, token: TOKEN });
+    const second = await connections.addMoodle(a, {
+      label: "B",
+      origin: "https://second.invalid/moodle",
+      token: TOKEN,
+    });
+    const other = await connections.addMoodle(b, {
+      label: "Outro dono",
+      origin: ORIGIN,
+      token: TOKEN,
+    });
+    const sync = new Sync(hub, connections);
+    await sync.courseContent(a, first.id, COURSE_ID);
+    await sync.courseContent(a, second.id, COURSE_ID);
+    await sync.courseContent(b, other.id, COURSE_ID);
+    const moduleRow = (await db`select id from public.hub_entities where owner_id=${a.ownerId}
+      and connection_id=${first.id} and kind='module'`)[0];
+    const currentParents = () =>
+      db`select r.from_id,s.state->>'section_id' as section_id
+      from public.hub_relations r join public.hub_entities s on s.id=r.from_id and s.owner_id=r.owner_id
+      where r.owner_id=${a.ownerId} and r.to_id=${moduleRow.id} and r.kind='has_module'`;
+    const original = await currentParents();
+    assert.equal(original.length, 1);
+    const protectedEdges = () =>
+      db`select r.* from public.hub_relations r join public.hub_entities m
+      on m.id=r.to_id and m.owner_id=r.owner_id where r.kind='has_module'
+      and (m.connection_id=${second.id} or m.connection_id=${other.id}) order by r.to_id,r.from_id`;
+    const untouched = await protectedEdges();
+    section = 2;
+    // Simulate the previously shipped stale projection: two current parents.
+    await asOwner(
+      db,
+      a,
+      (tx) =>
+        tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence)
+      select ${a.ownerId},id,${moduleRow.id},'has_module','{}'::jsonb from public.hub_entities
+      where owner_id=${a.ownerId} and connection_id=${first.id} and kind='section' and state->>'section_id'='2'`,
+    );
+    await sync.courseContent(a, first.id, COURSE_ID);
+    const moved = await currentParents();
+    assert.equal(moved.length, 1);
+    assert.notEqual(moved[0].from_id, original[0].from_id);
+    assert.equal((await hub.entityContext(a, moduleRow.id)).entity.state.section_id, 2);
+    section = 1;
+    await sync.courseContent(a, first.id, COURSE_ID);
+    assert.deepEqual(await currentParents(), original);
+    const timeline = (await hub.observations(a, moduleRow.id)).records;
+    assert.equal(timeline.length, 3);
+    assert.equal(new Set(timeline.map((r) => r.id)).size, 3);
+    assert.equal(timeline[0].content_id, timeline[2].content_id);
+    assert.notEqual(timeline[0].content_id, timeline[1].content_id);
+    for (const [i, name] of ["Nome A", "Nome B", "Nome A"].entries()) {
+      const read = await hub.observationText(a, String(timeline[i].id));
+      assert.equal(JSON.parse(read.excerpt).name, name);
+      assert.equal((read.provenance as { section_id: number }).section_id, i === 1 ? 2 : 1);
+    }
+    await sync.courseContent(a, first.id, COURSE_ID);
+    assert.deepEqual(await currentParents(), original);
+    assert.deepEqual(await protectedEdges(), untouched);
+    const context = await hub.entityContext(a, moduleRow.id);
+    assert.equal(context.entity.title, "Nome A");
+    assert.equal(context.relations.filter((r) => r.kind === "previous_has_module").length, 1);
+    assert.equal(
+      (await db`select count(*)::int as n from public.hub_observations where owner_id=${a.ownerId}
+      and entity_id=${moduleRow.id}`)[0].n,
+      2,
+    );
+    await assert.rejects(
+      () => hub.observationText(b, String(timeline[0].id)),
+      (error: unknown) => error instanceof HubError && error.code === "not_found",
+    );
+  } finally {
+    await db`delete from auth.users where id in (${a.ownerId},${b.ownerId})`;
+    await db.end();
+  }
+});
+
 Deno.test("A16 A18 A30: lote dirigido preserva hierarquia, dedup e isolamento", async () => {
   const { db, hub, a, b, vault } = await setup();
   try {

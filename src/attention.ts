@@ -37,6 +37,8 @@ const REQUIREMENT_KIND = "academic_requirement";
 const REQUIREMENT_RELATION = "states_requirement";
 const REQUIREMENT_MAX_PER_SOURCE = 10;
 const ACTION_RECEIPT_LIMIT = 200;
+const DRAFT_LIMIT = 5;
+const MATERIAL_REFERENCE_LIMIT = 20;
 
 export const attentionFilterSchema = z.object({
   connection_id: z.string().uuid().optional(),
@@ -100,9 +102,7 @@ interface Deadline {
 }
 
 function object(value: unknown): Json {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Json
-    : {};
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 }
 
 function numericOrNull(value: unknown): number | null {
@@ -214,32 +214,46 @@ export class Attention {
   ) {
     if (subject === null || subject === "") return null;
     const rows = await tx`
-      with target_posts as (
-        select p.state as st
+      with candidate_posts as (
+        select p.id,p.connection_id
         from public.hub_relations r
         join public.hub_entities p on p.owner_id=r.owner_id and p.id=r.to_id and p.kind='post'
         where r.owner_id=${ownerId} and r.from_id=${entityId} and r.kind='has_post'
-        union all
-        select p.state as st
+        union
+        select p.id,p.connection_id
         from public.hub_relations rd
         join public.hub_entities d on d.owner_id=rd.owner_id and d.id=rd.to_id and d.kind='discussion'
         join public.hub_relations rp on rp.owner_id=d.owner_id and rp.from_id=d.id and rp.kind='has_post'
         join public.hub_entities p on p.owner_id=rp.owner_id and p.id=rp.to_id and p.kind='post'
         where rd.owner_id=${ownerId} and rd.from_id=${entityId} and rd.kind='has_discussion'
+      ), target_posts as (
+        select p.id,p.connection_id,
+          coalesce(o.content->>'id',o.content->>'post_id',o.provenance->>'post_id') as post_id,
+          coalesce(o.content->>'discussionid',o.content->>'discussion_id',o.content->>'discussion',o.provenance->>'discussion_id') as discussion_id,
+          coalesce(o.content->>'userid',o.content#>>'{author,userid}',o.content#>>'{author,id}',o.content->>'author_userid') as author_id,
+          coalesce(o.content->>'parentid',o.content->>'parent','0') as parent_id
+        from candidate_posts p
+        join public.hub_entities target on target.owner_id=${ownerId} and target.id=${entityId}
+          and target.connection_id=p.connection_id
+        join lateral (
+          select content,provenance,coverage from public.hub_observation_timeline
+          where owner_id=${ownerId} and entity_id=p.id
+          order by observed_at desc,id desc limit 1
+        ) o on o.coverage in ('complete','partial')
+          and o.provenance->>'system'='moodle'
+          and o.provenance->>'connection_id'=p.connection_id::text
       )
       select
-        (select count(distinct st->>'author_userid') from target_posts
-          where st->>'author_userid' is not null and st->>'author_userid' <> '0'
-            and st->>'author_userid' <> ${subject})::int as distinct_colleagues,
+        (select count(distinct author_id) from target_posts
+          where author_id ~ '^[1-9][0-9]*$' and author_id <> ${subject})::int as distinct_colleagues,
         (select count(*) from target_posts)::int as observed_posts,
-        (select count(*) from target_posts where st->>'author_userid' = ${subject})::int as owner_posts,
-        (select count(distinct q.st->>'author_userid')
+        (select count(*) from target_posts where author_id = ${subject})::int as owner_posts,
+        (select count(distinct q.author_id)
           from target_posts o
-          join target_posts q on q.st->>'discussion_id' = o.st->>'discussion_id'
-            and q.st->>'post_id' = o.st->>'parent'
-          where o.st->>'author_userid' = ${subject} and coalesce(o.st->>'parent','0') <> '0'
-            and q.st->>'author_userid' is not null
-            and q.st->>'author_userid' <> ${subject})::int as colleagues_answered`;
+          join target_posts q on q.connection_id=o.connection_id and q.discussion_id=o.discussion_id
+            and q.post_id=o.parent_id
+          where o.author_id=${subject} and o.parent_id ~ '^[1-9][0-9]*$'
+            and q.author_id ~ '^[1-9][0-9]*$' and q.author_id<>${subject})::int as colleagues_answered`;
     const row = rows[0];
     return {
       subject_userid: subject,
@@ -249,22 +263,96 @@ export class Attention {
       owner_posts: Number(row?.owner_posts ?? 0),
       basis: "preserved_discussion_posts",
       note:
-        "Colegas contados por autor distinto nas postagens preservadas; não mede participação atual, exigência do enunciado nem leitura.",
+        "Colegas presentes e colegas respondidos são contadores distintos. Respostas exigem post observado, autoria do titular e parent de outro autor na mesma discussão/conexão; não avalia qualidade acadêmica nem participação atual.",
     };
   }
 
-  /** Rascunhos ligados à atividade por escopo direto ou por alvo de contexto ativo. */
-  private async drafts(tx: postgres.TransactionSql, ownerId: string, entityId: string) {
-    const rows = await tx`
-      select d.id,d.version,d.recorded_at
-      from public.hub_deltas d
-      where d.owner_id=${ownerId} and d.kind='artifact'
-        and (d.scope->>'entity_id'=${entityId} or exists (
-          select 1 from public.hub_context_targets t
-          where t.owner_id=d.owner_id and t.context_id=d.context_id
-            and t.entity_id=${entityId} and t.active))
-      order by d.recorded_at desc,d.id limit 5`;
-    return rows;
+  /** Uma consulta para a página; escopo explícito do artefato prevalece sobre o contexto. */
+  private async draftPage(
+    tx: postgres.TransactionSql,
+    ownerId: string,
+    entityIds: string[],
+    contextId?: string,
+  ) {
+    if (!entityIds.length) return [];
+    return await tx`
+      select target.entity_id,d.id,d.context_id,d.version,d.recorded_at
+      from unnest(${tx.array(entityIds)}::uuid[]) target(entity_id)
+      cross join lateral (
+        select id,context_id,version,recorded_at from public.hub_deltas d
+        where d.owner_id=${ownerId} and d.kind='artifact'
+          and (${contextId ?? null}::uuid is null or d.context_id=${contextId ?? null}::uuid)
+          and (d.scope->>'entity_id'=target.entity_id::text or (
+            coalesce(d.scope->>'entity_id','')='' and exists (
+              select 1 from public.hub_context_targets t
+              where t.owner_id=d.owner_id and t.context_id=d.context_id
+                and t.entity_id=target.entity_id and t.active)))
+        order by d.recorded_at desc,d.id limit ${DRAFT_LIMIT + 1}
+      ) d`;
+  }
+
+  /**
+   * Dependências versionadas dos rascunhos da página, numa consulta em lote.
+   * Um nome, material vizinho ou relação sem versão-base não estabelece dependência.
+   * O hash precisa corresponder a uma observação do mesmo dono, inclusive quando
+   * o localizador legado aponta ao snapshot deduplicado em vez da ocorrência.
+   */
+  private async draftMaterials(
+    tx: postgres.TransactionSql,
+    ownerId: string,
+    drafts: Array<{ entity_id: string; id: string }>,
+  ) {
+    if (!drafts.length) return [];
+    return await tx`
+      select link.entity_id,d.id as draft_id,d.context_id,
+        ref.basis,ref.base_id as referenced_observation_id,
+        base.entity_id as material_entity_id,base.id as base_observation_id,
+        base.content_id as base_content_id,base.content_hash as base_hash,base.coverage as base_coverage,
+        current.id as current_observation_id,current.content_id as current_content_id,
+        current.content_hash as current_hash,current.observed_at as current_observed_at,
+        current.coverage,source.title,connection.state as connection_state,
+        (source.state->'provider_record' = current.content) as matches_current
+      from jsonb_to_recordset(${tx.json(drafts)}) link(entity_id uuid,id uuid)
+      join public.hub_deltas d on d.owner_id=${ownerId} and d.id=link.id and d.kind='artifact'
+      cross join lateral (
+        select candidate.*,case when base_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          then base_id::uuid else null end as base_uuid from (
+          select 'artifact_provenance'::text as basis,
+            substring(p->>'locator' from 17) as base_id,p->>'version' as base_hash,
+            null::uuid as required_entity_id
+          from jsonb_array_elements(d.provenance) p
+          where p->>'locator' ~ '^hub:observation:[0-9a-fA-F-]{36}$'
+            and coalesce(p->>'version','')<>''
+          union all
+          select 'required_material',r.evidence->>'source_observation_id',
+            r.evidence->>'content_hash',r.to_id
+          from public.hub_relations r
+          where r.owner_id=d.owner_id and r.from_id=link.entity_id and r.kind='required_material'
+            and coalesce(r.evidence->>'source_observation_id','')<>''
+            and coalesce(r.evidence->>'content_hash','')<>''
+            and (r.evidence->>'context_id' is null or r.evidence->>'context_id'=d.context_id::text)
+            and (r.evidence->>'draft_delta_id' is null or r.evidence->>'draft_delta_id'=d.id::text)
+        ) candidate
+        order by basis,base_id,base_hash,required_entity_id
+        limit ${MATERIAL_REFERENCE_LIMIT + 1}
+      ) ref
+      left join lateral (
+        select id,content_id,entity_id,content_hash,coverage from public.hub_observation_timeline o
+        where o.owner_id=d.owner_id
+          and (o.id=ref.base_uuid or o.content_id=ref.base_uuid)
+          and o.content_hash=ref.base_hash
+          and (ref.required_entity_id is null or o.entity_id=ref.required_entity_id)
+        order by o.observed_at,o.id limit 1
+      ) base on true
+      left join public.hub_entities source on source.owner_id=d.owner_id and source.id=base.entity_id
+      left join public.hub_connections connection on connection.owner_id=d.owner_id and connection.id=source.connection_id
+      left join lateral (
+        select id,content_id,content_hash,content,observed_at,coverage
+        from public.hub_observation_timeline o
+        where o.owner_id=d.owner_id and o.entity_id=source.id
+        order by o.observed_at desc,o.id desc limit 1
+      ) current on true
+      order by link.entity_id,d.id,ref.basis,ref.base_id,ref.base_hash,ref.required_entity_id`;
   }
 
   /** Estado nativo de conclusão relacionado ao módulo; nunca é leitura humana. */
@@ -329,14 +417,12 @@ export class Attention {
         quantity: quantity === null
           ? null
           : { kind: quantity.kind ?? null, at_least: quantity.at_least ?? null },
-        deadline: deadline === null
-          ? null
-          : {
-            original_text: deadline.original_text ?? null,
-            date: deadline.date ?? null,
-            // Hora ausente permanece ausente: não há campo de hora na afirmação.
-            hour_known: false,
-          },
+        deadline: deadline === null ? null : {
+          original_text: deadline.original_text ?? null,
+          date: deadline.date ?? null,
+          // Hora ausente permanece ausente: não há campo de hora na afirmação.
+          hour_known: false,
+        },
         source: {
           observation_id: provenance.source_observation_id ?? null,
           content_hash: provenance.source_content_hash ?? null,
@@ -414,7 +500,9 @@ export class Attention {
           where owner_id=e.owner_id and entity_id=e.id
           order by observed_at desc,id desc limit 1) o on true
         where e.owner_id=${p.ownerId} and e.kind in ${tx(OBLIGATION_KINDS)}
-          and (${a.connection_id ?? null}::uuid is null or e.connection_id=${a.connection_id ?? null}::uuid)
+          and (${a.connection_id ?? null}::uuid is null or e.connection_id=${
+        a.connection_id ?? null
+      }::uuid)
           and (${a.context_id ?? null}::uuid is null or exists (
             select 1 from public.hub_context_targets t
             where t.owner_id=e.owner_id and t.context_id=${a.context_id ?? null}::uuid
@@ -424,6 +512,34 @@ export class Attention {
       const obligations: unknown[] = [];
       const attention: unknown[] = [];
       const receipts = await this.confirmedActions(tx, p.ownerId);
+      const draftRows = await this.draftPage(
+        tx,
+        p.ownerId,
+        page.map((row) => String(row.id)),
+        a.context_id,
+      );
+      const draftsByEntity = new Map<string, Array<(typeof draftRows)[number]>>();
+      for (const row of draftRows) {
+        const id = String(row.entity_id);
+        const list = draftsByEntity.get(id) ?? [];
+        list.push(row);
+        draftsByEntity.set(id, list);
+      }
+      const materialRows = await this.draftMaterials(
+        tx,
+        p.ownerId,
+        [...draftsByEntity.values()].flatMap((list) =>
+          list.slice(0, DRAFT_LIMIT)
+            .map((row) => ({ entity_id: String(row.entity_id), id: String(row.id) }))
+        ),
+      );
+      const materialsByDraft = new Map<string, Array<(typeof materialRows)[number]>>();
+      for (const row of materialRows) {
+        const key = `${row.entity_id}:${row.draft_id}`;
+        const list = materialsByDraft.get(key) ?? [];
+        list.push(row);
+        materialsByDraft.set(key, list);
+      }
       for (const row of page) {
         const entityId = String(row.id);
         const kind = String(row.kind);
@@ -480,9 +596,7 @@ export class Attention {
         const overdue = instants.filter((ms) => ms < nowMs).length;
         const upcoming = instants.filter((ms) => ms >= nowMs).sort((x, y) => x - y);
         const nearest = upcoming.length ? new Date(upcoming[0]).toISOString() : null;
-        const near = nearest !== null && Date.parse(nearest) - nowMs <= horizonMs
-          ? nearest
-          : null;
+        const near = nearest !== null && Date.parse(nearest) - nowMs <= horizonMs ? nearest : null;
         const userReport = state.user_report === undefined ? null : object(state.user_report);
         const presented = state.attention_presented === undefined
           ? null
@@ -495,7 +609,62 @@ export class Attention {
           ? null
           : String(row.coverage);
         const connectionState = String(row.connection_state ?? "");
-        const drafts = await this.drafts(tx, p.ownerId, entityId);
+        const draftCandidates = draftsByEntity.get(entityId) ?? [];
+        const drafts = draftCandidates.slice(0, DRAFT_LIMIT).map((
+          { id, context_id, version, recorded_at },
+        ) => ({ id, context_id, version, recorded_at }));
+        let dependencyTruncated = draftCandidates.length > DRAFT_LIMIT;
+        const materialChanges: Json[] = [];
+        const seenChanges = new Set<string>();
+        for (const draft of drafts) {
+          const dependencies = materialsByDraft.get(`${entityId}:${draft.id}`) ?? [];
+          dependencyTruncated ||= dependencies.length > MATERIAL_REFERENCE_LIMIT;
+          for (const dependency of dependencies.slice(0, MATERIAL_REFERENCE_LIMIT)) {
+            if (
+              !dependency.base_observation_id || !dependency.current_observation_id ||
+              dependency.base_hash === dependency.current_hash
+            ) continue;
+            const key = `${draft.id}:${dependency.material_entity_id}:${dependency.base_hash}`;
+            if (seenChanges.has(key)) continue;
+            seenChanges.add(key);
+            materialChanges.push({
+              draft_id: draft.id,
+              context_id: draft.context_id,
+              material_entity_id: dependency.material_entity_id,
+              material_title: dependency.title,
+              dependency_basis: dependency.basis,
+              baseline: {
+                observation_id: dependency.base_observation_id,
+                content_id: dependency.base_content_id,
+                content_hash: dependency.base_hash,
+              },
+              current: {
+                observation_id: dependency.current_observation_id,
+                content_id: dependency.current_content_id,
+                content_hash: dependency.current_hash,
+                observed_at: dependency.current_observed_at,
+                coverage: dependency.coverage,
+              },
+              source_uncertainties: [
+                ...(dependency.base_coverage !== "complete"
+                  ? ["baseline_incomplete_coverage"]
+                  : []),
+                ...(dependency.connection_state !== "connected"
+                  ? ["source_access_not_current"]
+                  : []),
+                ...(dependency.coverage !== "complete" ? ["incomplete_coverage"] : []),
+                ...(dependency.matches_current === false ? ["unrecorded_source_change"] : []),
+              ],
+              basis: "preserved_observations",
+              requires_review: true,
+            });
+          }
+        }
+        if (dependencyTruncated) {
+          gaps.push(
+            `Dependências examinadas apenas nos ${DRAFT_LIMIT} rascunhos recentes e ${MATERIAL_REFERENCE_LIMIT} referências por rascunho; consulte hub_history/hub_observations para aprofundar.`,
+          );
+        }
         const tracker = await this.completionTracker(tx, p.ownerId, entityId);
         const nativeCompletion = state.completion === undefined ? null : state.completion;
         const academicActions = receipts.filter((receipt) =>
@@ -522,7 +691,10 @@ export class Attention {
           });
         };
         if (presented === null) {
-          item("not_presented", "Fonte preservada ainda não registrada como apresentada ao titular.");
+          item(
+            "not_presented",
+            "Fonte preservada ainda não registrada como apresentada ao titular.",
+          );
         } else if (contentHash !== null && presented.content_hash !== contentHash) {
           item("changed_since_presented", "A fonte mudou depois de ter sido apresentada.");
         }
@@ -530,7 +702,10 @@ export class Attention {
           item("changed_since_read", "A fonte mudou depois da leitura confirmada pelo titular.");
         }
         if (ACCESS_LOST_STATES.includes(connectionState)) {
-          item("access_lost", "A conexão da fonte não está ativa; a memória preservada continua consultável.");
+          item(
+            "access_lost",
+            "A conexão da fonte não está ativa; a memória preservada continua consultável.",
+          );
         }
         if (coverage !== null && coverage !== "complete") {
           item("incomplete_coverage", "A última observação não tem cobertura completa.");
@@ -554,7 +729,19 @@ export class Attention {
           );
         }
         if (drift) {
-          item("unrecorded_reobservation", "A fonte reverteu ou mudou depois da última ocorrência registrada.");
+          item(
+            "unrecorded_reobservation",
+            "A fonte reverteu ou mudou depois da última ocorrência registrada.",
+          );
+        }
+        for (const change of materialChanges) {
+          attention.push({
+            ...change,
+            entity_id: entityId,
+            kind: "material_dependency_changed",
+            detail:
+              "O material preservado mudou em relação à versão vinculada ao rascunho. Revise a dependência; o hash diferente não comprova mudança semântica do requisito nem acesso atual à fonte.",
+          });
         }
         obligations.push({
           entity: {
@@ -578,11 +765,12 @@ export class Attention {
             .map((r) => ({
               requirement_key: r.requirement_key,
               required_at_least: r.quantity!.at_least,
-              observed_distinct_colleagues: colleagues?.distinct_colleagues ?? null,
+              observed_distinct_colleagues: colleagues?.colleagues_answered_by_owner ?? null,
+              basis: "observed_owner_replies_to_distinct_colleagues",
               // Comparação numérica explícita; não declara qualidade acadêmica.
               observed_meets_at_least: colleagues === null
                 ? null
-                : Number(colleagues.distinct_colleagues) >= Number(r.quantity!.at_least),
+                : Number(colleagues.colleagues_answered_by_owner) >= Number(r.quantity!.at_least),
             })),
           provenance: {
             observation_id: observationId,
@@ -603,6 +791,10 @@ export class Attention {
             academic_actions: academicActions,
             submission_evidence: submissionEvidence,
             drafts,
+            material_changes: materialChanges,
+            material_dependencies_coverage: dependencyTruncated
+              ? "partial"
+              : "complete_for_explicit_references",
             presented,
             read,
           },
@@ -643,12 +835,15 @@ export class Attention {
   async recordRequirement(p: Principal, input: z.input<typeof recordRequirementSchema>) {
     const a = recordRequirementSchema.parse(input);
     return await asOwner(this.hub.db, p, async (tx) => {
-      const source =
-        (await tx`select id,connection_id,kind,external_id from public.hub_entities
+      const source = (await tx`select id,connection_id,kind,external_id from public.hub_entities
           where owner_id=${p.ownerId} and id=${a.source_entity_id}`)[0];
       if (!source) throw new HubError("not_found", "Fonte não encontrada.", 404);
       if (String(source.kind) === REQUIREMENT_KIND) {
-        throw new HubError("invalid_request", "A fonte deve ser um recurso, não uma obrigação.", 400);
+        throw new HubError(
+          "invalid_request",
+          "A fonte deve ser um recurso, não uma obrigação.",
+          400,
+        );
       }
       const observation = (await tx`select id,content_id,content_hash,coverage
         from public.hub_observation_timeline
@@ -671,8 +866,11 @@ export class Attention {
       };
       const payloadHash = await sha256Hex(new TextEncoder().encode(JSON.stringify(payload)));
       const externalId = "hub:requirement:" + a.source_entity_id + "/" + a.requirement_key;
-      const requirement = (await tx`insert into public.hub_entities(owner_id,connection_id,kind,external_id,title,state)
-        values(${p.ownerId},${source.connection_id},${REQUIREMENT_KIND},${externalId},${a.action.slice(0, 300)},${tx.json(payload as postgres.JSONValue)})
+      const requirement =
+        (await tx`insert into public.hub_entities(owner_id,connection_id,kind,external_id,title,state)
+        values(${p.ownerId},${source.connection_id},${REQUIREMENT_KIND},${externalId},${
+          a.action.slice(0, 300)
+        },${tx.json(payload as postgres.JSONValue)})
         on conflict(owner_id,connection_id,kind,external_id)
           do update set title=excluded.title,state=hub_entities.state || excluded.state
         returning id`)[0];
@@ -693,10 +891,16 @@ export class Attention {
         where owner_id=${p.ownerId} and entity_id=${requirementId}
           and content_hash=${payloadHash}`)[0] ?? null;
       await tx`insert into public.hub_observations(owner_id,entity_id,content,content_hash,provenance,coverage,observed_at)
-        values(${p.ownerId},${requirementId},${tx.json(payload as postgres.JSONValue)},${payloadHash},${tx.json(provenance as postgres.JSONValue)},${observation.coverage},${observedAt})
+        values(${p.ownerId},${requirementId},${
+        tx.json(payload as postgres.JSONValue)
+      },${payloadHash},${
+        tx.json(provenance as postgres.JSONValue)
+      },${observation.coverage},${observedAt})
         on conflict(owner_id,entity_id,content_hash) do nothing`;
       await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence)
-        values(${p.ownerId},${a.source_entity_id},${requirementId},${REQUIREMENT_RELATION},${tx.json(provenance as postgres.JSONValue)})
+        values(${p.ownerId},${a.source_entity_id},${requirementId},${REQUIREMENT_RELATION},${
+        tx.json(provenance as postgres.JSONValue)
+      })
         on conflict(owner_id,from_id,to_id,kind) do nothing`;
       return {
         requirement_entity_id: requirementId,
@@ -733,7 +937,9 @@ export class Attention {
         // Seria a entidade: observação concorrente não entra entre a conferência
         // do hash e a gravação do que foi efetivamente apresentado.
         const entity =
-          (await tx`select id from public.hub_entities where owner_id=${p.ownerId} and id=${entry.entity_id} for update`)[0];
+          (await tx`select id from public.hub_entities where owner_id=${p.ownerId} and id=${entry.entity_id} for update`)[
+            0
+          ];
         if (!entity) throw new HubError("not_found", "Registro não encontrado.", 404);
         const observation = (await tx`select id,content_id,content_hash,coverage,observed_at
           from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${entry.entity_id}
@@ -781,7 +987,9 @@ export class Attention {
     const a = acknowledgeReadSchema.parse(input);
     return asOwner(this.hub.db, p, async (tx) => {
       const entity =
-        (await tx`select id from public.hub_entities where owner_id=${p.ownerId} and id=${a.entity_id}`)[0];
+        (await tx`select id from public.hub_entities where owner_id=${p.ownerId} and id=${a.entity_id}`)[
+          0
+        ];
       if (!entity) throw new HubError("not_found", "Registro não encontrado.", 404);
       const observation = (await tx`select content_id,content_hash,observed_at
         from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${a.entity_id}

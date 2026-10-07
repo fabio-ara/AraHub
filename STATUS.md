@@ -1,7 +1,8 @@
 # Estado do AraHub
 
 Atualizado em 2026-10-07. Primeira entrega em implementação na branch `entrega-1`.
-Backend 0.2.0 e interface publicados; plugin pessoal 1.1.0 instalado e verificado
+Backend 0.2.0 e interface publicados; correção 0.2.1 validada localmente, ainda em
+preparação para implantação. Plugin pessoal 1.1.0 instalado e verificado
 em uma conversa nova. **R1 não está concluída**: a ponte completa pelo host
 ChatGPT até o Moodle sintético ainda requer homologação.
 
@@ -15,7 +16,7 @@ histórico preservado; DOCX/HTML estruturados e fila local; processamento separa
 de vídeo; preferências, obrigações, atenção e histórico por ocorrência; interface
 simplificada. Modelos e fontes privadas permanecem fora da distribuição.
 
-Validação atual: 195 testes passaram, sem falhas, e dois ignorados possuem gates
+Validação atual: 211 testes passaram, sem falhas, e dois ignorados possuem gates
 próprios. Tipos, Edge, instalação nova com 14 migrations, dois donos e isolamento
 passaram. A interface foi interagida e inspecionada em dois viewports com fixtures.
 A escala local de 10 mil posts e 100 mil observações/ocorrências teve p95 de 183 ms.
@@ -49,5 +50,12 @@ reconciliar a matriz por nível e conferir a interface hospedada. Topologia de
 homologação remota, revisão da rota institucional, processamento remoto e virada
 da memória têm gates próprios. Conteúdo sintético histórico identificado na conta
 anterior está preservado e requer tratamento explícito; não conta como dado pessoal.
+
+Correções validadas após os testes reais: links dos capítulos HTML conservados
+na leitura textual; matrícula suspensa classificada como acesso negado; mudança
+de seção com um único vínculo atual e histórico preservado. A atenção distingue
+colegas presentes de colegas efetivamente respondidos e sinaliza material que
+mudou desde a versão explicitamente vinculada ao rascunho. PDFs retornam escopo
+textual, lacunas visuais e inventário limitado de campos, sem afirmar preenchimento.
 
 Checkpoint operacional detalhado: `.private/entrega-1/STATUS.md`.
