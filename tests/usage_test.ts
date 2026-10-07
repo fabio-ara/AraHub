@@ -3,9 +3,9 @@ import { Buffer } from "node:buffer";
 import { asOwner, createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
 import { handleMcp } from "../src/mcp.ts";
+import { sha256Hex } from "../src/migration.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { GoogleConnections } from "../src/google_connections.ts";
 
 Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8 e sem dados de outro dono", async () => {
   const db = createDb("postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub");
@@ -15,30 +15,10 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
   let server: Deno.HttpServer | undefined;
   const clients: Client[] = [];
   const connections = new Map<string, string>();
-  const google = {
-    client: () =>
-      Promise.resolve({
-        getDocument: () =>
-          Promise.resolve({
-            documentId: "usage-doc",
-            title: "Documento SDK sintético",
-            namedRanges: Object.fromEntries(
-              Array.from({ length: 205 }, (_, index) => [
-                "range-" + index,
-                { content: "x".repeat(1000) },
-              ]),
-            ),
-            body: {
-              content: [{
-                paragraph: { elements: [{ textRun: { content: "Conteúdo nativo persistido" } }] },
-              }],
-            },
-          }),
-      }),
-  } as unknown as GoogleConnections;
   try {
     await db`insert into auth.users(id) values(${a.ownerId}),(${b.ownerId})`;
     await hub.createContext(a, "Uso sintético A");
+    const materialSha = "a".repeat(64);
     for (
       const [owner, binary, text] of [[a, Buffer.from([1, 2, 3]), "á\n"], [
         b,
@@ -46,13 +26,9 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
         "Texto do outro dono",
       ]] as const
     ) {
-      const connection = await hub.connect(owner, "google", "Conta sintética", null, owner.ownerId);
+      const connection = await hub.connect(owner, "moodle", "Conta sintética", null, owner.ownerId);
       connections.set(owner.ownerId, connection.id);
-      await db`update public.hub_connections set state='connected',desired_scopes=${
-        db.array(["https://www.googleapis.com/auth/drive.readonly"])
-      },granted_scopes=${
-        db.array(["https://www.googleapis.com/auth/drive.readonly"])
-      } where id=${connection.id}`;
+      await db`update public.hub_connections set state='connected' where id=${connection.id}`;
       const entity = await hub.entity(
         owner,
         connection.id,
@@ -61,9 +37,7 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
         "Mesmo nome",
         {},
       );
-      await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content,extracted_text) values(${owner.ownerId},${entity.id},${"Mesmo nome"},${"application/octet-stream"},${
-        "a".repeat(64)
-      },${binary.length},${binary},${text})`;
+      await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content,extracted_text) values(${owner.ownerId},${entity.id},${"Mesmo nome"},${"application/octet-stream"},${materialSha},${binary.length},${binary},${text})`;
     }
     server = Deno.serve(
       { hostname: "127.0.0.1", port: 8789, onListen: () => {} },
@@ -72,8 +46,6 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
           req,
           hub,
           req.headers.get("Authorization") === "Bearer fixture-a" ? a : b,
-          undefined,
-          google,
         ),
     );
     for (
@@ -109,17 +81,48 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
         !JSON.stringify(view).includes(a.ownerId) && !JSON.stringify(view).includes(b.ownerId),
       );
       const ownerId = identity === "fixture-a" ? a.ownerId : b.ownerId;
-      const saved = await client.callTool({
-        name: "hub_preserve_google_material",
-        arguments: {
-          connection_id: connections.get(ownerId),
-          material: { kind: "document", resource_id: "usage-doc" },
+      const principal = { ownerId };
+      // Snapshot JSON nativo histórico preservado por SQL e recuperado offline
+      // pelo leitor genérico, sem provedor Google.
+      const native = {
+        documentId: "usage-doc",
+        title: "Documento SDK sintético",
+        namedRanges: Object.fromEntries(
+          Array.from({ length: 205 }, (_, index) => [
+            "range-" + index,
+            { content: "x".repeat(1000) },
+          ]),
+        ),
+        body: {
+          content: [{
+            paragraph: { elements: [{ textRun: { content: "Conteúdo nativo persistido" } }] },
+          }],
         },
-      });
-      assert.equal(saved.isError, undefined);
-      const receipt = JSON.parse((saved.content as { text: string }[])[0].text).memory_commit;
+      };
+      const envelope = JSON.stringify({ format: "arahub.google.native.v1", native });
+      const nativeBytes = new TextEncoder().encode(envelope);
+      const nativeSha = await sha256Hex(nativeBytes);
+      const document = await hub.entity(
+        principal,
+        connections.get(ownerId)!,
+        "document",
+        "usage-doc",
+        "Documento SDK sintético",
+        {},
+      );
+      const [nativeFile] =
+        await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content,extracted_text,extraction) values(${ownerId},${document.id},${"Documento SDK sintético"},${"application/json"},${nativeSha},${nativeBytes.length},${
+          Buffer.from(nativeBytes)
+        },${envelope},${
+          db.json({ method: "google_native_json", coverage: "complete" })
+        }) returning id`;
+      const receipt = {
+        id: nativeFile.id as string,
+        sha256: nativeSha,
+        entity_id: document.id as string,
+      };
       const part = await client.callTool({
-        name: "hub_read_google_material",
+        name: "hub_read_material",
         arguments: {
           file_id: receipt.id,
           sha256: receipt.sha256,
@@ -130,7 +133,7 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
       assert.equal(part.isError, undefined);
       assert.ok(JSON.stringify(part.content).includes("Conteúdo nativo persistido"));
       const children = await client.callTool({
-        name: "hub_read_google_material",
+        name: "hub_read_material",
         arguments: {
           file_id: receipt.id,
           sha256: receipt.sha256,
@@ -145,7 +148,6 @@ Deno.test("A02 A30: SDK consulta volumes reais por dono, preservando bytes UTF-8
       assert.equal(childPage.children_next_offset, 200);
       assert.equal(childPage.children[0], "range-100");
       assert.equal(childPage.children.at(-1), "range-199");
-      const principal = { ownerId };
       const activity = await hub.entity(
         principal,
         connections.get(ownerId)!,

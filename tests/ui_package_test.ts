@@ -15,7 +15,6 @@ const EXPECTED_FILES = [
   "index.html",
   "oauth/callback/index.html",
   "oauth/consent/index.html",
-  "oauth/google/callback/index.html",
   "privacy.html",
   "ui/app.js",
   "ui/pdf-parser.worker.js",
@@ -160,7 +159,6 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
     const copies = await Promise.all(
       [
         "oauth/consent/index.html",
-        "oauth/google/callback/index.html",
         "oauth/callback/index.html",
       ].map((path) => Deno.readFile(new URL(path, directory))),
     );

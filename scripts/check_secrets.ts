@@ -6,7 +6,7 @@ const run = async (args: string[]) => {
 };
 const names = (await run(["ls-files", "-z"])).split("\0").filter(Boolean);
 const excluded =
-  /(^|\/)(\.arahub-bootstrap|\.private|private-data|migration-private|backups-private)(\/|$)|AraHub-(?:pacote-inicial|Entrega-).*\.zip$|(^|\/)\.env(\.|$)(?!example$)|client_secret.*\.json$|credentials.*\.json$|service-account.*\.json$|\.(pem|key)$/i;
+  /(^|\/)(\.arahub-bootstrap|\.arahub-entrega-\d+|\.private|private-data|migration-private|backups-private)(\/|$)|AraHub-(?:pacote-inicial|Entrega-).*\.zip$|(^|\/)\.env(\.|$)(?!example$)|client_secret.*\.json$|credentials.*\.json$|service-account.*\.json$|\.(pem|key)$/i;
 const detectors = [
   /gh[pousr]_[A-Za-z0-9]{30,}/,
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,

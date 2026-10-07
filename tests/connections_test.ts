@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
-import { ConnectionService, PostgresTokenStore } from "../src/connections.ts";
+import { ConnectionService } from "../src/connections.ts";
 import { MoodleAdapter } from "../src/adapters/moodle.ts";
-import { sealTokenRecord, TokenVault } from "../src/adapters/token_vault.ts";
+import { TokenVault } from "../src/adapters/token_vault.ts";
 import { Sync } from "../src/sync.ts";
 Deno.test("A02 A04 A18 A19: cofre persistente, conexão e sync isolados por principal", async () => {
   const db = createDb("postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub"),
@@ -56,25 +56,25 @@ Deno.test("A02 A04 A18 A19: cofre persistente, conexão e sync isolados por prin
     const result = await sync.courses(a, connection.id);
     assert.equal(result.job?.state, "complete");
     await assert.rejects(sync.courses(b, connection.id));
-    const google = await hub.connect(a, "google", "Conta fixture", null, "google-sub");
-    await assert.rejects(hub.connect(a, "google", "Outra etiqueta", null, "google-sub"));
-    const other = await hub.connect(a, "google", "Conta fixture", null, "another-google-sub");
-    assert.notEqual(other.id, google.id);
-    const store = new PostgresTokenStore(db, a);
-    const next = await sealTokenRecord({
-      vault,
-      ownerId: a.ownerId,
-      connectionId: google.id,
-      response: {
-        access_token: "synthetic-google-access",
-        refresh_token: "synthetic-google-refresh",
-        expires_in: 3600,
-      },
-    });
-    assert.equal(await store.compareAndSwap(a.ownerId, google.id, 0, next), true);
-    assert.equal(await store.compareAndSwap(a.ownerId, google.id, 0, next), false);
-    assert.equal((await store.read(a.ownerId, google.id))?.version, 1);
-    await assert.rejects(new PostgresTokenStore(db, b).read(a.ownerId, google.id));
+    // Mesmo dono+origem+assunto não duplica; assunto distinto não se funde.
+    const sameSubject = await hub.connect(
+      a,
+      "moodle",
+      "Conta A",
+      "https://fixture.invalid/moodle",
+      "moodle-sub-1",
+    );
+    await assert.rejects(
+      hub.connect(a, "moodle", "Outra etiqueta", "https://fixture.invalid/moodle", "moodle-sub-1"),
+    );
+    const otherSubject = await hub.connect(
+      a,
+      "moodle",
+      "Conta A",
+      "https://fixture.invalid/moodle",
+      "moodle-sub-2",
+    );
+    assert.notEqual(otherSubject.id, sameSubject.id);
     await connections.disconnect(a, connection.id);
     await assert.rejects(connections.moodle(a, connection.id));
     assert.equal(

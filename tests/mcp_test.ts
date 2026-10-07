@@ -109,6 +109,14 @@ Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético
     assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_observation"));
     assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_moodle_discussions"));
     assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_moodle_posts"));
+    assert.ok(!tools.tools.some((t: {name:string})=>t.name.includes("google")));
+    const artifact=tools.tools.find((t:{name:string})=>t.name==='hub_import_artifact')!;
+    assert.deepEqual(artifact._meta?.['openai/fileParams'],['file']);
+    const fileSchema=(artifact.inputSchema.properties as Record<string,{properties:Record<string,unknown>;required:string[]}>).file;
+    assert.deepEqual([...fileSchema.required].sort(),['download_url','file_id']);
+    assert.deepEqual(Object.keys(fileSchema.properties).sort(),['download_url','file_id','file_name','mime_type']);
+    assert.ok(tools.tools.some((t:{name:string})=>t.name==='hub_queue_document'));
+    assert.ok(tools.tools.some((t:{name:string})=>t.name==='hub_document_blocks'));
     assert.equal(
       tools.tools.find((t: { name: string }) => t.name === "hub_record_delta")?.annotations
         ?.readOnlyHint,

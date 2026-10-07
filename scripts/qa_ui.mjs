@@ -1,5 +1,7 @@
 // Isolated local browser. Captures use native screenshot bytes written outside the UI.
 // No authenticated user profiles, real provider accounts, external URLs or private data.
+// Google own-write/connect UI is retired: this script proves its absence plus the
+// focused academic approval surface (Moodle forum/assignment) with synthetic fixtures.
 import { chromium } from "../.private/qa/node_modules/playwright/index.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
@@ -9,19 +11,10 @@ await mkdir(folder, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const connectionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-const googleConnectionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const mobileToken = "a".repeat(32);
 const mobilePrivateToken = "b".repeat(32);
 const mobileLink = "moodlemobile://token=" +
   Buffer.from(`${"c".repeat(32)}:::${mobileToken}:::${mobilePrivateToken}`).toString("base64");
-const googleReadScopes = [
-  "openid",
-  "email",
-  "profile",
-  "https://www.googleapis.com/auth/drive.readonly",
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/calendar.readonly",
-];
 const user = {
   id: owner,
   aud: "authenticated",
@@ -50,6 +43,186 @@ const staticFiles = new Map(
     type,
   }])),
 );
+const actionForum = "11111111-1111-4111-8111-111111111111";
+const actionFiles = "22222222-2222-4222-8222-222222222222";
+const actionReply = "33333333-3333-4333-8333-333333333333";
+const actionUnknown = "44444444-4444-4444-8444-444444444444";
+const fileHash = "d".repeat(64);
+const hashes = {
+  [actionForum]: "a".repeat(64),
+  [actionFiles]: "b".repeat(64),
+  [actionReply]: "c".repeat(64),
+  [actionUnknown]: "e".repeat(64),
+};
+function actionList(approved) {
+  const state = (id) => approved.has(id) ? "approved" : "prepared";
+  return [{
+    action: {
+      id: actionForum,
+      connectionId,
+      operation: "moodle.forum.discussion",
+      target: "forum:7",
+      revision: "rev-forum",
+      content: {
+        kind: "moodle.forum.discussion",
+        connection: {
+          label: "Moodle de teste",
+          origin: "https://moodle.fixture.invalid",
+          username: "aluno.fixture",
+        },
+        target: {
+          course_id: 12,
+          course_name: "Direito Constitucional",
+          cmid: 900,
+          activity_name: "Fórum de apresentação",
+          instance_id: 7,
+        },
+        text: {
+          subject: "Minha apresentação",
+          body: "Texto do tópico com <script>window.__sourceExecuted=true</script> no fim.",
+        },
+        files: [],
+        statement: {
+          text: "Declaro que este texto é de minha autoria.",
+          required: true,
+        },
+        expected: {
+          epoch: 1,
+          user_id: 42,
+          fingerprint: "f".repeat(64),
+          attempt: null,
+          status: null,
+        },
+        rules: {
+          forum: {
+            id: 7,
+            type: "general",
+            duedate: 1790000000,
+            cutoffdate: 0,
+            maxattachments: 2,
+            maxbytes: 1048576,
+          },
+          access: { canstartdiscussion: true, canreplypost: true },
+          discussion: null,
+          parent: null,
+        },
+      },
+      hash: hashes[actionForum],
+    },
+    state: state(actionForum),
+  }, {
+    action: {
+      id: actionFiles,
+      connectionId,
+      operation: "moodle.assignment.submit",
+      target: "assign:55",
+      revision: "rev-trabalho",
+      content: {
+        kind: "moodle.assignment.submit",
+        connection: { label: "Moodle de teste", username: "aluno.fixture" },
+        target: {
+          course_name: "Metodologia",
+          cmid: 55,
+          activity_name: "Trabalho 1",
+        },
+        files: [{
+          id: "f1",
+          name: "trabalho-final.docx",
+          mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          bytes: 20480,
+          sha256: fileHash,
+        }],
+        statement: {
+          text: "Declaro que o arquivo é de minha autoria.",
+          required: true,
+        },
+        expected: { attempt: 0, status: "draft" },
+        rules: {
+          assignment: {
+            id: 55,
+            duedate: 1790000000,
+            cutoffdate: 0,
+            allowsubmissionsfromdate: 1780000000,
+            maxattempts: 1,
+            submissiondrafts: 1,
+            requiresubmissionstatement: 1,
+            grade: 100,
+            configs: [
+              {
+                plugin: "file",
+                subtype: "assignsubmission",
+                name: "maxfilesubmissions",
+                value: "3",
+              },
+              {
+                plugin: "file",
+                subtype: "assignsubmission",
+                name: "maxsubmissionsizebytes",
+                value: "5242880",
+              },
+            ],
+          },
+          submission: {
+            status: "draft",
+            attempt: 0,
+            locked: false,
+            cansubmit: true,
+            canedit: true,
+          },
+        },
+      },
+      hash: hashes[actionFiles],
+    },
+    state: state(actionFiles),
+  }, {
+    action: {
+      id: actionReply,
+      connectionId,
+      operation: "moodle.forum.reply",
+      target: "forum:7/discussion:3",
+      revision: "rev-resposta",
+      content: {
+        kind: "moodle.forum.reply",
+        connection: { label: "Moodle de teste", username: "aluno.fixture" },
+        target: {
+          course_name: "Direito Constitucional",
+          activity_name: "Fórum de apresentação",
+          discussion_id: 3,
+          parent_id: 9,
+        },
+        text: { body: "Concordo com o colega e acrescento um ponto." },
+        statement: { text: "Declaro autoria.", required: false },
+        expected: { status: null },
+        rules: {
+          forum: { type: "qanda" },
+          access: { canreplypost: true },
+          discussion: { canreply: true, locked: false },
+          parent: {
+            id: 9,
+            subject: "Dúvida",
+            message: "<p>Primeira linha</p><p>Última <b>linha</b></p>",
+            author: { fullname: "Colega Sintético" },
+          },
+        },
+      },
+      hash: hashes[actionReply],
+    },
+    state: state(actionReply),
+  }, {
+    action: {
+      id: actionUnknown,
+      connectionId,
+      operation: "docs_insert_text",
+      target: "legacy",
+      revision: null,
+      content: {
+        text: "Conteúdo legado hostil <script>window.__sourceExecuted=true</script>",
+      },
+      hash: hashes[actionUnknown],
+    },
+    state: state(actionUnknown),
+  }];
+}
 try {
   for (
     const viewport of [{ width: 1280, height: 900 }, {
@@ -59,17 +232,16 @@ try {
   ) {
     const context = await browser.newContext({ viewport });
     await context.route("https://moodle.fixture.invalid/**", (route) =>
-      route.fulfill({ status: 200, contentType: "text/html", body: "<title>Moodle sintético</title>" }));
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<title>Moodle sintético</title>",
+      }));
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
-    let renewed = false, actionApproved = false, googleUpgraded = false;
-    const additionalApproved = new Set();
-    const actionId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
-    const sheetId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const slideId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const sheetRows = [["Literal", "=SUM(A2:A3)", true, null], [2], [3], [{
-      formula: "=SUM(A2:A3)",
-    }], ["Última célula <script>window.__sourceExecuted=true</script>"]];
+    let renewed = false;
+    const approved = new Set();
+    const decisions = [];
     await page.route("**/*", async (route) => {
       const request = route.request(), url = new URL(request.url());
       if (url.origin !== base) return route.abort();
@@ -83,8 +255,8 @@ try {
         return reply({
           synthetic: false,
           canConnectMoodle: true,
-          canConnectGoogle: true,
           canApproveActions: true,
+          canExtractPdf: false,
           supabaseUrl: base + "/identity-fixture",
           publishableKey: "public-synthetic-key",
         });
@@ -114,33 +286,54 @@ try {
             label: "Moodle de teste",
             origin: "https://moodle.fixture.invalid",
             state: "connected",
-          }, {
-            id: googleConnectionId,
-            provider: "google",
-            label: "Institucional",
-            origin: "edu.ulisboa.pt",
-            state: "connected",
-            desired_scopes: googleReadScopes,
-            granted_scopes: googleReadScopes,
           }],
+          coverage: { memory: "persisted", contexts: "complete", deltas: "partial" },
         });
       }
-      if (url.pathname === "/api/connections/google/start") {
-        const input = request.postDataJSON();
-        assert.equal(input.connection_id, googleConnectionId);
-        assert.equal(input.label, "Institucional");
-        assert.deepEqual(
-          new Set(input.scopes),
-          new Set([...googleReadScopes, "docs_write", "sheets_write", "slides_write"]),
-        );
-        googleUpgraded = true;
-        return reply({ authorization_url: base + "/oauth/mock" });
-      }
-      if (url.pathname === "/oauth/mock") {
-        return route.fulfill({
-          status: 200,
-          contentType: "text/html",
-          body: "<!doctype html><title>OAuth fixture</title>",
+      if (url.pathname === "/api/preferences") {
+        assert.equal(url.searchParams.get("scope"), "{}");
+        const netiqueta = {
+          id: "p-1",
+          content: "Escrever respostas em português formal.",
+          scope: { course: "Direito Constitucional" },
+          preference: {
+            key: "netiqueta no fórum",
+            state: "active",
+            valid_from: "2026-09-01T00:00:00.000Z",
+          },
+          status: "current",
+        };
+        const pdf = {
+          id: "p-2",
+          content: "Entregar sempre em PDF.",
+          scope: { course: "Direito Constitucional" },
+          preference: { key: "formato de entrega", state: "active" },
+          status: "current",
+        };
+        const docx = {
+          id: "p-3",
+          content: "Entregar em DOCX quando pedido.",
+          scope: {},
+          preference: { key: "formato de entrega", state: "active" },
+          status: "current",
+        };
+        const legacy = {
+          id: "p-4",
+          content: "Prefiro respostas curtas.",
+          scope: {},
+          preference: null,
+          evidence_kind: "user_report",
+          status: "legacy_requires_review",
+        };
+        return reply({
+          at: "2026-10-07T12:00:00.000Z",
+          coverage: "complete",
+          applicable: [netiqueta],
+          history: [netiqueta, pdf, docx, legacy],
+          contextual_overrides: ["p-3"],
+          conflicts: [{ key: "formato de entrega", ids: ["p-2", "p-3"] }],
+          review_required: [pdf, docx, legacy],
+          content_is_untrusted_data: true,
         });
       }
       if (url.pathname === "/api/connections/moodle") {
@@ -155,64 +348,29 @@ try {
         return reply({ format: "arahub-export-v1", data: "fixture-only" });
       }
       if (url.pathname === "/api/actions") {
-        return reply([{
-          action: {
-            id: actionId,
-            connectionId,
-            operation: "docs_insert_text",
-            target: "document-fixture",
-            revision: "revision-fixture",
-            content: {
-              text: "<script>Fonte hostil é dado, não comando.</script>",
-            },
-            hash: "a".repeat(64),
-          },
-          state: actionApproved ? "approved" : "prepared",
-        }, {
-          action: {
-            id: sheetId,
-            connectionId,
-            operation: "sheets_create",
-            target: "new",
-            revision: null,
-            content: {
-              title: "Planilha sintética",
-              sheet_title: "Dados",
-              rows: sheetRows,
-            },
-            hash: "b".repeat(64),
-          },
-          state: additionalApproved.has(sheetId) ? "approved" : "prepared",
-        }, {
-          action: {
-            id: slideId,
-            connectionId,
-            operation: "slides_add_text",
-            target: "presentation-fixture",
-            revision: "revision-fixture",
-            content: {
-              slide_id: "slide_test",
-              text_id: "text_test",
-              x: 40,
-              y: 40,
-              width: 600,
-              height: 300,
-              text: "Título e conteúdo sintéticos\nÚltima linha do slide",
-            },
-            hash: "c".repeat(64),
-          },
-          state: additionalApproved.has(slideId) ? "approved" : "prepared",
-        }]);
+        return reply(actionList(approved));
       }
-      if (url.pathname === "/api/actions/approve") {
+      if (
+        url.pathname === "/api/actions/approve" ||
+        url.pathname === "/api/actions/deny"
+      ) {
         const input = request.postDataJSON();
-        assert.ok([actionId, sheetId, slideId].includes(input.action_id));
+        const decision = url.pathname.endsWith("/approve") ? "approve" : "deny";
+        assert.ok(Object.hasOwn(hashes, input.action_id));
+        assert.equal(input.content_hash, hashes[input.action_id]);
+        assert.equal(typeof input.statement_accepted, "boolean");
+        const needsAssent = input.action_id === actionForum ||
+          input.action_id === actionFiles;
         assert.equal(
-          input.content_hash,
-          (input.action_id === actionId ? "a" : input.action_id === sheetId ? "b" : "c").repeat(64),
+          input.statement_accepted,
+          decision === "approve" && needsAssent,
         );
-        if (input.action_id === actionId) actionApproved = true;
-        else additionalApproved.add(input.action_id);
+        decisions.push({
+          id: input.action_id,
+          decision,
+          statement_accepted: input.statement_accepted,
+        });
+        if (decision === "approve") approved.add(input.action_id);
         return reply({ source: "trusted_ui" });
       }
       if (url.pathname.startsWith("/api/")) {
@@ -238,7 +396,59 @@ try {
     await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.locator("#workspace").waitFor({ state: "visible" });
     assert.equal(await page.locator("#password").inputValue(), "");
+
+    // Own Google operation is gone from the interface.
+    assert.equal(await page.locator("#google-setup").count(), 0);
+    assert.equal(await page.locator("#google-connect-form").count(), 0);
+    const bodyText = await page.locator("body").textContent();
+    for (const forbidden of [
+      "Google",
+      "Ampliar permissões",
+      "Conectar outra conta",
+    ]) assert.ok(!bodyText.includes(forbidden), forbidden);
+
+    // Access health and the Moodle connection.
+    assert.match(await page.locator("#connection-health").textContent(), /^Acesso: /);
+    assert.ok(
+      (await page.locator("#connection-list").textContent()).includes("Moodle de teste"),
+    );
+    await writeFile(
+      new URL(`connections-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true, animations: "disabled" }),
+    );
+
+    // Preferences come from the scoped endpoint: valid scopes, conflicts, review.
+    await page.getByRole("button", { name: "Preferências", exact: true }).click();
+    await page.locator("#preferences-view").waitFor({ state: "visible" });
+    const preferenceSummary = await page.locator("#preference-summary").textContent();
+    assert.match(
+      preferenceSummary,
+      /1 vigente\(s\), 1 conflito\(s\), 1 para revisar/,
+    );
+    assert.ok(
+      preferenceSummary.includes("1 sobreposto(s) por escopo mais específico"),
+    );
+    assert.ok(!preferenceSummary.includes("visões recentes"));
+    const preferenceText = await page.locator("#preference-list").textContent();
+    assert.ok(preferenceText.includes("netiqueta no fórum"));
+    assert.ok(preferenceText.includes("Escrever respostas em português formal."));
+    assert.ok(preferenceText.includes("Escopo: course=Direito Constitucional."));
+    assert.ok(preferenceText.includes("Conflito: formato de entrega"));
+    assert.ok(preferenceText.includes("Entregar sempre em PDF."));
+    assert.ok(preferenceText.includes("Entregar em DOCX quando pedido."));
+    assert.ok(preferenceText.includes("Prefiro respostas curtas."));
+    assert.ok(
+      preferenceText.includes(
+        "Situação: registro antigo sem chave, requer revisão.",
+      ),
+    );
+    await writeFile(
+      new URL(`preferences-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true, animations: "disabled" }),
+    );
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
+
+    // Moodle renewal through the official mobile link.
     await page.locator("#moodle-setup > summary").click();
     await page.locator("#moodle-origin").click();
     await page.locator("#moodle-origin").fill("fixture@example.invalid");
@@ -254,9 +464,9 @@ try {
       await page.locator("#moodle-origin").evaluate((el) => el.readOnly),
       true,
     );
-    assert.equal(await page.locator("#moodle-token").inputValue(), "");
     const popupPromise = page.waitForEvent("popup");
-    await page.getByRole("button", { name: "Abrir entrada oficial do Moodle" }).click();
+    await page.getByRole("button", { name: "Abrir entrada oficial do Moodle" })
+      .click();
     const popup = await popupPromise;
     await popup.waitForURL(/moodle\.fixture\.invalid/, { timeout: 5000 });
     const launch = new URL(popup.url());
@@ -265,130 +475,169 @@ try {
     assert.equal(launch.searchParams.get("service"), "moodle_mobile_app");
     assert.match(launch.searchParams.get("passport") ?? "", /^[a-f0-9]{32}$/);
     await popup.close();
-    assert.equal(
-      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-      true,
-    );
-    const capture = await page.screenshot({
-      fullPage: true,
-      animations: "disabled",
-    });
-    await writeFile(
-      new URL(`connections-${viewport.width}.png`, folder),
-      capture,
-    );
     await page.locator("#moodle-token").fill(mobileLink);
     await page.getByRole("button", { name: "Renovar Moodle", exact: true })
       .click();
     await page.getByText(
       "Acesso Moodle renovado. A identidade e o histórico foram preservados.",
-      {
-        exact: true,
-      },
+      { exact: true },
     ).waitFor();
     assert.equal(renewed, true);
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
+    await page.locator("#moodle-origin").click();
     assert.equal(
       await page.locator("#moodle-origin").evaluate((el) => el.readOnly),
+      false,
+    );
+
+    // Focused academic approval surface.
+    const cards = page.locator("#action-list > .panel");
+    assert.equal(await cards.count(), 4);
+    const forum = cards.nth(0);
+    const forumText = await forum.textContent();
+    assert.ok(forumText.includes("Publicar novo tópico no fórum"));
+    assert.ok(forumText.includes("Direito Constitucional"));
+    assert.ok(
+      forumText.includes(
+        "Texto do tópico com <script>window.__sourceExecuted=true</script> no fim.",
+      ),
+    );
+    assert.ok(forumText.includes("Declaro que este texto é de minha autoria."));
+    assert.equal(
+      await page.evaluate(() => window.__sourceExecuted),
+      undefined,
+    );
+    const forumApprove = forum.getByRole("button", {
+      name: "Autorizar esta ação",
+      exact: true,
+    });
+    assert.equal(await forumApprove.isDisabled(), true);
+    await forum.getByText("Concordo com esta declaração e assumo a autoria.", {
+      exact: true,
+    }).click();
+    assert.equal(await forumApprove.isEnabled(), true);
+    await writeFile(
+      new URL(`approval-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true, animations: "disabled" }),
+    );
+    await forumApprove.click();
+    await page.getByText(
+      "Ação autorizada. O resultado aparecerá após a execução.",
+      { exact: true },
+    ).waitFor();
+
+    const filesCard = cards.nth(1);
+    const filesText = await filesCard.textContent();
+    assert.ok(filesText.includes("trabalho-final.docx"));
+    assert.ok(filesText.includes("20.0 KiB"));
+    // No raw JSON and no technical hash anywhere in the human preview.
+    assert.ok(!filesText.includes(fileHash));
+    for (
+      const material of [
+        "Prazo: ",
+        "Arquivos por entrega: até 3",
+        "Tamanho máximo por arquivo: 5.0 MiB",
+        "Estado atual: Rascunho salvo",
+        "Pode enviar: Sim",
+      ]
+    ) assert.ok(filesText.includes(material), material);
+    const filesApprove = filesCard.getByRole("button", {
+      name: "Autorizar esta ação",
+      exact: true,
+    });
+    assert.equal(await filesApprove.isDisabled(), true);
+    await filesCard.getByText(
+      "Concordo com esta declaração e assumo a autoria.",
+      { exact: true },
+    ).click();
+    await filesCard.scrollIntoViewIfNeeded();
+    assert.ok(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    );
+    await writeFile(
+      new URL(`content-review-${viewport.width}.png`, folder),
+      await page.screenshot({ animations: "disabled" }),
+    );
+    await filesApprove.click();
+    await page.getByText(
+      "Ação autorizada. O resultado aparecerá após a execução.",
+      { exact: true },
+    ).waitFor();
+
+    const reply = cards.nth(2);
+    const replyText = await reply.textContent();
+    assert.ok(replyText.includes("Responder no fórum"));
+    assert.ok(replyText.includes("Tipo do fórum: Perguntas e respostas"));
+    assert.ok(replyText.includes("Respondendo a: Colega Sintético — Dúvida"));
+    assert.ok(replyText.includes("Post original: Primeira linha\nÚltima linha"));
+    assert.equal(await reply.locator(".check-label").count(), 0);
+    const replyApprove = reply.getByRole("button", {
+      name: "Autorizar esta ação",
+      exact: true,
+    });
+    assert.equal(await replyApprove.isEnabled(), true);
+    await replyApprove.click();
+    await page.getByText(
+      "Ação autorizada. O resultado aparecerá após a execução.",
+      { exact: true },
+    ).waitFor();
+
+    const legacy = cards.nth(3);
+    const legacyText = await legacy.textContent();
+    assert.ok(legacyText.includes("Operação aposentada"));
+    assert.ok(legacyText.includes("Operação registrada: docs_insert_text."));
+    assert.ok(legacyText.includes("não autoriza nem executa esta operação"));
+    // The retired operation keeps no raw content and cannot be authorized.
+    assert.ok(!legacyText.includes("window.__sourceExecuted"));
+    assert.equal(
+      await legacy.getByRole("button", {
+        name: "Autorizar esta ação",
+        exact: true,
+      }).isDisabled(),
       true,
     );
-    await page.locator("#moodle-origin").click();
-    assert.equal(await page.locator("#moodle-origin").evaluate((el) => el.readOnly), false);
-    await page.locator("#google-setup > summary").click();
-    await page.locator("#google-connect-form").scrollIntoViewIfNeeded();
+    assert.equal(
+      await legacy.getByRole("button", { name: "Recusar ação", exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.equal(await page.evaluate(() => window.__sourceExecuted), undefined);
+    assert.equal(decisions.length, 3);
+    assert.equal(
+      decisions.find((entry) => entry.id === actionForum)?.statement_accepted,
+      true,
+    );
+    assert.equal(
+      decisions.find((entry) => entry.id === actionFiles)?.statement_accepted,
+      true,
+    );
+    assert.equal(
+      decisions.find((entry) => entry.id === actionReply)?.statement_accepted,
+      false,
+    );
+
+    // Layout, labels and touch targets.
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       true,
     );
     assert.ok(
-      await page.locator(".app-shell").evaluate((el) => el.getBoundingClientRect().width) <= 430,
+      await page.locator(".app-shell").evaluate((el) =>
+        el.getBoundingClientRect().width
+      ) <= 460,
     );
     assert.deepEqual(
       await page.locator("button:visible").evaluateAll((buttons) =>
-        buttons.filter((b) =>
-          b.textContent.trim() || !b.getAttribute("aria-label") ||
-          b.getBoundingClientRect().width < 44
-        ).map((b) => b.id)
+        buttons.filter((b) => {
+          const label = (b.getAttribute("aria-label") ?? "").trim() ||
+            (b.textContent ?? "").trim();
+          const box = b.getBoundingClientRect();
+          return !label || box.width < 44 || box.height < 44;
+        }).map((b) => b.id || (b.textContent ?? "").trim())
       ),
       [],
     );
-    await writeFile(
-      new URL(`google-${viewport.width}.png`, folder),
-      await page.screenshot({ fullPage: true, animations: "disabled" }),
-    );
-    const firstAction = page.locator("#action-list > .panel").first();
-    const approve = firstAction.getByRole("button", {
-      name: "Autorizar esta versão",
-      exact: true,
-    });
-    assert.equal(await approve.isDisabled(), true);
-    assert.ok(
-      (await page.locator("#action-list").textContent()).includes(
-        "<script>Fonte hostil",
-      ),
-    );
-    await firstAction.getByText("Revisei a conta, o destino e o conteúdo.", {
-      exact: true,
-    }).click();
-    assert.equal(await approve.isEnabled(), true);
-    await writeFile(
-      new URL(`approval-${viewport.width}.png`, folder),
-      await page.screenshot({ fullPage: true, animations: "disabled" }),
-    );
-    await approve.click();
-    await page.getByText(
-      "Esta versão foi autorizada. Consulte o resultado após a execução.",
-      {
-        exact: true,
-      },
-    ).waitFor();
-    assert.equal(actionApproved, true);
-    for (
-      const [position, expected] of [[
-        1,
-        "Última célula <script>window.__sourceExecuted=true</script>",
-      ], [2, "Última linha do slide"]]
-    ) {
-      const card = page.locator("#action-list > .panel").nth(position);
-      assert.ok((await card.locator("pre").textContent()).includes(expected));
-      if (position === 1) {
-        const preview = await card.locator("pre").textContent();
-        for (
-          const value of [
-            "B1 · texto literal: =SUM(A2:A3)",
-            "A4 · fórmula: =SUM(A2:A3)",
-            "A2 · número: 2",
-            "C1 · lógico: verdadeiro",
-            "D1 · vazia:",
-          ]
-        ) assert.ok(preview.includes(value));
-      }
-      const button = card.getByRole("button", {
-        name: "Autorizar esta versão",
-        exact: true,
-      });
-      assert.equal(await button.isDisabled(), true);
-      await card.getByText("Revisei a conta, o destino e o conteúdo.", {
-        exact: true,
-      }).click();
-      await card.scrollIntoViewIfNeeded();
-      assert.ok(
-        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-      );
-      assert.equal(
-        await page.evaluate(() => window.__sourceExecuted),
-        undefined,
-      );
-      await writeFile(
-        new URL(`content-review-${position}-${viewport.width}.png`, folder),
-        await page.screenshot({ animations: "disabled" }),
-      );
-      await button.click();
-      await card.getByText("Versão autorizada; execução pendente", {
-        exact: true,
-      }).waitFor();
-    }
-    assert.equal(additionalApproved.size, 2);
+
     await page.getByRole("button", { name: "Mudar tema: sistema", exact: true })
       .click();
     await page.getByRole("button", { name: "Mudar tema: claro", exact: true })
@@ -412,46 +661,20 @@ try {
     await page.getByRole("button", { name: "Sair", exact: true }).click();
     await page.locator("#login").waitFor({ state: "visible" });
     assert.equal(await page.locator("#export-content").textContent(), "");
-    await page.locator("#email").fill("fixture@example.invalid");
-    await page.locator("#password").fill("synthetic-login-marker");
-    await page.getByRole("button", { name: "Entrar", exact: true }).click();
-    await page.locator("#workspace").waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Conexões", exact: true }).click();
-    await page.getByRole("button", { name: "Ampliar permissões Google" }).click();
-    await page.getByRole("button", { name: "Solicitar permissões adicionais Google" }).click();
-    await page.getByText("Marque uma permissão adicional ou use Renovar acesso.", {
-      exact: true,
-    }).waitFor();
-    assert.equal(googleUpgraded, false);
-    await page.getByRole("button", { name: "Cancelar alteração de permissões" }).click();
-    assert.equal(await page.locator("#google-label").evaluate((el) => el.readOnly), false);
-    await page.getByRole("button", { name: "Ampliar permissões Google" }).click();
-    assert.equal(await page.locator("#google-label").inputValue(), "Institucional");
-    assert.equal(await page.locator("#google-label").evaluate((el) => el.readOnly), true);
-    assert.equal(await page.locator("#google-gmail").isDisabled(), true);
-    assert.equal(await page.locator("#google-gmail").isChecked(), true);
-    assert.equal(await page.locator("#google-drive-mode").isDisabled(), true);
-    assert.equal(await page.locator("#google-drive-mode").inputValue(), "drive_read");
-    for (const name of ["docs", "sheets", "slides"]) {
-      await page.locator(`#google-${name}-write`).check();
-    }
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    await writeFile(
-      new URL(`google-upgrade-${viewport.width}.png`, folder),
-      await page.screenshot({ fullPage: true, animations: "disabled" }),
-    );
-    await page.getByRole("button", { name: "Solicitar permissões adicionais Google" }).click();
-    await page.waitForURL(base + "/oauth/mock");
-    assert.equal(googleUpgraded, true);
+    assert.equal(await page.locator("#preference-list").textContent(), "");
     receipts.push({
       viewport,
       login: "provider_stub",
-      renewal: "http_stub",
-      approval: "http_stub",
-      typed_sheet_and_new_slide_review: "http_stub",
+      moodle_renewal: "http_stub",
+      academic_forum_discussion: "http_stub",
+      academic_assignment_files: "http_stub",
+      academic_forum_reply_without_statement: "http_stub",
+      retired_operation_historical: true,
+      preferences_scoped_endpoint: true,
       hostile_text_not_executed: true,
+      google_ui_absent: true,
+      raw_technical_json_absent: true,
       export_logout: true,
-      google_incremental_scopes: "http_stub",
       overflow: false,
       native_screenshot: true,
     });

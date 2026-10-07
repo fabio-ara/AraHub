@@ -75,7 +75,7 @@ Deno.test("A02 A28: prefixo Edge, discovery e sessão revogada por cliente SDK s
       ]
     ) assert.equal((await handler(new Request(url))).status, 404);
     const uiOrigin = "https://ui.fixture.invalid";
-    const browserHandler = createEdgeHandler(new Hub(db), auth, base, undefined, undefined, {
+    const browserHandler = createEdgeHandler(new Hub(db), auth, base, undefined, {
       origin: uiOrigin,
       supabaseUrl: "https://identity.invalid",
       publishableKey: "public-fixture",
@@ -118,7 +118,7 @@ Deno.test("A02 A28: prefixo Edge, discovery e sessão revogada por cliente SDK s
     );
     assert.throws(
       () =>
-        createEdgeHandler(new Hub(db), auth, base, undefined, undefined, {
+        createEdgeHandler(new Hub(db), auth, base, undefined, {
           origin: uiOrigin + "/",
         }),
       /origem/,

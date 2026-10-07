@@ -115,7 +115,9 @@ export interface MoodleCapabilities {
   readonly available_functions: readonly string[];
   readonly not_offered_functions: readonly string[];
   readonly blocked_functions: readonly { function: string; reason: string }[];
-  readonly academic_read_only: true;
+  readonly academic_read_only: false;
+  readonly action_approval_required: true;
+  readonly available_student_actions: readonly string[];
   readonly browser_cookies_used: false;
   readonly redirects_followed: false;
   readonly observed_at: string;
@@ -183,6 +185,8 @@ export const AUDITED_FUNCTIONS: readonly string[] = Object.freeze([
   "mod_forum_get_forums_by_courses",
   "mod_forum_get_forum_discussions",
   "mod_forum_get_discussion_posts",
+  "mod_forum_get_forum_access_information",
+  "mod_forum_can_add_discussion",
   "mod_feedback_get_feedbacks_by_courses",
   "mod_feedback_get_items",
   "core_completion_get_activities_completion_status",
@@ -914,7 +918,7 @@ interface SendOptions {
   readonly url: string;
   readonly method: "POST" | "GET";
   readonly headers: Record<string, string>;
-  readonly body?: string;
+  readonly body?: string | Uint8Array;
   readonly maxBytes: number;
   readonly addresses: readonly string[];
   readonly fn: string;
@@ -1125,7 +1129,7 @@ export class MoodleAdapter {
         method: options.method,
         redirect: "manual",
         headers: { ...options.headers },
-        body: options.body,
+        body: options.body instanceof Uint8Array ? options.body.slice().buffer : options.body,
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       const contentType = response.headers.get("content-type");
@@ -1352,7 +1356,9 @@ export class MoodleAdapter {
       available_functions: available,
       not_offered_functions: AUDITED_FUNCTIONS.filter((name) => !offeredSet.has(name)),
       blocked_functions: BLOCKED_FUNCTIONS.map((item) => ({ ...item })),
-      academic_read_only: true,
+      academic_read_only: false,
+      action_approval_required: true,
+      available_student_actions: await this.actionFunctions(),
       browser_cookies_used: false,
       redirects_followed: false,
       observed_at: nowIso(),
@@ -1362,6 +1368,163 @@ export class MoodleAdapter {
   async isAvailable(fn: string): Promise<boolean> {
     await this.initialize();
     return this.availableFunctions.has(fn);
+  }
+
+  /** Explicit student operations. Only the action service calls these after durable approval. */
+  async actionFunctions(): Promise<readonly string[]> {
+    await this.initialize();
+    return [
+      "mod_forum_add_discussion",
+      "mod_forum_add_discussion_post",
+      "mod_assign_save_submission",
+      "mod_assign_submit_for_grading",
+    ]
+      .filter((fn) => this.offeredFunctions.has(fn));
+  }
+
+  private async actionCall(
+    fn:
+      | "mod_forum_add_discussion"
+      | "mod_forum_add_discussion_post"
+      | "mod_assign_save_submission"
+      | "mod_assign_submit_for_grading",
+    params: Record<string, unknown>,
+  ): Promise<MoodleRecord> {
+    await this.initialize();
+    if (!this.offeredFunctions.has(fn)) {
+      throw new MoodleError("function_unavailable", "Operação não oferecida ao estudante.");
+    }
+    const raw = await this.post(fn, params);
+    // save/submit return an array of warnings. An HTTP 200 with warnings is not success.
+    const warnings = Array.isArray(raw) ? raw : asRecord(raw)?.warnings;
+    if (Array.isArray(warnings) && warnings.length) {
+      throw new MoodleError(
+        "moodle_error",
+        "Moodle retornou avisos; o resultado requer reconciliação.",
+      );
+    }
+    return asRecord(await this.normalizeValue(raw)) ?? {};
+  }
+
+  async forumAccess(forumId: number): Promise<MoodleResult<MoodleRecord>> {
+    return await this.run(async () => {
+      const raw = await this.call("mod_forum_get_forum_access_information", {
+        forumid: positiveId(forumId, "forumid"),
+      });
+      const { data, warnings } = this.splitWarnings(raw);
+      return { data: asRecord(await this.normalizeValue(data)) ?? {}, warnings };
+    });
+  }
+
+  async canAddDiscussion(forumId: number): Promise<MoodleResult<MoodleRecord>> {
+    return await this.run(async () => {
+      const raw = await this.call("mod_forum_can_add_discussion", {
+        forumid: positiveId(forumId, "forumid"),
+        groupid: 0,
+      });
+      const { data, warnings } = this.splitWarnings(raw);
+      return { data: asRecord(await this.normalizeValue(data)) ?? {}, warnings };
+    });
+  }
+
+  async addDiscussion(
+    forumId: number,
+    subject: string,
+    message: string,
+    groupId = 0,
+    attachmentsId?: number,
+  ) {
+    return await this.actionCall("mod_forum_add_discussion", {
+      forumid: positiveId(forumId, "forumid"),
+      subject,
+      message,
+      groupid: groupId,
+      options: [
+        { name: "discussionsubscribe", value: "0" },
+        ...(attachmentsId ? [{ name: "attachmentsid", value: String(attachmentsId) }] : []),
+      ],
+    });
+  }
+  async replyPost(postId: number, subject: string, message: string, attachmentsId?: number) {
+    return await this.actionCall("mod_forum_add_discussion_post", {
+      postid: positiveId(postId, "postid"),
+      subject,
+      message,
+      messageformat: 1,
+      options: [
+        { name: "discussionsubscribe", value: "0" },
+        ...(attachmentsId ? [{ name: "attachmentsid", value: String(attachmentsId) }] : []),
+      ],
+    });
+  }
+  async saveAssignment(assignmentId: number, draftId: number) {
+    return await this.actionCall("mod_assign_save_submission", {
+      assignmentid: positiveId(assignmentId, "assignmentid"),
+      plugindata: { files_filemanager: positiveId(draftId, "draftid") },
+    });
+  }
+  async submitAssignment(assignmentId: number, acceptStatement: boolean) {
+    return await this.actionCall("mod_assign_submit_for_grading", {
+      assignmentid: positiveId(assignmentId, "assignmentid"),
+      acceptsubmissionstatement: acceptStatement ? 1 : 0,
+    });
+  }
+  async uploadDraftFile(
+    name: string,
+    mime: string,
+    bytes: Uint8Array,
+    itemId?: number,
+  ): Promise<{ itemid: number; filename: string; bytes: number }> {
+    const identity = await this.initialize();
+    if (
+      !bytes.length || bytes.length > 16 * 1024 * 1024 || !/^[^\r\n"\\/\x00]{1,180}$/.test(name) ||
+      !/^[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+$/.test(mime)
+    ) throw new MoodleError("invalid_id", "Arquivo de envio inválido.");
+    const boundary = "arahub" + crypto.randomUUID().replaceAll("-", "");
+    const enc = new TextEncoder();
+    const prefix = enc.encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file_1"; filename="${name}"\r\nContent-Type: ${mime}\r\n\r\n`,
+    );
+    const suffix = enc.encode(`\r\n--${boundary}--\r\n`);
+    const body = new Uint8Array(prefix.length + bytes.length + suffix.length);
+    body.set(prefix);
+    body.set(bytes, prefix.length);
+    body.set(suffix, prefix.length + bytes.length);
+    const target = new URL(this.origin + "/webservice/upload.php");
+    target.searchParams.set("token", this.token);
+    if (itemId !== undefined) {
+      target.searchParams.set("itemid", String(positiveId(itemId, "itemid")));
+    }
+    const reply = await this.send({
+      url: target.href,
+      method: "POST",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        accept: "application/json",
+      },
+      body,
+      maxBytes: 256 * 1024,
+      addresses: await this.resolveValidatedAddresses(),
+      fn: "upload_draft",
+    });
+    if (reply.status !== 200) throw new MoodleError("http_error", "Upload não confirmado.");
+    let data: unknown;
+    try {
+      data = JSON.parse(new TextDecoder().decode(reply.bytes));
+    } catch {
+      throw new MoodleError("parsing_error", "Resposta de upload inválida.");
+    }
+    if (!Array.isArray(data) || data.length !== 1) {
+      throw new MoodleError("moodle_error", "Upload não confirmado.");
+    }
+    const file = asRecord(data[0]);
+    if (
+      !file || file.component !== "user" || file.filearea !== "draft" ||
+      Number(file.filesize) !== bytes.length || file.filename !== name ||
+      !Number.isInteger(file.itemid) || Number(file.itemid) <= 0 ||
+      (file.userid !== undefined && Number(file.userid) !== identity.user_id)
+    ) throw new MoodleError("moodle_error", "Arquivo draft não corresponde ao envio.");
+    return { itemid: Number(file.itemid), filename: name, bytes: bytes.length };
   }
 
   // -- Normalizacao ------------------------------------------------------
@@ -1378,7 +1541,7 @@ export class MoodleAdapter {
     return { data: raw, warnings: [] };
   }
 
-  private async normalizeValue(value: unknown): Promise<unknown> {
+  protected async normalizeValue(value: unknown): Promise<unknown> {
     if (Array.isArray(value)) {
       return await Promise.all(value.map((item) => this.normalizeValue(item)));
     }
@@ -1387,8 +1550,13 @@ export class MoodleAdapter {
     }
     const obj = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
+    // Forum stored_file_exporter uses `url`; assign's external_util uses
+    // `fileurl`. Recognize the file shape, never an arbitrary external link.
+    const attachmentUrl = typeof obj.url === "string" && typeof obj.filename === "string" &&
+      (typeof obj.filesize === "number" || typeof obj.filesize === "string");
     for (const [key, item] of Object.entries(obj)) {
       if (key === "fileurl") continue;
+      if (key === "url" && attachmentUrl) continue;
       if (SKIP_KEYS.has(key.toLowerCase())) continue;
       out[key] = await this.normalizeValue(item);
       if (typeof item === "string" && HTML_KEYS.has(key.toLowerCase())) {
@@ -1397,9 +1565,28 @@ export class MoodleAdapter {
         out[key + "_text"] = sanitized.text;
       }
     }
-    if (typeof obj.fileurl === "string" && obj.type !== "content") {
+    if (typeof obj.fileurl === "string" && obj.type === "url") {
+      // A reference is not an authenticated Moodle file. Never attach credentials.
+      try {
+        const reference = new URL(obj.fileurl);
+        if (
+          !["http:", "https:"].includes(reference.protocol) || reference.username ||
+          reference.password
+        ) throw new Error();
+        out.external_url = reference.href;
+        out.reference_only = true;
+      } catch {
+        out.reference_error = "unsafe_url";
+      }
+    } else if (typeof obj.fileurl === "string" && obj.type !== "content") {
       try {
         out.file = await this.registerFile(obj);
+      } catch (error) {
+        out.file_error = error instanceof MoodleError ? error.code : "moodle_error";
+      }
+    } else if (attachmentUrl) {
+      try {
+        out.file = await this.registerFile({ ...obj, fileurl: obj.url });
       } catch (error) {
         out.file_error = error instanceof MoodleError ? error.code : "moodle_error";
       }
@@ -1413,7 +1600,18 @@ export class MoodleAdapter {
   ): Promise<CallPayload<MoodleRecord[]>> {
     const raw = await this.call(fn, params);
     const { data, warnings } = this.splitWarnings(raw);
-    const items = Array.isArray(data) ? data : [];
+    const keys: Record<string, string> = {
+      mod_page_get_pages_by_courses: "pages",
+      mod_book_get_books_by_courses: "books",
+      mod_resource_get_resources_by_courses: "resources",
+      mod_url_get_urls_by_courses: "urls",
+      mod_feedback_get_feedbacks_by_courses: "feedbacks",
+      mod_feedback_get_items: "items",
+    };
+    if (!Array.isArray(data) && (!keys[fn] || !Array.isArray(asRecord(data)?.[keys[fn]]))) {
+      throw new MoodleError("parsing_error", "Resposta de coleção Moodle inválida.");
+    }
+    const items = Array.isArray(data) ? data : pickArray(data, keys[fn]);
     const normalized = await this.normalizeValue(items);
     return {
       data: Array.isArray(normalized) ? (normalized as MoodleRecord[]) : [],
@@ -1605,7 +1803,7 @@ export class MoodleAdapter {
 
   async getDiscussionPosts(
     discussionId: number,
-    options: { offset?: number; limit?: number } = {},
+    options: { offset?: number; limit?: number; postId?: number; rootOnly?: boolean } = {},
   ): Promise<MoodleResult<MoodleRecord[]>> {
     return await this.run(async () => {
       const id = positiveId(discussionId, "discussionid");
@@ -1617,7 +1815,17 @@ export class MoodleAdapter {
         sortdirection: "ASC",
       });
       const { data, warnings } = this.splitWarnings(raw);
-      const posts = pickArray(data, "posts");
+      const allPosts = pickArray(data, "posts");
+      const selectedId = options.postId === undefined ? null : positiveId(options.postId, "postid");
+      // This WS returns the whole discussion. Select an exact target before
+      // bounding the response, so recent posts beyond page 1 remain verifiable.
+      const posts = selectedId !== null
+        ? allPosts.filter((post) => asRecord(post)?.id === selectedId)
+        : options.rootOnly
+        ? allPosts.filter((post) =>
+          Number(asRecord(post)?.parentid ?? asRecord(post)?.parent ?? 0) === 0
+        )
+        : allPosts;
       const total = posts.length;
       const sliced = posts.slice(offset, offset + limit);
       const truncated = total > offset + limit;
@@ -1725,7 +1933,7 @@ export class MoodleAdapter {
   }
 
   /** Status de submissao: bloqueado por recalculo indireto. Nunca chama o Moodle. */
-  async getSubmissionStatus(_assignmentId?: number): Promise<MoodleResult<never>> {
+  async getSubmissionStatus(_assignmentId?: number): Promise<MoodleResult<MoodleRecord>> {
     return this.blockedResult("mod_assign_get_submission_status");
   }
 

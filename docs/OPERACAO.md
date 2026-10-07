@@ -1,6 +1,6 @@
 # Operação e medição de sincronizações
 
-Complementa `docs/SINCRONIZACAO.md` (Moodle) e `docs/GOOGLE_SYNC.md` (Google) com o que é medido por
+Complementa `docs/SINCRONIZACAO.md` (Moodle) com o que é medido por
 execução de lote (A30) e como inspecionar sem expor conteúdo, credenciais ou infraestrutura.
 
 ## O que cada tentativa mede
@@ -33,9 +33,6 @@ O medidor é composto **por execução**, sem estado global e sem monkey patch d
 - **Moodle**: `ConnectionService.moodle(p, id, deps)` encaminha as deps por lote; `Sync` passa
   `onRequest` e o `MoodleAdapter` dispara o observador no ponto de despacho
   (`sendViaFetch`/`sendViaNode`), cobrindo consultas REST e downloads.
-- **Google**: `GoogleConnections.client(p, id, { wrapFetch })` compõe o transporte observado sobre o
-  fetch configurado e o repassa ao `GoogleReadClient`; `GoogleSync` conta cada requisição do cliente
-  de leitura.
 
 Como cada instância pertence a uma tentativa, execuções simultâneas (donos, conexões ou chaves
 diferentes) não somam contagens entre si. Lease, fencing e isolamento por dono/conexão permanecem
@@ -47,7 +44,7 @@ inalterados.
 - `Jobs.list` (ferramenta MCP `hub_jobs`) devolve esse `coverage`, então a medição persistida
   aparece sem consulta nova.
 - O resultado do lote também devolve a medição no `summary.metrics` e no topo do retorno
-  (`metrics`), em `Sync` (Moodle) e `GoogleSync`.
+  (`metrics`), em `Sync` (Moodle).
 
 Não há migração nova: o `coverage` já existente em `hub_jobs` acomoda a medição.
 
@@ -73,12 +70,11 @@ indica o consumo.
 ## Testes dirigidos
 
 ```powershell
-deno check src/job_metrics.ts src/sync.ts src/google_sync.ts
+deno check src/job_metrics.ts src/sync.ts
 deno test --allow-net=127.0.0.1:55432 --allow-env tests/job_metrics_test.ts
 ```
 
 Cobrem: contagem real de chamadas Moodle (uma por requisição enviada), duração/forma da memória,
 erro de transporte contado e retomada do mesmo lote medindo a tentativa seguinte, isolamento entre
-duas execuções simultâneas de donos/conexões diferentes, e o mesmo conjunto no Google (paginação
-retomada por `pageToken` e falha de transporte contada). SQL real no Postgres exclusivo e fixture
+duas execuções simultâneas de donos/conexões diferentes. SQL real no Postgres exclusivo e fixture
 sintética; nenhuma conta real.

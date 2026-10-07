@@ -1,3 +1,9 @@
+> **Registro histórico — caminho aposentado.** Este documento preserva uma
+> autorização e prova passadas do caminho Google próprio do AraHub. Esse caminho
+> foi **aposentado**: não há mais OAuth, leitura, sincronização nem escrita Google
+> como superfície operacional vigente. O texto abaixo é registro, não instrução
+> ativa. Ver [docs/GOOGLE.md](../GOOGLE.md).
+
 # Prova delimitada de produção Google
 
 Estado em 2026-10-06: **lote autorizado e concluído**. O titular autorizou somente os

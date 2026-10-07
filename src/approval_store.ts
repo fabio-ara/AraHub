@@ -118,6 +118,7 @@ export interface ListActionsFilter {
 export interface ApprovalExpectation {
   expectedHash?: string;
   expectedRevision?: string | null;
+  statementAccepted?: boolean;
 }
 
 interface ActionRow {
@@ -331,6 +332,13 @@ export class PersistentActionStore implements ApprovalAuthority {
       "invalid_request",
     );
     const operation = requireText(input.operation, 1, 120, "Operação inválida.");
+    if (operation.startsWith("google.")) {
+      throw new HubError(
+        "operation_retired",
+        "A operação Google própria foi retirada; o histórico permanece disponível.",
+        410,
+      );
+    }
     const target = requireText(input.target, 1, 2000, "Alvo inválido.");
     const revision = input.revision === undefined || input.revision === null
       ? null
@@ -425,6 +433,13 @@ export class PersistentActionStore implements ApprovalAuthority {
     const id = requireUuid(actionId, "Ação não encontrada.", 404, "not_found");
     const view = await this.load(p, id);
     if (!view) throw new HubError("not_found", "Ação não encontrada.", 404);
+    if (view.action.operation.startsWith("google.")) {
+      throw new HubError(
+        "operation_retired",
+        "Esta operação histórica não pode mais ser aprovada.",
+        410,
+      );
+    }
     if (view.state === "uncertain" || view.state === "succeeded") {
       throw new HubError("approval_invalid", "A ação já foi executada.", 409);
     }
@@ -441,6 +456,17 @@ export class PersistentActionStore implements ApprovalAuthority {
       // Igualdade snapshot/hash antes de qualquer mutação privilegiada.
       if (!HASH_RE.test(hash) || hashOf(locked[0].snapshot as string) !== hash) {
         throw new HubError("content_changed", "O snapshot não corresponde ao hash fixado.", 409);
+      }
+      const snapshot = JSON.parse(locked[0].snapshot as string);
+      if (
+        snapshot.operation?.startsWith("moodle.") &&
+        snapshot.content?.statement?.required === true && expected.statementAccepted !== true
+      ) {
+        throw new HubError(
+          "statement_required",
+          "Leia e aceite a declaração de autoria desta ação.",
+          403,
+        );
       }
       // Fecha o TOCTOU entre a revisão na UI e a aprovação, já sob lock.
       if (

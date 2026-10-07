@@ -1,40 +1,27 @@
 # Arquivos e extração de texto de PDF
 
-## Materiais Google nativos preservados
+## Materiais JSON preservados (leitor genérico)
 
-`hub_preserve_google_material` consulta um Docs, Sheets ou Slides pela conexão
-consentida e conserva um snapshot JSON privado, com estrutura nativa, hash,
-revisão disponível, seleção e proveniência. Grava somente no AraHub; não edita
-o Google nem marca leitura/entrega. Texto, tabelas/abas, fórmulas/valores e slides
-continuam representados no JSON, sem transformá-los silenciosamente em prosa.
+O caminho Google próprio do AraHub foi aposentado (ver [GOOGLE.md](GOOGLE.md));
+`hub_preserve_google_material` não existe mais. Snapshots JSON nativos já
+preservados continuam legíveis offline por `hub_read_material`, um leitor genérico
+de material preservado por `file_id`/hash.
 
-O snapshot é uma representação derivada da API, **não o binário original**.
-Seu envelope inclui kind/ID/seleção e conteúdo nativo; o hash inclui a seleção,
-para que faixas diferentes com valores iguais conservem sua própria cobertura.
-Faixas Sheets têm cobertura parcial do documento. Imagens permanecem referências
-nativas sem interpretação. Teto 8 MiB: excesso é recusado antes de gravar,
-sem truncamento ou exclusão de versões anteriores. A conexão é travada/conferida
-por dono/epoch antes do commit; a Data API continua sem UPDATE nas conexões.
+`hub_read_material` navega o JSON Pointer RFC 6901 a partir da raiz do documento.
+Envelopes de formato conhecido expõem o valor em `native`
+(`arahub.google.native.v1`) ou `value` (`arahub.material.v1`); qualquer outro JSON
+mantém a raiz intacta. Arrays/texto paginam com offset/limit (máximo 100 elementos
+ou limite de 16.000 unidades UTF-16, preservando pares surrogate); a parte tem teto
+de 128 KiB e, quando excede, retorna cobertura parcial e filhos para aprofundar.
+Listas de filhos paginam por `children_offset`/`children_next_offset`;
+`children_count` informa o total, inclusive objetos com mais de cem chaves. O
+recibo distingue cobertura da parte e do snapshot. Conteúdo é dado não confiável;
+versão observada não prova atualidade nem entrega.
 
-`hub_read_google_material` recupera o snapshot por file_id/hash mesmo sem Google
-disponível. O JSON Pointer RFC 6901 começa na raiz nativa, por exemplo
-`/tabs/0/documentTab/body/content`, `/slides/0/pageElements` ou `/sheets/0/data`.
-Arrays/texto paginam com offset/limit (máximo 100 elementos ou limite solicitado
-de 16.000 unidades UTF-16; a última unidade pode ser incluída para conservar um
-par de surrogate). A parte tem teto de
-128 KiB; resultados extensos retornam cobertura parcial e filhos para aprofundar.
-Listas de filhos também paginam: passe children_offset e siga children_next_offset;
-children_count informa o total, inclusive objetos com mais de cem chaves.
-O recibo distingue cobertura da parte e do snapshot. Conteúdo segue não confiável;
-versão observada não prova atualidade ou submissão.
-
-Prova local: dois testes SQL dirigidos com APIs sintéticas conservaram
-abas/tabelas/slides/fórmulas, seleção, retries/versões, recuperação offline,
-isolamento/hash, conexão alterada durante a leitura, partes extensas/Unicode e
-recusa de excesso. A continuação de 205 chaves recuperou todas as páginas sem perder
-localizadores escapados. Prova real dirigida: Docs/Slides preservados pelo MCP
-pessoal e recuperados por partes em conversa nova; recibos/hashes conferidos no
-banco e SHA dos binários verificado. Evidência privada separada das fixtures.
+Prova local: o leitor genérico é coberto por teste SQL dirigido que conserva
+estrutura, hashes, isolamento por dono e a paginação de 205 chaves sem perder
+localizadores escapados. O snapshot histórico preservado permanece recuperável
+offline; a evidência privada é separada das fixtures.
 
 ## PDFs
 

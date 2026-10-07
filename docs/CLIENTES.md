@@ -1,101 +1,48 @@
 # Clientes e primeiro uso
 
-A interface auxiliar serve para entrada inicial, conexão de fontes, renovação e
-revisão de alterações externas. O trabalho acadêmico cotidiano acontece no
-assistente conectado ao MCP; não é preciso abrir o painel a cada consulta.
-O AraHub é o caminho para Moodle e memória contextual. Para escrever e formatar
-Docs, Sheets ou Slides e trabalhar no Gmail, prefira os plugins oficiais Google
-no mesmo assistente. As ferramentas Google próprias do AraHub têm cobertura
-menor; suas provas sintéticas não demonstram paridade editorial. A articulação
-entre plugins ocorre pelo assistente: o servidor AraHub não invoca internamente
-os outros plugins. Uma conexão do painel Supabase não equivale à entrada no
-AraHub; o consentimento Google é separado de ambos.
+AraHub fornece Moodle e memória acadêmica privada ao assistente. Google Drive,
+Docs, Sheets, Slides, Gmail e Calendar são usados pelas ferramentas do cliente;
+o servidor AraHub não chama esses conectores nem recebe seus tokens OAuth.
 
-Exemplo depois da conexão Moodle: “AraHub, mostre as discussões e postagens
-novas do meu curso, compare-as com o contexto histórico e indique quais PDFs
-embasam sua análise.” O plugin identifica a conexão no contexto do proprietário,
-consulta a fonte sob demanda, percorre páginas e recupera versões/materiais
-pertinentes. Novidade significa diferença entre observações com cobertura;
-sem uma consulta recente não há promessa de atualização imediata. Registros
-duráveis produzidos na conversa são gravados explicitamente, não por captura
-passiva de todo o chat.
+1. Entre na interface HTTPS da instalação. Abra o link de acesso no navegador
+   que iniciou o pedido; não envie códigos ou links de login ao assistente.
+2. Em Conexões, cadastre a origem Moodle e sua chave somente no formulário
+   protegido. Renovação mantém a identidade da conexão e o histórico.
+3. No plugin pessoal, peça a retomada do contexto com fontes, cobertura e
+   incertezas. Uma fonte sem consulta recente deve aparecer como desatualizada.
+4. Produza documentos nas ferramentas adequadas do cliente. Para transferir,
+   passe o objeto de arquivo/exportação para `hub_import_artifact`; não converta
+   um caminho local em link público nem envie base64 nos argumentos.
+5. Para publicar ou entregar, prepare uma ação e revise sua versão completa na
+   interface autenticada. Quando houver declaração, leia e assinta ali. A
+   execução usa a aprovação dessa intenção uma única vez. Resultado incerto
+   exige consultar recibos, sem repetir o envio.
 
-1. Entre na interface HTTPS da sua instalação. Abra o link de acesso no mesmo
-   navegador que iniciou o pedido; não envie esse link ou código ao assistente.
-2. Em Conexões, escolha a conta e apenas as capacidades necessárias. O ícone de
-   lupa verifica Gmail, Calendar e Drive com uma página de até três itens por
-   serviço, sem mostrar conteúdo nem alterar as fontes. Parcial indica continuação,
-   não erro; sem permissão exige conferir o consentimento daquela conexão.
-3. No plugin pessoal AraHub, escolha a conta conectada. Em uma conversa nova, peça
-   a retomada de um contexto com fontes e lacunas. A memória histórica não prova
-   que a fonte continua atualizada; atualização de uma fonte é uma ação dirigida.
-4. Acrescente a Skill genérica ao pacote pessoal para orientar recuperação e
-   persistência. Preparar o pacote, atualizar o plugin e invocar a Skill em conversa
-   nova são provas separadas. O MCP não captura automaticamente o chat.
+A disponibilidade depende das funções oferecidas pela instituição e dos gates
+registrados em `../STATUS.md`. A implementação local de uma ferramenta não prova
+que já foi instalada no cliente. Assignment permanece bloqueado em produção
+pela rota de status até revisão específica da política; não usar uma entrega
+real para preencher a matriz de testes.
 
-Para Moodle, em Conexões → Moodle, informe a origem e o token de Web Service
-somente no formulário HTTPS. O assistente pode então consultar cursos e iniciar
-uma atualização dirigida; a cobertura informa funções indisponíveis, erros e
-trechos ainda não percorridos. Atualmente não há monitoramento automático nem
-garantia de publicação em tempo real. Se o token não oferecer determinada
-função, a ausência de registros não prova ausência de atividade no Moodle.
-O mesmo plugin oferece consulta dirigida de páginas de discussões e postagens.
-`hub_observations` lista todas as versões preservadas de uma entidade e
-`hub_observation` lê cada versão por trechos; `hub_entity_context` mostra apenas
-as cinco observações mais recentes como prévia. Após mudança de seção, o pacote
-de estudo usa a seção atual do módulo, e as relações antigas seguem consultáveis
-como histórico, não como materiais atuais.
+Para estudo, consulte materiais por entidade, versão/hash e localizador. A fila
+`hub_queue_document` aceita DOCX/HTML preservados; `hub_document_blocks` recupera
+parágrafos, tabelas e links extraídos. Job pendente requer executor; não indica
+que o conteúdo foi lido. Snapshots Google antigos permanecem consultáveis por
+`hub_read_material`, sem reativar conexão operacional Google.
 
-O pacote pessoal pode ligar-se ao aplicativo MCP já registrado por `.app.json`,
-conforme o [formato oficial](https://developers.openai.com/plugins/build/plugins).
-`deno task plugin:prepare` gera somente manifest, ligação, Skill e licença em
-`.private/deploy/`, com recibo de hashes fora dos arquivos distribuídos. IDs de
-contas/instalação ficam na cópia privada; o repositório distribui o template.
-O vínculo usa o ID do aplicativo registrado, confirmado no conector:
-`asdk_app_`, `connector_` ou `templated_apps_`. O ID `plugin_...` da página não
-é aceito nesse campo. O gerador recusa esse erro antes de preparar arquivos.
-Uma atualização também preserva o nome técnico cadastrado e o apelido do
-aplicativo; o título exibido não determina esses campos. Confira o cadastro
-existente antes de gerar o pacote e use uma versão diferente da instalada.
-Não alterar configuração global de clientes, reiniciar o aplicativo ou publicar
-o plugin em catálogo/workspace por inferência. Não remover a conexão existente
-para tentar instalar a Skill. Depois de acrescentar ferramentas no backend, use
-“Atualizar ferramentas” no aplicativo AraHub existente e abra uma conversa nova
-se o cliente ainda listar o conjunto anterior. Isso atualiza descoberta; não
-concede novos escopos nem substitui consentimento de conta. Esse caminho foi
-operado no cliente pessoal antes de preservar Docs/Slides reais.
+O MCP não captura o transcript completo. A Skill registra fatos e decisões
+pertinentes por `hub_record_delta`, preservando fonte, escopo, hipótese e revisão.
+História e biografia não se reduzem à lista de tarefas. `hub_observations` e
+`hub_observation` permitem aprofundar versões; a prévia não é o histórico inteiro.
 
-Na integração inicial, uma conversa ChatGPT nova comprovou leituras Google reais
-e renovação automática. A interface na sessão titular também comprovou os estados
-de leitura. Naquele momento não havia planilha nativa na conta; depois, o lote
-Google aprovado criou uma planilha sintética privada, leu os tipos de células e
-confirmou a fórmula A4=5. Isso não prova planilhas acadêmicas existentes. A revisão dos dez cenários da memória
-identificou omissão de um marco na cronologia; recuperação dirigida com orientação
-genérica corrigida preservou o marco, os valores e as granularidades temporais.
-O instrumento de upload recusou o caminho do workspace. O primeiro envio manual também foi recusado por
-usar o ID do plugin no campo de aplicativo. A versão 1.0.2 corrigiu esse campo,
-mas foi recusada por nome técnico diferente do cadastro. A versão 1.0.3 preserva
-nome, apelido e vínculo obrigatório conferidos no cadastro real; quatro testes
-e quatro entradas/hashes ZIP aprovados. O envio manual 1.0.3 foi aceito: a página
-mostra essa versão, uma Skill e o aplicativo com a conta previamente conectada.
-O aceite do pacote e seu uso efetivo em conversa nova têm provas separadas em
-STATUS. Uma conversa nova com a Skill instalada recuperou os dois cenários
-afetados sem repetir sua orientação no prompt; manteve os marcos, a precisão
-das datas e as distinções do trabalho coletivo. Evidências e pacote permanecem privados.
+O plugin distribuído contém manifest, ligação ao app, Skill e licença. Prepare
+com `deno task plugin:prepare` e confira o ID e o nome técnico já cadastrados;
+IDs e vínculos pessoais ficam na cópia privada. Depois de atualizar o backend,
+a descoberta de ferramentas deve ser atualizada no app existente. Verifique a
+versão ativa e teste uma conversa nova. Não remova uma conexão para tentar
+instalar uma Skill, nem confunda preparação do ZIP com instalação.
 
-O titular dispensou em 2026-10-06 o teste no celular físico desta entrega.
-Não houve conversa nova, delta ou recuperação entre celular e web; a QA em
-viewport móvel prova somente layout e interação no navegador de teste. O uso
-futuro no celular pode ser validado à parte, sem declarar este gate aprovado.
-
-Busca e contexto têm continuação explícita: hub_search encontra títulos e
-registros; hub_context pagina contextos por offset/next_offset e deltas
-por delta_offset/deltas_next_offset. Para um contexto escolhido, hub_history
-permite aprofundar a cronologia sem colar o chat anterior.
-
-Pacotes de estudo usam offset/next_offset e preservam versões/direitos;
-consulte [o contrato do pacote](PACOTE-ESTUDO.md) antes de criar um curso.
-
-Datas de atividades/eventos preservados: [hub_time_context](DATAS.md) converte
-instantes para Lisboa/São Paulo por padrão e mantém dia inteiro, DST incerto e
-fuso desconhecido explícitos. Não modifica calendários nem confirma envio.
+Não há acompanhamento recorrente ativo por padrão. Layout em viewport móvel e
+celular físico são provas diferentes. A interface concentra autenticação,
+conexões, preferências, saúde/exportação e aprovação; a rotina acadêmica ocorre
+no chat.

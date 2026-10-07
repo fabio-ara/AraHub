@@ -6,8 +6,6 @@ import { boundedBody } from "./network.ts";
 import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { z } from "zod";
-import type { GoogleConnections } from "./google_connections.ts";
-import { GoogleReads } from "./google_reads.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 import { Materials } from "./materials.ts";
 
@@ -19,7 +17,6 @@ interface HttpConfig {
   publishableKey?: string;
   syntheticLogin?: () => Promise<string>;
   connections?: ConnectionService;
-  google?: GoogleConnections;
   actions?: PersistentActionStore;
 }
 export function createHandler(hub: Hub, config: HttpConfig) {
@@ -51,7 +48,6 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           publishableKey: config.publishableKey ?? null,
           synthetic: !!config.syntheticLogin,
           canConnectMoodle: !!config.connections && !config.syntheticLogin,
-          canConnectGoogle: !!config.google && !config.syntheticLogin,
           canApproveActions: !!config.actions && !config.syntheticLogin,
           canExtractPdf: !config.syntheticLogin,
         });
@@ -60,14 +56,14 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         return json({ access_token: await config.syntheticLogin(), mode: "synthetic" });
       }
       if (u.pathname === "/privacy.html" && req.method === "GET") {
-        return new Response(await Deno.readTextFile(new URL("../web/privacy.html", import.meta.url)), {
-          headers: { ...safeHeaders, "Content-Type": "text/html; charset=utf-8" },
-        });
+        return new Response(
+          await Deno.readTextFile(new URL("../web/privacy.html", import.meta.url)),
+          {
+            headers: { ...safeHeaders, "Content-Type": "text/html; charset=utf-8" },
+          },
+        );
       }
-      if (
-        u.pathname === "/" || u.pathname === "/oauth/consent" ||
-        u.pathname === "/oauth/google/callback"
-      ) {
+      if (u.pathname === "/" || u.pathname === "/oauth/consent") {
         return new Response(
           await Deno.readTextFile(new URL("../web/index.html", import.meta.url)),
           {
@@ -105,11 +101,10 @@ export function createHandler(hub: Hub, config: HttpConfig) {
             hub,
             p,
             config.connections,
-            config.google,
             config.actions,
           );
         }
-        return await handleMcp(req, hub, p, config.connections, config.google, config.actions);
+        return await handleMcp(req, hub, p, config.connections, config.actions);
       }
       if (
         u.pathname === "/api/actions" && req.method === "GET" && config.actions
@@ -122,6 +117,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         const input = z.object({
           action_id: z.string().uuid(),
           content_hash: z.string().regex(/^[a-f0-9]{64}$/),
+          statement_accepted: z.boolean().optional(),
         }).strict().parse(JSON.parse(await boundedBody(req, 2048)));
         const view = await config.actions.load(p, input.action_id);
         if (!view) throw new HubError("not_found", "Ação não encontrada.", 404);
@@ -133,45 +129,29 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           );
         }
         if (u.pathname.endsWith("/approve")) {
+          const content = view.action.content as
+            | { statement?: { required?: unknown } }
+            | null;
+          if (
+            view.action.operation.startsWith("moodle.") &&
+            content?.statement?.required === true &&
+            input.statement_accepted !== true
+          ) {
+            throw new HubError(
+              "statement_required",
+              "Leia e aceite a declaração de autoria desta ação.",
+              403,
+            );
+          }
           return json(
-            await config.actions.approve(p, input.action_id, { expectedHash: input.content_hash }),
+            await config.actions.approve(p, input.action_id, {
+              expectedHash: input.content_hash,
+              statementAccepted: input.statement_accepted,
+            }),
           );
         }
         await config.actions.deny(p, input.action_id, { expectedHash: input.content_hash });
         return json({ state: "denied" });
-      }
-      if (
-        u.pathname === "/api/connections/google/check" && req.method === "POST" && config.google &&
-        !config.syntheticLogin
-      ) {
-        const p = await config.verify(req, false);
-        const input = z.object({ connection_id: z.string().uuid() }).strict()
-          .parse(JSON.parse(await boundedBody(req, 2048)));
-        return json(await new GoogleReads(hub, config.google).check(p, input.connection_id));
-      }
-      if (
-        u.pathname === "/api/connections/google/start" && req.method === "POST" && config.google &&
-        !config.syntheticLogin
-      ) {
-        const p = await config.verify(req, false),
-          input = z.object({
-            label: z.string().min(1).max(120),
-            scopes: z.array(z.string().max(200)).min(1).max(12),
-            connection_id: z.string().uuid().optional(),
-          }).strict().parse(JSON.parse(await boundedBody(req, 4096)));
-        return json(await config.google.start(p, input));
-      }
-      if (
-        u.pathname === "/api/connections/google/callback" && req.method === "POST" &&
-        config.google && !config.syntheticLogin
-      ) {
-        const p = await config.verify(req, false),
-          input = z.object({
-            state: z.string().min(8).max(200),
-            code: z.string().min(1).max(4096).optional(),
-            error: z.string().max(100).optional(),
-          }).strict().parse(JSON.parse(await boundedBody(req, 8192)));
-        return json(await config.google.callback(p, input));
       }
       if (
         u.pathname === "/api/connections/moodle" && req.method === "POST" && config.connections &&
@@ -193,10 +173,6 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         const input = z.object({ connection_id: z.string().uuid() }).strict().parse(
           JSON.parse(await boundedBody(req, 1024)),
         );
-        const parent = await config.connections.parent(p, input.connection_id);
-        if (parent.provider === "google" && config.google) {
-          return json(await config.google.disconnect(p, input.connection_id));
-        }
         return json(await config.connections.disconnect(p, input.connection_id));
       }
       if (
@@ -229,6 +205,13 @@ export function createHandler(hub: Hub, config: HttpConfig) {
       if (u.pathname === "/api/context") {
         if (req.method !== "GET") return json({ code: "method_not_allowed" }, 405);
         return json(await hub.context(await config.verify(req, false)));
+      }
+      if (u.pathname === "/api/preferences") {
+        if (req.method !== "GET") return json({ code: "method_not_allowed" }, 405);
+        const scope = z.record(z.string()).parse(
+          JSON.parse(u.searchParams.get("scope") ?? "{}"),
+        );
+        return json(await hub.preferences(await config.verify(req, false), scope));
       }
       if (u.pathname === "/api/export" && req.method === "GET") {
         return json(await hub.exportMemory(await config.verify(req, false)));

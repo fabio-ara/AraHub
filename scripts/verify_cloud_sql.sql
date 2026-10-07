@@ -45,13 +45,14 @@ end $test$;
 -- An OAuth client token with OIDC scopes alone must not get direct Data API memory.
 select set_config('request.jwt.claims',jsonb_build_object('sub',current_setting('arahub.qa_a'),'client_id','synthetic-unrelated-client','scope','email')::text,true);
 do $test$ begin
-  if exists(select from public.hub_deltas) then raise exception 'qa_oauth_data_boundary_failed'; end if;
+  if exists(select from public.hub_deltas) or exists(select from public.hub_observation_occurrences)
+    or exists(select from public.hub_observation_timeline) then raise exception 'qa_oauth_data_boundary_failed'; end if;
 end $test$;
 
 select set_config('request.jwt.claims',jsonb_build_object('sub',current_setting('arahub.qa_b'),'role','authenticated')::text,true),
        set_config('request.jwt.claim.sub',current_setting('arahub.qa_b'),true);
 do $test$ declare t text; visible bigint; begin
-  foreach t in array array['hub_connections','hub_contexts','hub_entities','hub_observations','hub_deltas','hub_relations','hub_files','hub_jobs'] loop
+  foreach t in array array['hub_connections','hub_contexts','hub_entities','hub_observations','hub_observation_occurrences','hub_observation_timeline','hub_deltas','hub_relations','hub_files','hub_jobs'] loop
     execute format('select count(*) from public.%I where owner_id=$1',t) into visible using current_setting('arahub.qa_a')::uuid;
     if visible <> 0 then raise exception 'qa_rls_failed'; end if;
   end loop;

@@ -139,7 +139,7 @@ export class TimeContext {
         c.provider,c.state as connection_state,o.id as observation_id,o.content,o.provenance,
         o.observed_at,o.coverage
         from public.hub_entities e join public.hub_connections c on c.owner_id=e.owner_id and c.id=e.connection_id
-        left join lateral (select id,content,provenance,observed_at,coverage from public.hub_observations
+        left join lateral (select id,content,provenance,observed_at,coverage from public.hub_observation_timeline
           where owner_id=e.owner_id and entity_id=e.id order by observed_at desc,id desc limit 1) o on true
         where e.owner_id=${p.ownerId} and e.id in ${tx(ids)} order by e.id`;
       if (rows.length !== ids.length) {

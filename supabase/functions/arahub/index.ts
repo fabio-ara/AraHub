@@ -3,8 +3,6 @@ import { Hub } from "../../../src/domain.ts";
 import { createEdgeHandler, createSupabaseGatewayHandler } from "../../../src/edge.ts";
 import { ConnectionService } from "../../../src/connections.ts";
 import { TokenVault } from "../../../src/adapters/token_vault.ts";
-import { GoogleConnections } from "../../../src/google_connections.ts";
-import { googleOAuthConfig } from "../../../src/adapters/google.ts";
 import { PersistentActionStore } from "../../../src/approval_store.ts";
 const required = (name: string) => {
   const v = Deno.env.get(name);
@@ -38,25 +36,7 @@ const auth = {
 };
 const vault = Deno.env.get("ARAHUB_TOKEN_VAULT_KEY") ? await TokenVault.fromEnv() : undefined;
 const connections = vault ? new ConnectionService(hub, vault) : undefined;
-const googleClient = Deno.env.get("GOOGLE_CLIENT_ID"),
-  googleSecret = Deno.env.get("GOOGLE_CLIENT_SECRET"),
-  googleRedirect = Deno.env.get("GOOGLE_REDIRECT_URI");
-const google = vault && googleClient && googleSecret && googleRedirect
-  ? new GoogleConnections(
-    hub,
-    vault,
-    googleOAuthConfig({
-      clientId: googleClient,
-      clientSecret: googleSecret,
-      redirectUri: googleRedirect,
-    }),
-    { sessionActive: auth.sessionActive },
-  )
-  : undefined;
-if (google && googleRedirect !== new URL("oauth/google/callback", uiBase).href) {
-  throw new Error("GOOGLE_REDIRECT_URI deve corresponder à interface autorizada.");
-}
-const edgeHandler = createEdgeHandler(hub, auth, base, connections, google, {
+const edgeHandler = createEdgeHandler(hub, auth, base, connections, {
   origin: uiOrigin,
   supabaseUrl: required("SUPABASE_URL"),
   publishableKey: required("ARAHUB_PUBLISHABLE_KEY"),

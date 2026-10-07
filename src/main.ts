@@ -4,8 +4,6 @@ import { createVerifier } from "./auth.ts";
 import { createHandler } from "./http.ts";
 import { ConnectionService } from "./connections.ts";
 import { TokenVault } from "./adapters/token_vault.ts";
-import { GoogleConnections } from "./google_connections.ts";
-import { googleOAuthConfig } from "./adapters/google.ts";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { PersistentActionStore } from "./approval_store.ts";
 
@@ -58,24 +56,6 @@ const auth = {
   },
 };
 const vault = Deno.env.get("ARAHUB_TOKEN_VAULT_KEY") ? await TokenVault.fromEnv() : undefined;
-const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID"),
-  googleSecret = Deno.env.get("GOOGLE_CLIENT_SECRET"),
-  googleRedirect = Deno.env.get("GOOGLE_REDIRECT_URI");
-const google = !synthetic && vault && googleClientId && googleSecret && googleRedirect
-  ? new GoogleConnections(
-    hub,
-    vault,
-    googleOAuthConfig({
-      clientId: googleClientId,
-      clientSecret: googleSecret,
-      redirectUri: googleRedirect,
-    }),
-    { sessionActive: auth.sessionActive },
-  )
-  : undefined;
-if (google && googleRedirect !== `${publicUrl}/oauth/google/callback`) {
-  throw new Error("GOOGLE_REDIRECT_URI deve corresponder ao callback desta interface.");
-}
 const handler = createHandler(hub, {
   auth,
   verify: createVerifier(auth),
@@ -84,7 +64,6 @@ const handler = createHandler(hub, {
   publishableKey: Deno.env.get("SUPABASE_PUBLISHABLE_KEY"),
   syntheticLogin,
   connections: vault ? new ConnectionService(hub, vault) : undefined,
-  google,
   actions: synthetic
     ? undefined
     : new PersistentActionStore(db, { sessionActive: auth.sessionActive }),

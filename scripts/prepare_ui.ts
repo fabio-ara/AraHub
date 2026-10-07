@@ -199,8 +199,11 @@ export async function prepareUiPackage(
   );
   const files: [string, Uint8Array][] = [
     ["index.html", html],
-    ["privacy.html", encode((await Deno.readTextFile(new URL("privacy.html", source)))
-      .replace('href="/ui/style.css"', `href="${ui.basePath}/ui/style.css"`))],
+    [
+      "privacy.html",
+      encode((await Deno.readTextFile(new URL("privacy.html", source)))
+        .replace('href="/ui/style.css"', `href="${ui.basePath}/ui/style.css"`)),
+    ],
     ["ui/app.js", await Deno.readFile(new URL("app.js", source))],
     [
       "ui/pdf-parser.worker.js",
@@ -209,7 +212,6 @@ export async function prepareUiPackage(
     ["ui/style.css", await Deno.readFile(new URL("style.css", source))],
     [".nojekyll", new Uint8Array(0)],
     ["oauth/consent/index.html", html],
-    ["oauth/google/callback/index.html", html],
     ["oauth/callback/index.html", html],
     [
       "LICENSE.txt",

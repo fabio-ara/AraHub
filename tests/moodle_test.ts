@@ -194,7 +194,8 @@ Deno.test("descoberta: interseccao auditada, oferecida e implementada", async ()
   assert.deepEqual(capabilities.implemented_functions, [...IMPLEMENTED_FUNCTIONS]);
   assert.deepEqual(capabilities.not_offered_functions, []);
   assert.equal(capabilities.blocked_functions.length, BLOCKED_FUNCTIONS.length);
-  assert.equal(capabilities.academic_read_only, true);
+  assert.equal(capabilities.academic_read_only, false);
+  assert.equal(capabilities.action_approval_required, true);
   assert.equal(capabilities.redirects_followed, false);
   assert.equal(
     IMPLEMENTED_FUNCTIONS.some((name) => /(^|_)view(_|$)/.test(name)),

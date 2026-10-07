@@ -43,6 +43,8 @@ export class Hub {
         (select count(*)::integer from public.hub_contexts where owner_id=${p.ownerId}) as contexts,
         (select count(*)::integer from public.hub_connections where owner_id=${p.ownerId}) as connections,
         (select count(*)::integer from public.hub_entities where owner_id=${p.ownerId}) as entities,
+        (select count(*)::integer from public.hub_observations where owner_id=${p.ownerId}) as observation_contents,
+        (select count(*)::integer from public.hub_observation_occurrences where owner_id=${p.ownerId}) as observation_occurrences,
         (select count(*)::integer from public.hub_deltas where owner_id=${p.ownerId}) as deltas,
         (select count(*)::integer from public.hub_jobs where owner_id=${p.ownerId}) as jobs`;
       const [files] = await tx`select count(*)::integer as files,
@@ -245,8 +247,8 @@ export class Hub {
     }
     return asOwner(this.db, p, async (tx) => {
       const rows = entityId
-        ? await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction - 'pages' as extraction from public.hub_files where owner_id=${p.ownerId} and entity_id=${entityId} order by name,id limit 21 offset ${offset}`
-        : await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction - 'pages' as extraction from public.hub_files where owner_id=${p.ownerId} order by name,id limit 21 offset ${offset}`;
+        ? await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction - 'pages' - 'blocks' - 'sanitized_html' as extraction from public.hub_files where owner_id=${p.ownerId} and entity_id=${entityId} order by name,id limit 21 offset ${offset}`
+        : await tx`select id,entity_id,name,mime_type,sha256,bytes,extraction - 'pages' - 'blocks' - 'sanitized_html' as extraction from public.hub_files where owner_id=${p.ownerId} order by name,id limit 21 offset ${offset}`;
       return { records: rows.slice(0, 20), next_offset: rows.length > 20 ? offset + 20 : null };
     });
   }
@@ -285,12 +287,43 @@ export class Hub {
         ];
       if (!entity) throw new HubError("not_found", "Registro não encontrado.", 404);
       const observations =
-        await tx`select id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at from public.hub_observations where owner_id=${p.ownerId} and entity_id=${id} order by observed_at desc limit 5`;
+        await tx`select id,content_id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${id} order by observed_at desc,id desc limit 5`;
+      // A timeline preserva cada ocorrência, inclusive a revisita A→B→A, com a data
+      // da própria ocorrência; o corpo vem do snapshot deduplicado por hash.
+      const [current] =
+        await tx`select (e.state->'provider_record' = o.content) as matches_current,
+          (e.state ? 'provider_record') as provider_record_present
+          from public.hub_entities e
+          left join lateral (select content from public.hub_observation_timeline
+            where owner_id=e.owner_id and entity_id=e.id order by observed_at desc,id desc limit 1) o on true
+          where e.owner_id=${p.ownerId} and e.id=${id}`;
       const relations =
         await tx`select from_id,to_id,kind,evidence from public.hub_relations where owner_id=${p.ownerId} and (from_id=${id} or to_id=${id}) order by from_id,to_id limit 31`;
+      const latest = observations[0] ?? null;
+      const matches = current?.matches_current;
+      // Com cada ocorrência preservada, uma igualdade falsa deixa de ser o caso
+      // A→B→A e passa a indicar alteração de estado sem observação correspondente.
+      const unrecordedChange = matches === false;
       return {
         entity,
         observations,
+        source_projection: {
+          provider_record_present: current?.provider_record_present === true,
+          matches_latest_occurrence: typeof matches === "boolean" ? matches : null,
+          unrecorded_change_detected: unrecordedChange,
+          note:
+            "Conteúdo vigente da fonte comparado estruturalmente com a última ocorrência registrada; não é nova leitura, envio ou disponibilidade atual.",
+        },
+        // Cada linha da timeline é uma ocorrência com data observada própria.
+        last_observed_at: {
+          value: latest?.observed_at ?? null,
+          precision: latest === null ? "unknown" : "recorded",
+        },
+        gaps: unrecordedChange
+          ? [
+            "A fonte mudou sem ocorrência de observação correspondente; o estado vigente não foi verificado contra a última ocorrência registrada.",
+          ]
+          : [],
         relations: relations.slice(0, 30),
         relations_truncated: relations.length > 30,
         content_is_untrusted_data: true,
@@ -309,14 +342,14 @@ export class Hub {
         await tx`select id,connection_id,kind,external_id,title from public.hub_entities where owner_id=${p.ownerId} and id=${entityId}`;
       if (!entity.length) throw new HubError("not_found", "Registro não encontrado.", 404);
       const rows = after
-        ? await tx`select id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at,
+        ? await tx`select id,content_id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at,
           to_char(observed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_observed_at
-          from public.hub_observations where owner_id=${p.ownerId} and entity_id=${entityId}
+          from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${entityId}
           and (observed_at,id)<(${after.observed_at}::text::timestamptz,${after.id}::uuid)
           order by observed_at desc,id desc limit 21`
-        : await tx`select id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at,
+        : await tx`select id,content_id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at,
           to_char(observed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_observed_at
-          from public.hub_observations where owner_id=${p.ownerId} and entity_id=${entityId}
+          from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${entityId}
           order by observed_at desc,id desc limit 21`;
       const last = rows[19];
       return {
@@ -336,15 +369,16 @@ export class Hub {
       !Number.isSafeInteger(limit) || limit < 1 || limit > 16000
     ) throw new HubError("invalid_offset", "Trecho inválido.");
     return asOwner(this.db, p, async (tx) => {
-      const rows = await tx`select id,entity_id,content_hash,provenance,coverage,
+      const rows = await tx`select id,entity_id,content_id,content_hash,provenance,coverage,
         occurred_at,source_modified_at,observed_at,recorded_at,
         char_length(content::text) as text_length,
         substring(content::text from ${offset + 1}::integer for ${limit}::integer) as excerpt
-        from public.hub_observations where owner_id=${p.ownerId} and id=${id}`;
+        from public.hub_observation_timeline where owner_id=${p.ownerId} and id=${id}`;
       if (!rows.length) throw new HubError("not_found", "Registro não encontrado.", 404);
       const row = rows[0] as {
         id: string;
         entity_id: string;
+        content_id: string;
         content_hash: string;
         provenance: unknown;
         coverage: string;
@@ -370,7 +404,7 @@ export class Hub {
     ) throw new HubError("invalid_offset", "Trecho inválido.");
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select id,name,mime_type,sha256,extraction - 'pages' as extraction,char_length(extracted_text) as text_length,substring(extracted_text from ${
+        await tx`select id,name,mime_type,sha256,extraction - 'pages' - 'blocks' - 'sanitized_html' as extraction,char_length(extracted_text) as text_length,substring(extracted_text from ${
           offset + 1
         }::integer for ${limit}::integer) as excerpt from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`;
       if (!rows.length) throw new HubError("not_found", "Arquivo não encontrado.", 404);
@@ -397,7 +431,7 @@ export class Hub {
     }
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select f.id,f.entity_id,f.name,f.sha256,f.extraction - 'pages' as extraction,substring(f.extracted_text from greatest(position(lower(${query}) in lower(f.extracted_text))-120,1) for 800) as excerpt from public.hub_files f where f.owner_id=${p.ownerId} and f.extracted_text ilike ${
+        await tx`select f.id,f.entity_id,f.name,f.sha256,f.extraction - 'pages' - 'blocks' - 'sanitized_html' as extraction,substring(f.extracted_text from greatest(position(lower(${query}) in lower(f.extracted_text))-120,1) for 800) as excerpt from public.hub_files f where f.owner_id=${p.ownerId} and f.extracted_text ilike ${
           "%" + query + "%"
         } order by f.name,f.id limit 21 offset ${offset}`;
       return {
@@ -448,7 +482,7 @@ export class Hub {
       };
       const relations = graph.relations;
       const observations = (ids.length
-        ? await tx`select distinct on (o.entity_id) o.id as observation_id,o.entity_id,o.content_hash,o.provenance,o.coverage,o.occurred_at,o.source_modified_at,o.observed_at,o.recorded_at from public.hub_observations o where o.owner_id=${p.ownerId} and o.entity_id in ${
+        ? await tx`select distinct on (o.entity_id) o.id as observation_id,o.entity_id,o.content_id as content_id,o.content_hash,o.provenance,o.coverage,o.occurred_at,o.source_modified_at,o.observed_at,o.recorded_at from public.hub_observation_timeline o where o.owner_id=${p.ownerId} and o.entity_id in ${
           tx(ids)
         } order by o.entity_id,o.observed_at desc,o.recorded_at desc`
         : []) as unknown as ObservationRow[];
@@ -654,11 +688,14 @@ export class Hub {
         "hub_contexts",
         "hub_entities",
         "hub_observations",
+        "hub_observation_occurrences",
         "hub_deltas",
         "hub_relations",
         "hub_files",
         "hub_jobs",
         "hub_context_targets",
+        "hub_actions",
+        "hub_action_approvals",
       ] as const;
       const result: Record<string, unknown> = { format: "arahub-export-v1", owner_id: p.ownerId };
       for (const name of tables) {

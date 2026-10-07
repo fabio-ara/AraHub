@@ -170,7 +170,7 @@ export class WorkContext {
         throw new HubError("not_found", "Versão ou publicação não encontrada.", 404);
       }
       const observations =
-        await tx`select id,content,content_hash,provenance,observed_at,coverage from public.hub_observations where owner_id=${p.ownerId} and entity_id=${postId} order by observed_at desc,id desc limit 1`;
+        await tx`select id,content,content_hash,provenance,observed_at,coverage from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${postId} order by observed_at desc,id desc limit 1`;
       if (!observations.length) return { state: "not_observed", matches_selected: false };
       const observation = observations[0], record = observation.content;
       const author = record.userid ?? record.author?.userid ?? record.author?.id;

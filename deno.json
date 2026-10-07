@@ -12,6 +12,7 @@
     "check": "deno check src/*.ts src/adapters/*.ts scripts/*.ts tests/*.ts",
     "test": "deno test --allow-net=127.0.0.1:55432,127.0.0.1:8787,127.0.0.1:8789,127.0.0.1:8790 --allow-env --allow-read --allow-write=.private tests/",
     "dev": "deno run --allow-net --allow-env --allow-read src/main.ts",
+    "materials:jobs": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read scripts/run_document_jobs.ts",
     "db:setup": "deno run --allow-net=127.0.0.1:55432 --allow-env --allow-read scripts/db_setup.ts",
     "migration:stage": "deno run --allow-read --allow-write=.private --allow-run=git scripts/stage_metd.ts",
     "fmt": "deno fmt src scripts tests deno.json",

@@ -28,7 +28,7 @@
                   id="password-label"
                   hidden>Senha<input id="password" type="password" autocomplete="current-password" required></label>
                 <div
-                  class="actions"><button type="submit" id="signin" class="primary" aria-label="Entrar" title="Entrar" disabled></button></div>
+                  class="actions"><button type="submit" id="signin" class="icon-ghost primary" aria-label="Entrar" title="Entrar" disabled></button></div>
               </form>
               <button id="synthetic-login" class="icon-ghost"
                 aria-label="Explorar ambiente sintético local"
@@ -37,10 +37,10 @@
             </section>
             <section id="workspace" hidden>
               <nav class="toolbar" aria-label="Configuração">
-                <button id="memory-tab" class="icon-ghost active" aria-label="Contextos"
-                  title="Contextos" aria-pressed="true"></button>
-                <button id="connections-tab" class="icon-ghost" aria-label="Conexões"
-                  title="Conexões" aria-pressed="false"></button>
+                <button id="connections-tab" class="tab-button active" aria-label="Conexões"
+                  title="Conexões" aria-pressed="true"></button>
+                <button id="preferences-tab" class="tab-button" aria-label="Preferências"
+                  title="Preferências" aria-pressed="false"></button>
                 <span class="toolbar-space"></span>
                 <button id="refresh" class="icon-ghost" aria-label="Atualizar visão"
                   title="Atualizar visão"></button>
@@ -48,16 +48,9 @@
                   title="Preparar exportação privada"></button>
               </nav>
               <p id="mode-label" class="note"></p>
-              <div id="memory-view">
-                <h2>Contextos</h2>
-                <div id="context-list" class="grid"></div>
-                <div id="empty-state" class="panel">
-                  <p
-                    class="note">Seus contextos aparecerão aqui quando forem registrados pelo assistente.</p>
-                </div>
-              </div>
-              <div id="connections-view" hidden>
-                <h2>Conexões</h2>
+              <div id="connections-view">
+                <h2>Conexões e acesso</h2>
+                <p id="connection-health" class="note"></p>
                 <div id="connection-list" class="grid"></div>
                 <details class="panel" id="pdf-setup" hidden>
                   <summary>PDFs</summary>
@@ -68,7 +61,7 @@
                     class="actions"><button id="pdf-more" class="icon-ghost" aria-label="Mais PDFs" title="Mais PDFs" hidden></button></div>
                 </details>
                 <details class="panel" id="moodle-setup">
-                  <summary>Moodle</summary>
+                  <summary>Conectar o Moodle</summary>
                     <form id="moodle-connect-form" autocomplete="off" hidden>
                       <label>Nome<input id="moodle-label" autocomplete="off" required maxlength="100" placeholder="Meu Moodle"></label>
                       <label>Endereço<input id="moodle-origin" type="url" autocomplete="off" readonly required placeholder="https://moodle.exemplo.edu"></label>
@@ -77,34 +70,18 @@
                       <label>Chave ou link móvel<input id="moodle-token" type="password" autocomplete="new-password" required minlength="8"></label>
                     <p class="note">A chave móvel pode ter permissões amplas; o AraHub usa apenas funções de leitura.</p>
                     <div
-                      class="actions"><button type="submit" id="moodle-submit" class="primary" aria-label="Conectar Moodle" title="Conectar Moodle"></button><button type="button" id="moodle-cancel-renewal" class="icon-ghost" aria-label="Cancelar renovação" title="Cancelar renovação" hidden></button></div>
+                      class="actions"><button type="submit" id="moodle-submit" class="icon-ghost primary" aria-label="Conectar Moodle" title="Conectar Moodle"></button><button type="button" id="moodle-cancel-renewal" class="icon-ghost" aria-label="Cancelar renovação" title="Cancelar renovação" hidden></button></div>
                   </form>
                   <p id="moodle-protected-note" class="note"
                     hidden>Abra a interface por HTTPS para cadastrar ou renovar o acesso.</p>
                 </details>
-                <details class="panel" id="google-setup">
-                  <summary>Google</summary>
-                  <form id="google-connect-form" hidden>
-                    <label>Nome da conta<input id="google-label" required maxlength="120" placeholder="Pessoal ou institucional"></label>
-                    <label>Arquivos<select id="google-drive-mode"><option value="drive_read">Leitura do Drive</option><option value="selected_files">Arquivos autorizados ao aplicativo</option><option value="identity">Sem acesso aos arquivos</option></select></label>
-                    <label
-                      class="check-label"><input id="google-gmail" type="checkbox">Gmail</label>
-                    <label
-                      class="check-label"><input id="google-calendar" type="checkbox">Calendar</label>
-                    <label
-                      class="check-label"><input id="google-docs-write" type="checkbox">Criar e editar Docs</label>
-                    <label
-                      class="check-label"><input id="google-sheets-write" type="checkbox">Criar Sheets</label>
-                    <label
-                      class="check-label"><input id="google-slides-write" type="checkbox">Criar e editar Slides</label>
-                    <p class="note">Cada alteração exige sua aprovação.</p>
-                    <p id="google-upgrade-note" class="note" hidden>Permissões atuais preservadas. Marque somente as novas permissões.</p>
-                    <p id="google-selection-note" class="note"
-                      hidden>Somente arquivos já autorizados ao aplicativo. A seleção de novos arquivos está indisponível.</p>
-                    <div
-                      class="actions"><button type="submit" id="google-connect" class="primary" aria-label="Conectar outra conta Google" title="Conectar outra conta Google"></button><button type="button" id="google-cancel-upgrade" class="icon-ghost" aria-label="Cancelar alteração de permissões" title="Cancelar alteração de permissões" hidden></button></div>
-                  </form>
-                </details>
+              </div>
+              <div id="preferences-view" hidden>
+                <h2>Preferências</h2>
+                <p
+                  class="note">Preferências contextuais registradas pelo assistente: o que está vigente, conflitos e o que exige revisão. O histórico completo permanece na memória do backend.</p>
+                <p id="preference-summary" class="note"></p>
+                <div id="preference-list" class="grid"></div>
               </div>
               <pre id="export-content" hidden></pre>
             </section>
@@ -114,10 +91,12 @@
               <p
                 class="note">Consulta e registro de memória. Alterações externas exigem autorização própria.</p>
               <div
-                class="actions"><button id="approve" class="primary" aria-label="Permitir" title="Permitir"></button><button id="deny" class="icon-ghost" aria-label="Recusar" title="Recusar"></button></div>
+                class="actions"><button id="approve" class="icon-ghost primary" aria-label="Permitir" title="Permitir"></button><button id="deny" class="icon-ghost" aria-label="Recusar" title="Recusar"></button></div>
             </section>
             <section id="actions-panel" hidden>
-              <h2>Autorizações</h2>
+              <h2>Ações acadêmicas</h2>
+              <p
+                class="note">Revise a ação completa abaixo. Publicar, responder ou entregar no Moodle só ocorre após sua autorização nesta sessão.</p>
               <div id="action-list" class="grid"></div>
             </section>
             <p id="message" class="note" role="status" aria-live="polite"></p>

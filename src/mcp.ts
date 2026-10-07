@@ -7,29 +7,29 @@ import { Jobs } from "./jobs.ts";
 import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { Materials } from "./materials.ts";
-import { GoogleMaterials, nativeMaterialSchema } from "./google_materials.ts";
-import type { GoogleConnections } from "./google_connections.ts";
-import { type GoogleReadInput, GoogleReads } from "./google_reads.ts";
 import { submissionReportSchema, targetSchema, WorkContext } from "./work_context.ts";
 import { TimeContext, timeContextSchema } from "./time_context.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
-import { GoogleWrites, googleWriteSchema } from "./google_writes.ts";
+import { PreservedMaterials } from "./preserved_materials.ts";
+import { Artifacts, hostFileSchema } from "./artifacts.ts";
+import { MoodleActions, moodleActionSchema } from "./moodle_actions.ts";
+import { DocumentMaterials } from "./document_materials.ts";
 import {
-  type CalendarSyncInput,
-  type DriveSyncInput,
-  type GmailSyncInput,
-  GoogleSync,
-} from "./google_sync.ts";
+  acknowledgeReadSchema,
+  Attention,
+  attentionFilterSchema,
+  markPresentedSchema,
+  recordRequirementSchema,
+} from "./attention.ts";
 
 export async function handleMcp(
   req: Request,
   hub: Hub,
   principal: Principal,
   connections?: ConnectionService,
-  google?: GoogleConnections,
   actions?: PersistentActionStore,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.1.0" });
+  const server = new McpServer({ name: "arahub", version: "0.2.0" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {
@@ -44,26 +44,116 @@ export async function handleMcp(
       return { content: [{ type: "text" as const, text: JSON.stringify(error) }], isError: true };
     }
   };
-  if (google && actions) {
-    const production = new GoogleWrites(hub, google, actions);
-    server.registerTool(
-      "hub_prepare_google_write",
-      {
-        description:
-          "Prepara criação de Docs/Sheets/Slides, planilha nova com células tipadas, inserção de texto em Docs ou novo slide com texto/substituição em slides escolhidos. Conta, alvo, revisão e conteúdo ficam fixados; não executa. Capacidade OAuth e aprovação humana por versão são separadas. Fórmulas Sheets: aritmética local e SUM/AVERAGE/MIN/MAX/COUNT/COUNTA/IF/ROUND, sem importação ou referências externas. Editar células existentes ainda não é oferecido: a API estável não fornece precondição de revisão atômica.",
-        inputSchema: { connection_id: z.string().uuid(), action: googleWriteSchema },
-        annotations: write,
-      },
-      (a: { connection_id: string; action: z.infer<typeof googleWriteSchema> }) =>
-        response(() => production.prepare(principal, a.connection_id, a.action)),
-    );
-    server.registerTool("hub_execute_google_write", {
+  const artifacts = new Artifacts(hub);
+  const attention = new Attention(hub);
+  server.registerTool(
+    "hub_attention",
+    {
       description:
-        "Executa somente uma versão previamente autorizada na interface confiável. Revalida conta e revisão; resultado incerto nunca é reenviado automaticamente.",
+        "Retoma obrigações, novidades, prazos múltiplos, relatos e recibos, com fontes/cobertura e continuação. Consulta memória; não atualiza Moodle, não marca leitura e não agenda consultas.",
+      inputSchema: attentionFilterSchema.shape,
+      annotations: read,
+    },
+    (a: z.infer<typeof attentionFilterSchema>) => response(() => attention.overview(principal, a)),
+  );
+  server.registerTool(
+    "hub_attention_presented",
+    {
+      description:
+        "Registra quais versões foram efetivamente apresentadas pelo assistente. Exige entidade e hash; não significa que o usuário leu nem marca leitura no Moodle.",
+      inputSchema: markPresentedSchema.shape,
+      annotations: { ...write, idempotentHint: true },
+    },
+    (a: z.infer<typeof markPresentedSchema>) =>
+      response(() => attention.markPresented(principal, a)),
+  );
+  server.registerTool(
+    "hub_attention_read",
+    {
+      description:
+        "Registra relato explícito do titular de que leu a versão identificada. Não inferir da apresentação no resumo. Não altera o estado nativo do Moodle.",
+      inputSchema: acknowledgeReadSchema.shape,
+      annotations: { ...write, idempotentHint: true },
+    },
+    (a: z.infer<typeof acknowledgeReadSchema>) =>
+      response(() => attention.acknowledgeRead(principal, a)),
+  );
+  server.registerTool(
+    "hub_record_requirement",
+    {
+      description:
+        "Preserva uma interpretação de obrigação ancorada em trecho literal da observação/hash: ação, quantidade de colegas distintos e prazo textual/data quando resolúvel. Mantém revisão e fonte; não promove hipótese a regra institucional nem inventa horário ausente.",
+      inputSchema: recordRequirementSchema.shape,
+      annotations: { ...write, idempotentHint: true },
+    },
+    (a: z.infer<typeof recordRequirementSchema>) =>
+      response(() => attention.recordRequirement(principal, a)),
+  );
+  server.registerTool(
+    "hub_import_artifact",
+    {
+      description:
+        "Recebe um arquivo do cliente em bytes privados, confere tipo/tamanho/hash e vincula ao contexto e conexão Moodle. Não envia ao Moodle. Passe o objeto de arquivo do host, nunca base64, caminho local ou URL pública criada para contornar acesso. Limite desta cadeia: 16 MiB; DOCX, PPTX, PDF e texto UTF-8.",
+      inputSchema: {
+        connection_id: z.string().uuid(),
+        context_id: z.string().uuid(),
+        file: hostFileSchema,
+      },
+      annotations: { ...write, openWorldHint: true, idempotentHint: true },
+      _meta: { "openai/fileParams": ["file"] },
+    },
+    (a: { connection_id: string; context_id: string; file: z.infer<typeof hostFileSchema> }) =>
+      response(() => artifacts.importHost(principal, a.connection_id, a.context_id, a.file)),
+  );
+  if (connections && actions) {
+    const academic = new MoodleActions(hub, connections, actions, artifacts);
+    server.registerTool("hub_prepare_moodle_action", {
+      description:
+        "Prepara uma intenção imutável de tópico/resposta de fórum ou entrega de arquivo. Confere conta, atividade, regras, versão e estado; nada é enviado ao Moodle. Aprovação humana será feita na interface autenticada, vinculada a esta versão. Consulta de status de assignment continua bloqueada em produção até revisão da política. Texto de fórum é texto simples preservado e escapado pelo servidor.",
+      inputSchema: moodleActionSchema.shape,
+      annotations: { ...write, openWorldHint: true },
+    }, (a: z.infer<typeof moodleActionSchema>) => response(() => academic.prepare(principal, a)));
+    server.registerTool("hub_execute_moodle_action", {
+      description:
+        "Executa somente a intenção aprovada na sessão humana, após revalidar conteúdo/alvo/regras. Upload, salvar e finalizar são etapas da mesma autorização. Nunca aceita approved do modelo. Resultado incerto não é reenviado. Consultar hub_action para passos e recibo.",
       inputSchema: { action_id: z.string().uuid() },
       annotations: { ...write, openWorldHint: true, destructiveHint: true },
-    }, (a: { action_id: string }) => response(() => production.execute(principal, a.action_id)));
+    }, (a: { action_id: string }) => response(() => academic.execute(principal, a.action_id)));
+    server.registerTool("hub_action", {
+      description:
+        "Recupera versão aprovada, estado e recibos intermediários/finais de uma ação do dono. Incerto não é falha nem confirmação; não reenviar automaticamente.",
+      inputSchema: { action_id: z.string().uuid() },
+      annotations: read,
+    }, (a: { action_id: string }) => response(() => academic.read(principal, a.action_id)));
   }
+  const documents = new DocumentMaterials(hub);
+  server.registerTool(
+    "hub_queue_document",
+    {
+      description:
+        "Enfileira extração privada de DOCX/HTML já preservado por hash. Requer executor separado; job pendente não significa material extraído nem rotina ativa. Nenhum navegador precisa ficar aberto para o executor local.",
+      inputSchema: { file_id: z.string().uuid(), sha256: z.string().regex(/^[a-f0-9]{64}$/) },
+      annotations: { ...write, idempotentHint: true },
+    },
+    (a: { file_id: string; sha256: string }) =>
+      response(() => documents.enqueue(principal, a.file_id, a.sha256)),
+  );
+  server.registerTool(
+    "hub_document_blocks",
+    {
+      description:
+        "Lê blocos de DOCX/HTML extraídos, com parágrafos, tabelas, links, localizadores e lacunas. Paginação explícita; blocos grandes indicam a representação textual paginada. Não afirma leitura humana nem interpretação de imagens.",
+      inputSchema: {
+        file_id: z.string().uuid(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(10).optional(),
+      },
+      annotations: read,
+    },
+    (a: { file_id: string; sha256: string; offset?: number; limit?: number }) =>
+      response(() => documents.read(principal, a.file_id, a.sha256, a.offset, a.limit)),
+  );
   server.registerTool(
     "hub_context",
     {
@@ -249,10 +339,10 @@ export async function handleMcp(
     }));
   const materials = new Materials(hub, connections);
   server.registerTool(
-    "hub_read_google_material",
+    "hub_read_material",
     {
       description:
-        "Lê offline JSON nativo preservado por hash e JSON Pointer RFC 6901 (vazio=raiz; /tabs/0/documentTab/body/content, /slides/0, /sheets/0). Arrays/texto paginam com offset/limit; partes maiores que 128 KiB pedem aprofundar pelos filhos. Filhos paginam por children_offset/children_next_offset, sem perder chaves após a primeira página. Conserva estrutura e seleção; não confirma atualidade ou entrega.",
+        "Lê offline um material JSON preservado por file_id/hash, por JSON Pointer RFC 6901 (vazio=raiz). Arrays/texto paginam com offset/limit; partes maiores que 128 KiB pedem aprofundar pelos filhos. Filhos paginam por children_offset/children_next_offset, sem perder chaves após a primeira página. Conserva estrutura e seleção; não confirma atualidade, interpretação de imagem ou entrega.",
       inputSchema: {
         file_id: z.string().uuid(),
         sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -274,7 +364,7 @@ export async function handleMcp(
       },
     ) =>
       response(() =>
-        new GoogleMaterials(hub).read(
+        new PreservedMaterials(hub).read(
           principal,
           a.file_id,
           a.sha256,
@@ -285,21 +375,6 @@ export async function handleMcp(
         )
       ),
   );
-  if (google) {
-    server.registerTool(
-      "hub_preserve_google_material",
-      {
-        description:
-          "Preserva observação nativa Docs/Sheets/Slides na memória privada: JSON, hash, versão/seleção/proveniência, sem achatar estrutura. Escreve somente no AraHub; consulta fonte com capacidade de leitura consentida. Teto 8 MiB, sem truncamento; faixas Sheets têm cobertura parcial do documento. Retorna recibo para recuperação offline.",
-        inputSchema: { connection_id: z.string().uuid(), material: nativeMaterialSchema },
-        annotations: { ...write, openWorldHint: true },
-      },
-      (a: { connection_id: string; material: z.infer<typeof nativeMaterialSchema> }) =>
-        response(() =>
-          new GoogleMaterials(hub, google).preserve(principal, a.connection_id, a.material)
-        ),
-    );
-  }
   server.registerTool(
     "hub_extract_pdf",
     {
@@ -541,117 +616,6 @@ export async function handleMcp(
     (a: { observation_id: string; offset?: number; limit?: number }) =>
       response(() => hub.observationText(principal, a.observation_id, a.offset, a.limit)),
   );
-  if (google) {
-    const mirror = new GoogleSync(hub, google);
-    const limits = z.object({
-      maxPages: z.number().int().min(1).max(100).optional(),
-      maxItems: z.number().int().min(1).max(10000).optional(),
-    }).strict().optional();
-    const syncAnnotations = { ...write, openWorldHint: true };
-    server.registerTool(
-      "hub_google_sync_gmail",
-      {
-        description:
-          "Preserva consulta dirigida e histórico Gmail no espelho privado, com cobertura e cursor duráveis. Não envia nem marca mensagens como lidas.",
-        inputSchema: {
-          connection_id: z.string().uuid(),
-          query: z.string().max(2000).optional(),
-          label_ids: z.array(z.string().min(1).max(200)).max(50).optional(),
-          message_limit: z.number().int().min(1).max(1000).optional(),
-          limits,
-          rebuild: z.boolean().optional(),
-          rebuild_window_days: z.number().int().min(1).max(365).optional(),
-        },
-        annotations: syncAnnotations,
-      },
-      ({ connection_id, ...input }: GmailSyncInput & { connection_id: string }) =>
-        response(() => mirror.gmail(principal, connection_id, input)),
-    );
-    server.registerTool(
-      "hub_google_sync_calendar",
-      {
-        description:
-          "Preserva eventos, recorrência e dia inteiro por calendário, com syncToken e reconstrução delimitada; não altera eventos.",
-        inputSchema: {
-          connection_id: z.string().uuid(),
-          calendar_id: z.string().min(1).max(500).optional(),
-          time_min: z.string().datetime({ offset: true }).optional(),
-          time_max: z.string().datetime({ offset: true }).optional(),
-          limits,
-          rebuild: z.boolean().optional(),
-        },
-        annotations: syncAnnotations,
-      },
-      ({ connection_id, ...input }: CalendarSyncInput & { connection_id: string }) =>
-        response(() => mirror.calendar(principal, connection_id, input)),
-    );
-    server.registerTool(
-      "hub_google_sync_drive",
-      {
-        description:
-          "Preserva mudanças e seleção limitada de arquivos, com cursor e lacunas explícitas. Ausência não apaga memória; drive.file não cobre o Drive inteiro.",
-        inputSchema: {
-          connection_id: z.string().uuid(),
-          drive_id: z.string().min(1).max(500).optional(),
-          selection_query: z.string().max(2000).optional(),
-          limits,
-          rebuild: z.boolean().optional(),
-        },
-        annotations: syncAnnotations,
-      },
-      ({ connection_id, ...input }: DriveSyncInput & { connection_id: string }) =>
-        response(() => mirror.drive(principal, connection_id, input)),
-    );
-    server.registerTool("hub_google_run_sync", {
-      description:
-        "Retoma lote Google do proprietário; escreve apenas o espelho privado e conserva o cursor durante cobertura parcial.",
-      inputSchema: { job_id: z.string().uuid() },
-      annotations: syncAnnotations,
-    }, ({ job_id }: { job_id: string }) => response(() => mirror.run(principal, job_id)));
-    server.registerTool(
-      "hub_google_sync_state",
-      {
-        description: "Consulta checkpoints privados e cobertura da conexão Google.",
-        inputSchema: {
-          connection_id: z.string().uuid(),
-          external_id: z.string().max(300).optional(),
-        },
-        annotations: read,
-      },
-      ({ connection_id, external_id }: { connection_id: string; external_id?: string }) =>
-        response(() => mirror.state(principal, connection_id, external_id)),
-    );
-    server.registerTool(
-      "hub_google_read",
-      {
-        description:
-          "Consulta na conexão Google escolhida com capacidade consentida e estrutura nativa. Não altera a plataforma nem cria novo consentimento.",
-        inputSchema: {
-          connection_id: z.string().uuid(),
-          kind: z.enum([
-            "gmail_messages",
-            "gmail_message",
-            "calendars",
-            "calendar_events",
-            "drive_files",
-            "document",
-            "spreadsheet",
-            "presentation",
-          ]),
-          resource_id: z.string().min(1).max(1000).optional(),
-          query: z.string().max(500).optional(),
-          calendar_id: z.string().max(1000).optional(),
-          page_token: z.string().max(4000).optional(),
-          ranges: z.array(z.string().max(200)).max(20).optional(),
-          max_pages: z.number().int().min(1).max(3).optional(),
-          max_items: z.number().int().min(1).max(100).optional(),
-        },
-        annotations: { ...read, openWorldHint: true },
-      },
-      (a: GoogleReadInput & { connection_id: string }) =>
-        response(() => new GoogleReads(hub, google).read(principal, a.connection_id, a)),
-    );
-  }
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

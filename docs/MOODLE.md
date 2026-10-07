@@ -11,9 +11,12 @@ nenhum código foi copiado. O código aqui é coberto pelo LICENSE MIT do AraHub
 
 ## Papel e fronteiras
 
-O adaptador só lê. Ele não expõe HTTP genérico, não aceita URL arbitrária e não
-chama funções de escrita, de visualização (`view`) ou de recálculo de notas. As
-exclusões auditadas são:
+O adaptador não expõe HTTP genérico ou métodos arbitrários. As leituras ficam
+separadas das quatro operações de estudante auditadas: upload de draft, salvar
+arquivo, finalizar entrega e publicar tópico/resposta (upload usa endpoint
+próprio). A fachada de ações exige intenção imutável e aprovação humana; veja
+[ENTREGA-1.md](ENTREGA-1.md). Nenhuma função de visualização (`view`) é chamada.
+As exclusões que continuam vigentes em produção são:
 
 | Função | Motivo |
 |---|---|
@@ -122,6 +125,10 @@ O token nunca recebe uma chamada fora da interseção disponível.
 | getCalendarEvents | core_calendar_get_calendar_events | eventos estruturados |
 | downloadFile / getRegisteredFile / listRegisteredFiles | pluginfile.php | binário e metadados |
 | getOwnGrades / getSubmissionStatus | nenhuma | recusa controlada |
+| forumAccess / canAddDiscussion | mod_forum_get_forum_access_information / mod_forum_can_add_discussion | permissões e abertura para postagem |
+| uploadDraftFile | /webservice/upload.php | área privada de draft; não comprova envio |
+| addDiscussion / replyPost | mod_forum_add_discussion / mod_forum_add_discussion_post | IDs que ainda exigem readback |
+| saveAssignment / submitAssignment | mod_assign_save_submission / mod_assign_submit_for_grading | salvar/finalizar; warnings recusados |
 
 Todos os métodos de leitura devolvem MoodleResult. Valores de parâmetro inválidos
 também aparecem como resultado (error_code invalid_id), o que evita exceções

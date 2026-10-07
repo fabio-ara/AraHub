@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
-import { actionPreview } from "./action_preview.ts";
+import { describeAction } from "./action_preview.ts";
 import { extractClientPdf, PDF_CLIENT_MAX_BYTES } from "./pdf_client.ts";
 import { moodleMobileLaunchUrl, parseMoodleMobileLink } from "./moodle_mobile.ts";
 const siteBase = new URL("../", import.meta.url).href;
@@ -30,26 +30,39 @@ function setAction(button: HTMLElement, icon: string, label: string) {
   button.classList.add("icon-ghost");
   button.innerHTML = renderUiIcon(icon); // fixed icon names/markup only, never source content
 }
+function setTab(button: HTMLElement, icon: string, label: string) {
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.innerHTML = renderUiIcon(icon); // fixed icon names/markup only, never source content
+  const text = document.createElement("span");
+  text.textContent = label;
+  button.append(text);
+}
+function labeledButton(label: string, variant: string) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = variant;
+  button.textContent = label;
+  return button;
+}
 for (
   const [id, icon, label] of [
     ["logout", "sign-out", "Sair"],
     ["signin", "sign-in", "Entrar"],
     ["synthetic-login", "experiment", "Explorar ambiente sintético local"],
-    ["memory-tab", "folder", "Contextos"],
-    ["connections-tab", "account", "Conexões"],
     ["refresh", "rotate", "Atualizar visão"],
     ["export", "download", "Preparar exportação privada"],
     ["moodle-submit", "key", "Conectar Moodle"],
     ["moodle-mobile-open", "sign-in", "Abrir entrada oficial do Moodle"],
     ["moodle-cancel-renewal", "remove-state", "Cancelar renovação"],
-    ["google-connect", "account-add", "Conectar outra conta Google"],
-    ["google-cancel-upgrade", "remove-state", "Cancelar alteração de permissões"],
     ["approve", "ready-state", "Permitir"],
     ["deny", "remove-state", "Recusar"],
     ["pdf-more", "book-open", "Mais PDFs"],
     ["privacy", "info", "Privacidade"],
   ]
 ) setAction(el(id), icon, label);
+setTab(el("connections-tab"), "account", "Conexões");
+setTab(el("preferences-tab"), "tags", "Preferências");
 const mediaTheme = matchMedia("(prefers-color-scheme: dark)");
 let themePreference = "system";
 try {
@@ -87,18 +100,6 @@ el("theme").addEventListener("click", () => {
   } catch { /* Session-only theme. */ }
   applyTheme();
 });
-const callbackUrl = new URL(location.href);
-const pendingGoogle = callbackUrl.pathname.replace(/\/+$/, "") === route("/oauth/google/callback")
-  ? {
-    state: callbackUrl.searchParams.get("state"),
-    code: callbackUrl.searchParams.get("code") ?? undefined,
-    error: callbackUrl.searchParams.get("error") ?? undefined,
-  }
-  : null;
-if (pendingGoogle) {
-  history.replaceState({}, "", route("/oauth/google/callback"));
-}
-let googleCallbackHandled = false;
 const msg = (s: string) => {
   el("message").textContent = s;
 };
@@ -114,16 +115,6 @@ const supabase = cfg.supabaseUrl && cfg.publishableKey
 let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthetic-token") : null;
 let renewingMoodle: string | null = null;
 let moodleSubmitting = false;
-let upgradingGoogle: { id: string; desiredScopes: string[] } | null = null;
-const googleScopeUri: Record<string, string> = {
-  drive_read: "https://www.googleapis.com/auth/drive.readonly",
-  selected_files: "https://www.googleapis.com/auth/drive.file",
-  gmail_read: "https://www.googleapis.com/auth/gmail.readonly",
-  calendar_read: "https://www.googleapis.com/auth/calendar.readonly",
-  docs_write: "https://www.googleapis.com/auth/documents",
-  sheets_write: "https://www.googleapis.com/auth/spreadsheets",
-  slides_write: "https://www.googleapis.com/auth/presentations",
-};
 let pdfCursor: string | null = null;
 let pdfLoading = false;
 let pdfJob: AbortController | null = null;
@@ -134,30 +125,11 @@ function resetMoodleForm() {
   el("moodle-cancel-renewal").hidden = true;
   setAction(el("moodle-submit"), "key", "Conectar Moodle");
 }
-function resetGoogleForm() {
-  upgradingGoogle = null;
-  (el("google-connect-form") as HTMLFormElement).reset();
-  (el("google-label") as HTMLInputElement).readOnly = false;
-  (el("google-drive-mode") as HTMLSelectElement).disabled = false;
-  for (
-    const id of [
-      "google-gmail",
-      "google-calendar",
-      "google-docs-write",
-      "google-sheets-write",
-      "google-slides-write",
-    ]
-  ) (el(id) as HTMLInputElement).disabled = false;
-  el("google-upgrade-note").hidden = true;
-  el("google-cancel-upgrade").hidden = true;
-  setAction(el("google-connect"), "account-add", "Conectar outra conta Google");
-}
 el("synthetic-login").hidden = !cfg.synthetic;
 el("moodle-connect-form").hidden = !cfg.canConnectMoodle ||
   !moodleCredentialEntry;
 el("moodle-protected-note").hidden = moodleCredentialEntry ||
   !cfg.canConnectMoodle;
-el("google-connect-form").hidden = !cfg.canConnectGoogle;
 el("pdf-setup").hidden = !cfg.canExtractPdf;
 if (!supabase) {
   el("login-form").hidden = true;
@@ -179,6 +151,17 @@ const api = async (path: string) => {
   if (!r.ok) throw new Error(result.message ?? "Não foi possível atualizar.");
   return result;
 };
+async function apiPreferences() {
+  const response = await fetch(
+    endpoint("/api/preferences") + "?scope=" + encodeURIComponent("{}"),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.message ?? "Preferências indisponíveis.");
+  }
+  return result;
+}
 async function post(path: string, payload: unknown) {
   const response = await fetch(endpoint(path), {
     method: "POST",
@@ -193,23 +176,6 @@ async function post(path: string, payload: unknown) {
     throw new Error(result.message ?? "Não foi possível concluir.");
   }
   return result;
-}
-async function googleCallback() {
-  if (!pendingGoogle || googleCallbackHandled || !token) return;
-  googleCallbackHandled = true;
-  try {
-    await post("/api/connections/google/callback", pendingGoogle);
-    await render();
-    msg(
-      "Conta Google vinculada à sua memória. Confira as permissões concedidas.",
-    );
-  } catch (e) {
-    msg(
-      e instanceof Error
-        ? e.message
-        : "Não foi possível vincular. Reinicie a conexão pela interface.",
-    );
-  }
 }
 async function loadPdfs(append = false) {
   if (!token || pdfLoading || !cfg.canExtractPdf) return;
@@ -360,15 +326,176 @@ const connectionState: Record<string, string> = {
   denied: "Acesso recusado",
   error: "Atualização indisponível",
 };
-el("google-drive-mode").addEventListener("change", () => {
-  el("google-selection-note").hidden =
-    (el("google-drive-mode") as HTMLSelectElement).value !== "selected_files";
-});
+
+interface PreferenceEntry {
+  id: string;
+  content?: unknown;
+  scope?: Record<string, string>;
+  preference?: {
+    key?: string;
+    state?: string;
+    valid_from?: string;
+    valid_until?: string;
+  } | null;
+  status?: string;
+}
+
+interface PreferencesView {
+  at?: string;
+  applicable?: PreferenceEntry[];
+  history?: PreferenceEntry[];
+  contextual_overrides?: string[];
+  conflicts?: { key: string; ids: string[] }[];
+  review_required?: PreferenceEntry[];
+  coverage?: string;
+}
+
+const preferenceStatusLabels: Record<string, string> = {
+  current: "vigente",
+  future: "ainda não vigente",
+  superseded: "substituída",
+  withdrawal: "retirada",
+  expired: "expirada",
+  requires_review: "requer revisão",
+  legacy_requires_review: "registro antigo sem chave, requer revisão",
+};
+
+function readableInstant(value: string) {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed)
+    ? value
+    : new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(parsed);
+}
+
+function preferenceScope(scope: Record<string, string> | undefined) {
+  const entries = Object.entries(scope ?? {}).filter(([, value]) =>
+    typeof value === "string" && value
+  );
+  return entries.length
+    ? "Escopo: " + entries.map(([key, value]) => `${key}=${value}`).join(", ") +
+      "."
+    : "Escopo: global.";
+}
+
+function preferenceValidity(preference: PreferenceEntry["preference"]) {
+  if (!preference) return "";
+  if (preference.state === "withdrawn") return "Retirada permanentemente.";
+  const until = preference.valid_until
+    ? `Vigente até ${readableInstant(preference.valid_until)}.`
+    : "Vigente.";
+  const from = preference.valid_from
+    ? ` Válida desde ${readableInstant(preference.valid_from)}.`
+    : "";
+  return until + from;
+}
+
+function preferenceDetail(entry: PreferenceEntry) {
+  const parts: string[] = [];
+  if (typeof entry.content === "string" && entry.content.trim()) {
+    parts.push(entry.content.trim());
+  }
+  parts.push(preferenceScope(entry.scope));
+  const validity = preferenceValidity(entry.preference);
+  if (validity) parts.push(validity);
+  const status = entry.status ? preferenceStatusLabels[entry.status] : undefined;
+  if (status) parts.push(`Situação: ${status}.`);
+  return parts.join(" ");
+}
+
+function preferenceCard(entry: PreferenceEntry) {
+  const key = entry.preference?.key;
+  return card(
+    typeof key === "string" && key.trim() ? key.trim() : "Registro sem chave",
+    preferenceDetail(entry),
+  );
+}
+
+/** Preferências por escopo: vigentes, conflitos e o que exige revisão humana. */
+function renderPreferences(view: PreferencesView | null) {
+  const list = el("preference-list");
+  const summary = el("preference-summary");
+  list.replaceChildren();
+  if (!view) {
+    summary.textContent = "Preferências indisponíveis no momento.";
+    return;
+  }
+  const applicable = view.applicable ?? [];
+  const conflicts = view.conflicts ?? [];
+  const history = view.history ?? [];
+  const conflicted = new Set(conflicts.flatMap((conflict) => conflict.ids));
+  const review = (view.review_required ?? []).filter((entry) =>
+    !conflicted.has(entry.id)
+  );
+  const overridden = view.contextual_overrides?.length ?? 0;
+  summary.textContent =
+    (view.coverage === "partial"
+      ? "Cobertura parcial: parte do histórico não foi lida. "
+      : "") +
+    `${applicable.length} vigente(s), ${conflicts.length} conflito(s), ` +
+    `${review.length} para revisar` +
+    (overridden ? `, ${overridden} sobreposto(s) por escopo mais específico` : "") +
+    ".";
+  if (!applicable.length && !conflicts.length && !review.length) {
+    summary.textContent += " Nenhuma preferência registrada.";
+  }
+  if (applicable.length) {
+    list.append(fieldLabel("Vigentes"));
+    for (const entry of applicable) list.append(preferenceCard(entry));
+  }
+  if (conflicts.length) {
+    list.append(fieldLabel("Conflitos"));
+    for (const conflict of conflicts) {
+      const ids = new Set(conflict.ids);
+      const entries = history.filter((entry) => ids.has(entry.id));
+      const conflictCard = card(`Conflito: ${conflict.key}`, "");
+      const items = document.createElement("ul");
+      items.className = "file-list";
+      if (entries.length) {
+        for (const entry of entries) {
+          const item = document.createElement("li");
+          item.textContent = preferenceDetail(entry);
+          items.append(item);
+        }
+      } else {
+        const item = document.createElement("li");
+        item.textContent = "Registros conflitantes não recuperados na página.";
+        items.append(item);
+      }
+      conflictCard.append(items);
+      list.append(conflictCard);
+    }
+  }
+  if (review.length) {
+    list.append(fieldLabel("Requer revisão"));
+    for (const entry of review) list.append(preferenceCard(entry));
+  }
+}
+
+/** Saúde do acesso: estado observado de cada conexão, sem prometer frescor da fonte. */
+function renderConnectionHealth(connections: { state: string }[]) {
+  const target = el("connection-health");
+  if (!connections.length) {
+    target.textContent =
+      "Nenhuma conexão registrada. Conecte o Moodle para começar.";
+    return;
+  }
+  const counts = new Map<string, number>();
+  for (const connection of connections) {
+    const label = connectionState[connection.state] ?? "Verificar acesso";
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  target.textContent = "Acesso: " +
+    [...counts].map(([label, count]) => `${count} ${label}`).join(" · ") + ".";
+}
+
 async function render() {
   if (!token) return;
   const sessionToken = token;
   try {
-    const c = await api("/api/context");
+    const [c, preferences] = await Promise.all([
+      api("/api/context"),
+      apiPreferences().catch(() => null),
+    ]);
     if (token !== sessionToken) return;
     el("login").hidden = true;
     el("workspace").hidden = false;
@@ -376,18 +503,8 @@ async function render() {
     el("mode-label").textContent = cfg.synthetic
       ? "Ambiente sintético local. Esta visão não comprova conexão real ou implantação."
       : "";
-    const list = el("context-list");
-    list.replaceChildren();
-    el("empty-state").hidden = c.contexts.length > 0;
-    for (const ctx of c.contexts) {
-      const deltas = c.deltas.filter((d: { context_id: string }) => d.context_id === ctx.id);
-      list.append(
-        card(
-          ctx.title,
-          deltas[0]?.content ?? "Sem registros.",
-        ),
-      );
-    }
+    renderPreferences(preferences);
+    renderConnectionHealth(c.connections);
     const connections = el("connection-list");
     connections.replaceChildren();
     for (const cn of c.connections) {
@@ -472,127 +589,6 @@ async function render() {
           });
           entry.append(sync);
         }
-        if (cn.provider === "google" && cfg.canConnectGoogle) {
-          const renew = document.createElement("button");
-          renew.className = "secondary";
-          setAction(renew, "key", "Renovar acesso");
-          renew.addEventListener("click", async () => {
-            renew.disabled = true;
-            try {
-              const result = await post("/api/connections/google/start", {
-                connection_id: cn.id,
-                label: cn.label,
-                scopes: cn.desired_scopes?.length ? cn.desired_scopes : ["identity"],
-              });
-              location.assign(result.authorization_url);
-            } catch (e) {
-              renew.disabled = false;
-              msg(e instanceof Error ? e.message : "Não foi possível renovar.");
-            }
-          });
-          entry.append(renew);
-          if (["connected", "expired"].includes(cn.state)) {
-            const upgrade = document.createElement("button");
-            upgrade.className = "secondary";
-            setAction(upgrade, "account-add", "Ampliar permissões Google");
-            upgrade.addEventListener("click", () => {
-              resetGoogleForm();
-              const desiredScopes = Array.isArray(cn.desired_scopes)
-                ? cn.desired_scopes.filter((scope: unknown): scope is string =>
-                  typeof scope === "string"
-                )
-                : [];
-              upgradingGoogle = { id: cn.id, desiredScopes };
-              const current = new Set(desiredScopes);
-              const hasScope = (capability: string) =>
-                current.has(capability) || current.has(googleScopeUri[capability]);
-              const label = el("google-label") as HTMLInputElement;
-              label.value = cn.label;
-              label.readOnly = true;
-              const drive = el("google-drive-mode") as HTMLSelectElement;
-              drive.value = hasScope("drive_read")
-                ? "drive_read"
-                : hasScope("selected_files")
-                ? "selected_files"
-                : "identity";
-              drive.disabled = true;
-              for (
-                const [id, scope] of [
-                  ["google-gmail", "gmail_read"],
-                  ["google-calendar", "calendar_read"],
-                  ["google-docs-write", "docs_write"],
-                  ["google-sheets-write", "sheets_write"],
-                  ["google-slides-write", "slides_write"],
-                ]
-              ) {
-                const input = el(id) as HTMLInputElement;
-                input.checked = hasScope(scope);
-                input.disabled = hasScope(scope) || !scope.endsWith("_write");
-              }
-              el("google-upgrade-note").hidden = false;
-              el("google-selection-note").hidden = true;
-              el("google-cancel-upgrade").hidden = false;
-              setAction(el("google-connect"), "key", "Solicitar permissões adicionais Google");
-              (el("google-setup") as HTMLDetailsElement).open = true;
-              el("google-connect-form").scrollIntoView({ block: "nearest" });
-              (el("google-docs-write") as HTMLInputElement).focus();
-              msg(
-                "Marque somente as novas permissões desta conta. As leituras atuais serão preservadas.",
-              );
-            });
-            entry.append(upgrade);
-          }
-          if (cn.state === "connected") {
-            const check = document.createElement("button");
-            check.className = "secondary";
-            setAction(check, "search", "Verificar leituras");
-            const checked = document.createElement("p");
-            checked.className = "note";
-            check.addEventListener("click", async () => {
-              check.disabled = true;
-              try {
-                const result = await post("/api/connections/google/check", {
-                  connection_id: cn.id,
-                });
-                const names: Record<string, string> = {
-                  gmail_messages: "Gmail",
-                  calendars: "Calendar",
-                  drive_files: "Drive",
-                };
-                const states: Record<string, string> = {
-                  complete: "concluído",
-                  partial: "parcial",
-                  denied: "sem permissão",
-                  expired: "acesso expirado",
-                  timeout: "tempo esgotado",
-                };
-                checked.textContent = result.checks.map((
-                  item: { kind: string; coverage: string; items?: number },
-                ) =>
-                  `${names[item.kind]}: ${states[item.coverage] ?? "indisponível"}${
-                    item.items === undefined ? "" : ` (${item.items})`
-                  }`
-                ).join(" · ");
-              } catch (error) {
-                checked.textContent = error instanceof Error
-                  ? error.message
-                  : "Não foi possível verificar.";
-              } finally {
-                check.disabled = false;
-              }
-            });
-            entry.append(check, checked);
-          }
-          const scopes = document.createElement("p");
-          scopes.className = "note";
-          const grantedCount = (cn.desired_scopes ?? []).filter((scope: string) =>
-            (cn.granted_scopes ?? []).includes(scope)
-          ).length;
-          scopes.textContent = `${grantedCount} permissões concedidas de ${
-            cn.desired_scopes?.length ?? 0
-          } solicitadas.`;
-          entry.append(scopes);
-        }
       }
       const controls = document.createElement("div");
       controls.className = "actions";
@@ -602,13 +598,43 @@ async function render() {
       if (controls.childElementCount) entry.append(controls);
       connections.append(entry);
     }
-    await renderActions(c.connections);
+    await renderActions();
     msg("");
   } catch (e) {
     msg(e instanceof Error ? e.message : "Erro de acesso.");
   }
 }
-async function renderActions(connections: { id: string; label: string }[]) {
+const actionStateLabels: Record<string, string> = {
+  prepared: "Aguardando sua revisão",
+  approved: "Versão autorizada; execução pendente",
+  denied: "Ação recusada",
+  uncertain: "Resultado incerto: confira a fonte; o AraHub não reenviará",
+  succeeded: "Ação confirmada pelo provedor",
+};
+
+function note(text: string) {
+  const p = document.createElement("p");
+  p.className = "note";
+  p.textContent = text;
+  return p;
+}
+
+function fieldLabel(text: string) {
+  const p = document.createElement("p");
+  p.className = "field-label";
+  p.textContent = text;
+  return p;
+}
+
+function lineGroup(lines: string[]) {
+  const group = document.createElement("div");
+  group.className = "grid";
+  for (const line of lines) group.append(note(line));
+  return group;
+}
+
+/** Tela focada de aprovação: a ação acadêmica completa, sem hashes dominantes. */
+async function renderActions() {
   const list = el("action-list");
   el("actions-panel").hidden = !cfg.canApproveActions || !token;
   if (!cfg.canApproveActions || !token) {
@@ -622,83 +648,105 @@ async function renderActions(connections: { id: string; label: string }[]) {
   // list only when the response is ready so both do not append the same content.
   list.replaceChildren();
   if (!actions.length) {
-    const note = document.createElement("p");
-    note.textContent = "Nenhuma alteração preparada para revisar.";
-    list.append(note);
+    list.append(note("Nenhuma ação acadêmica aguardando sua autorização."));
   }
   for (const view of actions) {
     const action = view.action;
-    const account = connections.find((c) => c.id === action.connectionId)?.label ??
-      "Conta vinculada";
-    const operation = ({
-      docs_create: "Criar documento",
-      sheets_create: "Criar planilha",
-      slides_create: "Criar apresentação",
-      docs_insert_text: "Inserir texto no documento",
-      slides_replace_text: "Substituir texto na apresentação",
-      slides_add_text: "Acrescentar slide com texto",
-    } as Record<string, string>)[action.operation] ?? "Revisar alteração";
-    const entry = card(account, operation);
-    if (action.target !== "new") {
-      const destination = document.createElement("p");
-      destination.className = "note";
-      destination.textContent = `Destino: ${action.target}`;
-      entry.append(destination);
-    }
-    const content = document.createElement("pre");
-    const proposed = action.content;
-    content.textContent = actionPreview(action.operation, proposed);
-    if (action.operation === "docs_insert_text") {
-      if (typeof proposed.index === "number") {
-        const position = document.createElement("p");
-        position.className = "note";
-        position.textContent = `Posição: ${proposed.index}${
-          proposed.tab_id ? ` · Aba: ${proposed.tab_id}` : ""
-        }`;
-        entry.append(position);
-      }
-    } else if (action.operation === "slides_replace_text") {
-      const pages = document.createElement("p");
-      pages.className = "note";
-      pages.textContent = `Slides: ${proposed.page_ids.join(", ")}`;
-      entry.append(pages);
-    }
-    if (action.revision) {
-      const version = document.createElement("details");
-      const label = document.createElement("summary");
-      label.textContent = "Versão fixada";
-      const value = document.createElement("p");
-      value.className = "note";
-      value.textContent = action.revision;
-      version.append(label, value);
-      entry.append(version);
-    }
-    const status = document.createElement("p");
-    status.className = "note";
-    status.textContent = ({
-      prepared: "Aguardando sua revisão",
-      approved: "Versão autorizada; execução pendente",
-      denied: "Alteração recusada",
-      uncertain: "Resultado incerto: confira a fonte; o AraHub não reenviará",
-      succeeded: "Alteração confirmada pelo provedor",
-    } as Record<string, string>)[view.state] ?? "Verificar estado";
-    entry.append(content, status);
-    if (view.state === "prepared") {
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      const label = document.createElement("label");
-      label.className = "check-label";
-      label.append(
-        check,
-        document.createTextNode("Revisei a conta, o destino e o conteúdo."),
-      );
-      const approve = document.createElement("button"),
-        deny = document.createElement("button");
-      setAction(approve, "ready-state", "Autorizar esta versão");
+    const description = describeAction(action.operation, action.content);
+    const entry = document.createElement("article");
+    entry.className = "panel action-card";
+    const heading = document.createElement("h3");
+    heading.textContent = description.title;
+    entry.append(heading);
+    if (!description.known) {
+      // Operações retiradas (por exemplo, escrita Google própria) ficam como
+      // registro histórico: nenhum botão pode autorizar este legado.
+      entry.append(note(
+        description.retired
+          ? "Operação retirada do AraHub. O material já preservado continua na memória; esta interface não autoriza nem executa esta operação."
+          : "Operação acadêmica ainda sem revisão nesta interface. Atualize a interface antes de decidir.",
+      ));
+      entry.append(note(`Operação registrada: ${description.operation}.`));
+      entry.append(note(actionStateLabels[view.state] ?? "Verificar estado"));
+      const approve = labeledButton("Autorizar esta ação", "button primary");
       approve.disabled = true;
-      check.addEventListener("change", () => approve.disabled = !check.checked);
-      setAction(deny, "remove-state", "Recusar alteração");
-      deny.classList.add("quiet");
+      const deny = labeledButton("Recusar ação", "button quiet");
+      deny.disabled = true;
+      const controls = document.createElement("div");
+      controls.className = "actions";
+      controls.append(approve, deny);
+      entry.append(controls);
+      list.append(entry);
+      continue;
+    }
+    if (description.connection.length) {
+      entry.append(
+        fieldLabel("Conta e origem"),
+        lineGroup(description.connection),
+      );
+    }
+    if (description.target.length) {
+      entry.append(fieldLabel("Destino"), lineGroup(description.target));
+    }
+    if (description.subject !== null) {
+      const subject = document.createElement("p");
+      subject.className = "action-subject";
+      subject.textContent = description.subject;
+      entry.append(fieldLabel("Título"), subject);
+    }
+    if (description.body !== null) {
+      const body = document.createElement("pre");
+      body.textContent = description.body;
+      entry.append(body);
+    }
+    if (description.files.length) {
+      entry.append(fieldLabel("Arquivos"));
+      const files = document.createElement("ul");
+      files.className = "file-list";
+      for (const file of description.files) {
+        const item = document.createElement("li");
+        item.textContent = file.size
+          ? `${file.name} · ${file.mime} · ${file.size}`
+          : `${file.name} · ${file.mime}`;
+        files.append(item);
+      }
+      entry.append(files);
+    }
+    if (description.conditions.length) {
+      entry.append(
+        fieldLabel("Condições da fonte"),
+        lineGroup(description.conditions),
+      );
+    }
+    let assent: HTMLInputElement | null = null;
+    if (description.statement) {
+      const statement = document.createElement("blockquote");
+      statement.className = "statement";
+      statement.textContent = description.statement.text;
+      entry.append(statement);
+      if (description.statement.required) {
+        assent = document.createElement("input");
+        assent.type = "checkbox";
+        const label = document.createElement("label");
+        label.className = "check-label";
+        label.append(
+          assent,
+          document.createTextNode(
+            "Concordo com esta declaração e assumo a autoria.",
+          ),
+        );
+        entry.append(label);
+      }
+    }
+    entry.append(note(actionStateLabels[view.state] ?? "Verificar estado"));
+    if (view.state === "prepared") {
+      const required = description.statement?.required === true;
+      const approve = labeledButton("Autorizar esta ação", "button primary");
+      approve.disabled = required;
+      const deny = labeledButton("Recusar ação", "button quiet");
+      assent?.addEventListener("change", () => {
+        approve.disabled = !(assent?.checked ?? false);
+      });
       for (
         const [button, decision] of [[approve, "approve"], [
           deny,
@@ -712,18 +760,22 @@ async function renderActions(connections: { id: string; label: string }[]) {
             await post(`/api/actions/${decision}`, {
               action_id: action.id,
               content_hash: action.hash,
+              statement_accepted: decision === "approve" &&
+                (assent?.checked ?? false),
             });
             await render();
             msg(
               decision === "approve"
-                ? "Esta versão foi autorizada. Consulte o resultado após a execução."
-                : "Alteração recusada.",
+                ? "Ação autorizada. O resultado aparecerá após a execução."
+                : "Ação recusada.",
             );
           } catch (e) {
-            approve.disabled = !check.checked;
+            approve.disabled = required && !(assent?.checked ?? false);
             deny.disabled = false;
             msg(
-              e instanceof Error ? e.message : "Não foi possível registrar sua decisão.",
+              e instanceof Error
+                ? e.message
+                : "Não foi possível registrar sua decisão.",
             );
           }
         });
@@ -731,7 +783,7 @@ async function renderActions(connections: { id: string; label: string }[]) {
       const controls = document.createElement("div");
       controls.className = "actions";
       controls.append(approve, deny);
-      entry.append(label, controls);
+      entry.append(controls);
     }
     list.append(entry);
   }
@@ -780,7 +832,6 @@ el("login-form").addEventListener("submit", async (e) => {
   token = data.session?.access_token ?? null;
   await render();
   await consent();
-  await googleCallback();
 });
 el("synthetic-login").addEventListener("click", async () => {
   const r = await fetch(endpoint("/api/synthetic-login"), { method: "POST" });
@@ -797,9 +848,9 @@ el("logout").addEventListener("click", async () => {
   await supabase?.auth.signOut();
   location.href = route("/");
 });
-for (const which of ["memory", "connections"]) {
+for (const which of ["connections", "preferences"]) {
   el(which + "-tab").addEventListener("click", () => {
-    for (const id of ["memory", "connections"]) {
+    for (const id of ["connections", "preferences"]) {
       el(id + "-view").hidden = id !== which;
       el(id + "-tab").classList.toggle("active", id === which);
       el(id + "-tab").setAttribute("aria-pressed", String(id === which));
@@ -879,7 +930,6 @@ if (supabase) {
         void (async () => {
           await render();
           await consent();
-          await googleCallback();
         })();
       }, 0);
     }
@@ -888,7 +938,8 @@ if (supabase) {
       el("pdf-list").replaceChildren();
       pdfCursor = null;
       resetMoodleForm();
-      el("context-list").replaceChildren();
+      el("preference-list").replaceChildren();
+      el("preference-summary").textContent = "";
       el("connection-list").replaceChildren();
       el("export-content").textContent = "";
       el("export-content").hidden = true;
@@ -903,7 +954,6 @@ if (supabase) {
 }
 await render();
 await consent();
-await googleCallback();
 
 const moodleOrigin = el("moodle-origin") as HTMLInputElement;
 const clearMoodleOriginAutofill = () => {
@@ -993,45 +1043,4 @@ el("moodle-cancel-renewal").addEventListener("click", () => {
     resetMoodleForm();
     msg("Renovação cancelada. A conexão não foi alterada.");
   }
-});
-
-el("google-connect-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const button = el("google-connect") as HTMLButtonElement;
-  button.disabled = true;
-  try {
-    const scopes = upgradingGoogle
-      ? [...upgradingGoogle.desiredScopes]
-      : [(el("google-drive-mode") as HTMLSelectElement).value];
-    if (!upgradingGoogle && (el("google-gmail") as HTMLInputElement).checked) {
-      scopes.push("gmail_read");
-    }
-    if (!upgradingGoogle && (el("google-calendar") as HTMLInputElement).checked) {
-      scopes.push("calendar_read");
-    }
-    for (const provider of ["docs", "sheets", "slides"]) {
-      if (
-        (el(`google-${provider}-write`) as HTMLInputElement).checked &&
-        !scopes.includes(`${provider}_write`)
-      ) {
-        scopes.push(`${provider}_write`);
-      }
-    }
-    if (upgradingGoogle && scopes.length === upgradingGoogle.desiredScopes.length) {
-      throw new Error("Marque uma permissão adicional ou use Renovar acesso.");
-    }
-    const result = await post("/api/connections/google/start", {
-      ...(upgradingGoogle ? { connection_id: upgradingGoogle.id } : {}),
-      label: (el("google-label") as HTMLInputElement).value,
-      scopes,
-    });
-    location.assign(result.authorization_url);
-  } catch (e) {
-    button.disabled = false;
-    msg(e instanceof Error ? e.message : "Não foi possível iniciar a conexão.");
-  }
-});
-el("google-cancel-upgrade").addEventListener("click", () => {
-  resetGoogleForm();
-  msg("Alteração de permissões cancelada. A conexão não foi modificada.");
 });

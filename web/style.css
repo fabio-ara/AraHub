@@ -55,7 +55,7 @@ body {
   overflow-x: clip;
 }
 .app-shell {
-  width: min(100%, 430px);
+  width: min(100%, 460px);
   margin-inline: auto;
   height: 100dvh;
   min-height: 100dvh;
@@ -269,4 +269,102 @@ pre {
 }
 #message:empty {
   display: none;
+}
+
+.tab-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-button:hover {
+  background: var(--surface-subtle);
+}
+
+.tab-button.active {
+  background: var(--action-primary-subtle);
+  color: var(--action-primary);
+  border-color: var(--action-primary);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--action-primary);
+  border-color: var(--action-primary);
+  color: #fff;
+}
+
+:root[data-color-mode="dark"] .button.primary {
+  color: #08111f;
+}
+
+.button.quiet {
+  background: transparent;
+}
+
+.button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.action-card {
+  gap: 8px;
+}
+
+.field-label {
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.action-subject {
+  font-weight: 600;
+}
+
+.statement {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--action-primary);
+  border-radius: 8px;
+  background: var(--action-primary-subtle);
+  color: var(--text-primary);
+  font-size: .875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.file-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: .875rem;
+}
+
+.file-list li {
+  overflow-wrap: anywhere;
 }

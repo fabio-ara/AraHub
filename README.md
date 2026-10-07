@@ -2,7 +2,7 @@
 
 Moodle e memória acadêmica longitudinal por MCP. O AraHub permite consultar cursos, materiais e discussões e retomar, com proveniência, o contexto histórico antes mantido no METD/GitHub. Código novo MIT; materiais acadêmicos e dados de usuários conservam seus direitos.
 
-Implementação em desenvolvimento: Postgres com RLS, referências por usuário/conexão, deltas idempotentes e versões concorrentes, MCP Streamable HTTP, adaptador Moodle e memória privada importada. **O uso cotidiano ocorre no ChatGPT pelo plugin AraHub.** A interface auxiliar serve à entrada inicial, conexão segura do Moodle, renovação de acesso e eventuais autorizações; reproduz o design MIT do AraLearn, em largura de celular e com botões por ícones. Para Gmail, Calendar e produção/formatação de documentos Google, use os plugins oficiais no assistente; as operações próprias do AraHub são limitadas e não substituem esses editores. O estado comprovado e os gates pendentes estão em [STATUS.md](STATUS.md).
+Implementação em desenvolvimento: Postgres com RLS, referências por usuário/conexão, deltas idempotentes e versões concorrentes, MCP Streamable HTTP, adaptador Moodle e memória privada importada. **O uso cotidiano ocorre no ChatGPT pelo plugin AraHub.** A interface auxiliar serve à entrada inicial, conexão segura do Moodle, renovação de acesso e eventuais autorizações; reproduz o design MIT do AraLearn, em largura de celular e com botões por ícones. Para Gmail, Drive/Docs/Sheets/Slides e Calendar, use as ferramentas do próprio assistente; o caminho Google próprio do AraHub foi aposentado (ver [docs/GOOGLE.md](docs/GOOGLE.md)). O estado comprovado e os gates pendentes estão em [STATUS.md](STATUS.md).
 
 O código é distribuível sob MIT para qualquer pessoa usar, modificar e hospedar sua própria instância. A hospedagem escolhida é GitHub Pages para a interface e Supabase para autenticação, banco e APIs. Licença do código não torna públicos os dados nem concede direitos sobre materiais acadêmicos. [Atribuições](THIRD_PARTY_NOTICES.md).
 
@@ -54,8 +54,8 @@ recuperados pelo MCP. O backend Supabase recebe os resultados e conserva sua
 proveniência; o parser não executa na thread da Edge Function.
 
 - [Plano](docs/PLANO.md), [aceite A01–A30](docs/ACEITE.md), [decisão de arquitetura](docs/ADR-001.md).
-- [Moodle](docs/MOODLE.md), [Google](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
-- [Sincronização Moodle](docs/SINCRONIZACAO.md), [sincronização Google](docs/GOOGLE_SYNC.md), [arquivos e páginas](docs/ARQUIVOS.md), [pacote de estudo](docs/PACOTE-ESTUDO.md), [datas e fusos](docs/DATAS.md).
+ - [Moodle](docs/MOODLE.md), [Google (aposentado)](docs/GOOGLE.md), [preferências](docs/PREFERENCIAS.md), [migração](docs/MIGRACAO.md).
+ - [Sincronização Moodle](docs/SINCRONIZACAO.md), [arquivos e páginas](docs/ARQUIVOS.md), [pacote de estudo](docs/PACOTE-ESTUDO.md), [datas e fusos](docs/DATAS.md).
 - [Gate de implantação](docs/IMPLANTACAO.md), [clientes e primeiro uso](docs/CLIENTES.md), [plugin e Skill](plugin/README.md).
 - O bootstrap e todas as evidências pessoais ficam fora do Git. Consulte o bootstrap apenas na etapa pertinente.
 

@@ -40,3 +40,6 @@ Thumbs.db
 /web/pdf-parser.worker.js
 
 # Não ignorar migrations SQL, schemas, manifests ou fixtures sintéticas úteis.
+
+# Pacote privado da primeira entrega.
+/.arahub-entrega-1/

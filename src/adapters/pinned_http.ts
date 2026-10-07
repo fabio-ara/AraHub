@@ -187,7 +187,7 @@ export async function sendPinnedHttp(options: {
   url: string;
   method: "GET" | "POST";
   headers: Record<string, string>;
-  body?: string;
+  body?: string | Uint8Array;
   address: string;
   maxBytes: number;
   timeoutMs: number;
@@ -196,7 +196,11 @@ export async function sendPinnedHttp(options: {
   if (target.protocol !== "https:" || target.username || target.password || target.hash) {
     throw new PinnedHttpError("parsing_error");
   }
-  const body = options.body === undefined ? new Uint8Array() : encoder.encode(options.body);
+  const body = options.body === undefined
+    ? new Uint8Array()
+    : typeof options.body === "string"
+    ? encoder.encode(options.body)
+    : options.body;
   const lines = [
     `${options.method} ${target.pathname}${target.search} HTTP/1.1`,
     `Host: ${target.host}`,

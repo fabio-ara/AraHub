@@ -4,17 +4,16 @@
  * provedor.
  *
  * SQL real no Postgres exclusivo do AraHub (127.0.0.1:55432) e fixture do
- * provedor injetada (Moodle e Google sinteticos). Sem rede externa, sem
- * credenciais reais e sem conta Google/Moodle conectada. Nenhum mock e
- * apresentado como integracao real.
+ * provedor injetada (Moodle sintetico). Sem rede externa, sem credenciais
+ * reais e sem conta Moodle conectada. Nenhum mock e apresentado como
+ * integracao real.
  *
  * Executar:
  *   deno test --allow-net=127.0.0.1:55432 --allow-env tests/job_metrics_test.ts
  */
 
 import assert from "node:assert/strict";
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createDb, type Db } from "../src/db.ts";
+import { createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
 import { ConnectionService } from "../src/connections.ts";
 import { TokenVault } from "../src/adapters/token_vault.ts";
@@ -24,19 +23,6 @@ import {
   MoodleAdapter,
   type MoodleDeps,
 } from "../src/adapters/moodle.ts";
-import {
-  type FetchLike,
-  googleOAuthConfig,
-  GoogleReadClient,
-  type JsonObject,
-  verifierFromJwks,
-} from "../src/adapters/google.ts";
-import {
-  GoogleConnections,
-  type GooglePrincipal,
-  resolveRequestedScopes,
-} from "../src/google_connections.ts";
-import { GoogleSync } from "../src/google_sync.ts";
 import { Jobs } from "../src/jobs.ts";
 import { Sync } from "../src/sync.ts";
 
@@ -45,8 +31,6 @@ const DB_URL = Deno.env.get("LOCAL_DATABASE_URL") ??
 const ORIGIN = "https://fixture.invalid/moodle";
 const TOKEN = "synthetic-job-metrics-token-not-a-real-secret";
 const COURSE_ID = 101;
-const CLIENT_ID = "job-metrics-fixture";
-const ISSUER = "https://accounts.google.com";
 
 // ---------------------------------------------------------------------------
 // Fixture Moodle (estado mutavel por teste)
@@ -289,216 +273,5 @@ Deno.test("A30 job_metrics: execucoes simultaneas nao misturam contagem", async 
     assert.notEqual(metricsA.calls, fixtureA.served + fixtureB.served);
   } finally {
     await db.end();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Fixture Google (Gmail sintetico)
-// ---------------------------------------------------------------------------
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-function message(id: string, historyId: string, subject: string): JsonObject {
-  return {
-    id,
-    threadId: "t-" + id,
-    historyId,
-    snippet: subject,
-    payload: { headers: [{ name: "Subject", value: subject }] },
-  };
-}
-
-function slicePage<T>(
-  items: readonly T[],
-  pageToken: string | undefined,
-  size: number,
-  prefix: string,
-): { slice: T[]; next?: string } {
-  const start = pageToken && pageToken.startsWith(prefix)
-    ? Number(pageToken.slice(prefix.length)) || 0
-    : 0;
-  const slice = items.slice(start, start + size);
-  const nextStart = start + size;
-  return nextStart < items.length ? { slice, next: prefix + nextStart } : { slice };
-}
-
-interface GoogleFixture {
-  messages: JsonObject[];
-  pageSize: number;
-  failListOnce: boolean;
-  providerReads: number;
-}
-
-function googleFixture(): GoogleFixture {
-  return { messages: [], pageSize: 1, failListOnce: false, providerReads: 0 };
-}
-
-function providerFetch(fixture: GoogleFixture): FetchLike {
-  return (input, init) => {
-    const url = new URL(String(input));
-    const auth = new Headers(init?.headers).get("authorization");
-    if (!auth || !auth.startsWith("Bearer ")) {
-      return Promise.resolve(jsonResponse({ error: "missing_auth" }, 401));
-    }
-    fixture.providerReads++;
-    if (url.pathname === "/gmail/v1/users/me/messages") {
-      if (fixture.failListOnce) {
-        fixture.failListOnce = false;
-        return Promise.resolve(new Response("upstream error", { status: 503 }));
-      }
-      const page = slicePage(
-        fixture.messages,
-        url.searchParams.get("pageToken") ?? undefined,
-        fixture.pageSize,
-        "gl",
-      );
-      return Promise.resolve(jsonResponse({
-        messages: page.slice.map((item) => ({ id: item.id, threadId: item.threadId })),
-        ...(page.next ? { nextPageToken: page.next } : {}),
-      }));
-    }
-    const match = url.pathname.match(/^\/gmail\/v1\/users\/me\/messages\/(.+)$/);
-    if (match) {
-      const id = decodeURIComponent(match[1]);
-      const found = fixture.messages.find((item) => item.id === id);
-      return Promise.resolve(
-        found
-          ? jsonResponse(found)
-          : jsonResponse({ error: { errors: [{ reason: "notFound" }] } }, 404),
-      );
-    }
-    throw new Error("rota nao mapeada: " + url.pathname);
-  };
-}
-
-interface GoogleEnv {
-  readonly db: Db;
-  readonly hub: Hub;
-  readonly service: GoogleConnections;
-  readonly sign: (claims: Record<string, unknown>) => Promise<string>;
-  readonly setTokenResponse: (tokens: unknown) => void;
-}
-
-async function googleEnv(fixture: GoogleFixture): Promise<GoogleEnv> {
-  const db = createDb(DB_URL);
-  const hub = new Hub(db);
-  const vault = await TokenVault.fromRawKeys([
-    { kid: "fixture", key: crypto.getRandomValues(new Uint8Array(32)) },
-  ]);
-  const config = googleOAuthConfig({
-    clientId: CLIENT_ID,
-    redirectUri: "https://hub.fixture.invalid/oauth/google/callback",
-  });
-  const { publicKey, privateKey } = await generateKeyPair("RS256");
-  const jwk = await exportJWK(publicKey);
-  jwk.kid = "k";
-  jwk.alg = "RS256";
-  const jwks = createLocalJWKSet({ keys: [jwk] });
-  const sign = (claims: Record<string, unknown>) =>
-    new SignJWT(claims)
-      .setProtectedHeader({ alg: "RS256", kid: "k" })
-      .setIssuedAt()
-      .setExpirationTime("5m")
-      .sign(privateKey);
-  let tokenRespond: () => Response = () => jsonResponse({ error: "invalid_grant" }, 400);
-  const provider = providerFetch(fixture);
-  const fetchImpl: FetchLike = (input, init) => {
-    const url = new URL(String(input));
-    if (url.pathname === "/token") return Promise.resolve(tokenRespond());
-    return provider(input, init);
-  };
-  const service = new GoogleConnections(hub, vault, config, {
-    fetch: fetchImpl,
-    verifier: verifierFromJwks(jwks),
-    // Honra o transporte observado por execucao composto por client().
-    clientFactory: (token, wrapped) =>
-      new GoogleReadClient({ accessToken: token, fetch: wrapped ?? fetchImpl }),
-  });
-  return {
-    db,
-    hub,
-    service,
-    sign,
-    setTokenResponse: (tokens) => {
-      tokenRespond = () => jsonResponse(tokens);
-    },
-  };
-}
-
-async function newGooglePrincipal(db: Db): Promise<GooglePrincipal> {
-  const ownerId = crypto.randomUUID();
-  await db.unsafe("insert into auth.users(id) values($1)", [ownerId]);
-  return { ownerId, sessionId: crypto.randomUUID() };
-}
-
-async function authorizeGmail(env: GoogleEnv, p: GooglePrincipal): Promise<string> {
-  const scopes = ["https://www.googleapis.com/auth/gmail.readonly"];
-  const start = await env.service.start(p, { label: "Conta Google", scopes });
-  const nonce = new URL(start.authorization_url).searchParams.get("nonce") as string;
-  const idToken = await env.sign({
-    iss: ISSUER,
-    aud: CLIENT_ID,
-    sub: "google-sub-metrics",
-    nonce,
-    email: "synthetic@example.invalid",
-  });
-  env.setTokenResponse({
-    access_token: "synthetic-access-marker",
-    refresh_token: "synthetic-refresh-marker",
-    expires_in: 3600,
-    scope: resolveRequestedScopes(scopes).join(" "),
-    token_type: "Bearer",
-    id_token: idToken,
-  });
-  const view = await env.service.callback(p, { code: "code-1", state: start.state });
-  return view.id;
-}
-
-Deno.test("A30 job_metrics: Google conta chamadas reais, erro e retomada por tentativa", async () => {
-  const fixture = googleFixture();
-  fixture.messages = [message("m1", "100", "A"), message("m2", "200", "B")];
-  const env = await googleEnv(fixture);
-  try {
-    const p = await newGooglePrincipal(env.db);
-    const connectionId = await authorizeGmail(env, p);
-    fixture.providerReads = 0;
-    const sync = new GoogleSync(env.hub, env.service);
-
-    // Paginacao limitada: cada chamada HTTP real entra na contagem.
-    const first = await sync.gmail(p, connectionId, { limits: { maxPages: 1 } });
-    assert.equal(first.summary.coverage, "partial");
-    const firstMetrics = first.summary.metrics as unknown as Record<string, unknown>;
-    assertMetricsShape(firstMetrics);
-    assert.equal(firstMetrics.calls, fixture.providerReads);
-    assert.ok((firstMetrics.calls as number) > 0);
-
-    // Retomada por pageToken: a tentativa seguinte mede so as proprias chamadas.
-    const servedBefore = fixture.providerReads;
-    const second = await sync.gmail(p, connectionId, { limits: { maxPages: 1 } });
-    const secondMetrics = second.summary.metrics as unknown as Record<string, unknown>;
-    assertMetricsShape(secondMetrics);
-    assert.equal(secondMetrics.calls, fixture.providerReads - servedBefore);
-    assert.ok((secondMetrics.calls as number) > 0);
-    assert.notEqual(secondMetrics.started_at, firstMetrics.started_at);
-
-    // Uma falha de transporte apos o envio tambem e contada.
-    fixture.failListOnce = true;
-    const readsBefore = fixture.providerReads;
-    const failed = await sync.gmail(p, connectionId, {
-      query: "outra-consulta",
-      limits: { maxPages: 1 },
-    });
-    assert.notEqual(failed.summary.coverage, "complete");
-    const failedMetrics = failed.summary.metrics as unknown as Record<string, unknown>;
-    assertMetricsShape(failedMetrics);
-    assert.equal(fixture.providerReads - readsBefore, 1);
-    assert.equal(failedMetrics.calls, 1);
-  } finally {
-    await env.db.end();
   }
 });

@@ -1,61 +1,27 @@
-# Matriz de aceite
+# Aceite vigente
 
-Atualizada em 2026-10-06. Contrato completo: `.arahub-bootstrap/07-ACEITE-E-TESTES.md` (privado). Esta matriz é um índice público, não substitui as nuances do contrato. Nenhum gate remoto/móvel foi encerrado por configuração, fixture ou viewport.
+O contrato da primeira entrega está em [ENTREGA-1.md](ENTREGA-1.md). A matriz
+privada especifica 66 cenários e cinco níveis de evidência: unitário, integração
+no Lab, host ChatGPT, leitura institucional e ação acadêmica real autorizada.
+Cada nível registra `not_run`, `passed`, `failed`, `blocked` ou `not_applicable`
+com evidência/justificativa. Uma prova de fixture não preenche a coluna de Lab;
+um SDK não preenche a coluna de ChatGPT. Dispensa de celular físico não é sucesso.
 
-Provas novas de implantação: onze migrations e backend hospedados, código MIT/Pages
-publicados; 32 verificações HTTPS com Auth/OAuth nativos, MCP SDK, isolamento entre
-dois usuários sintéticos e sessão revogada. Worker PDF executado na interface hospedada
-em dois viewports, com gravação real e zero violações CSP. A entrada humana por e-mail e o cliente pessoal ChatGPT foram comprovados;
-o teste em celular físico foi dispensado pelo titular em 2026-10-06 e permanece
-sem prova.
+Critérios obrigatórios:
 
-Prioridade atual definida pelo titular: Moodle hospedado e memória METD para
-retomada/análise. Gmail, Drive e Calendar oficiais são o caminho principal para
-essas fontes; as provas
-Google do AraHub abaixo registram capacidades estreitas já implementadas, sem
-demonstrar paridade com os plugins oficiais. A matriz original permanece visível
-para que nenhuma lacuna seja apagada por mudança de foco.
+- Nenhuma mutação de teste na universidade ou vazamento entre donos/conexões.
+- Arquivo real do cliente/conector preservado e enviado ao Moodle sintético,
+  com aprovação confiável e bytes conferidos após o efeito.
+- Fórum, resposta e entrega com estado, declaração, tentativa, limites e recibo
+  corretos; concorrência e resposta perdida sem duplicação.
+- Conteúdo atual legível, com fontes/localizadores e limites da representação.
+- História, preferências e incertezas recuperáveis; backup/restauração e
+  reconciliação da origem demonstrados.
+- Interface sem edição Google ou memória bruta; plugin/release realmente
+  instalados e exercitados em nova conversa.
+- Filas e cobertura honestas, desempenho medido e recorrência somente após
+  autorização e prova de execução.
 
-O MCP pessoal hospedado já lê a conexão Moodle real: dois cursos, estrutura,
-fóruns, discussões e postagens, sem alterar a fonte. O backend v20 usa DNS/IP
-validado e TLS com verificação de nome no Edge. A entrada guiada pelo fluxo
-móvel oficial está publicada no Pages; usa uma sessão Moodle do próprio usuário
-e pode criar a chave quando o serviço móvel permite. A instalação SQL local tem
-12 migrations; as onze primeiras foram reconciliadas no projeto hospedado.
-Sincronização durável real, preservação de PDFs acadêmicos e operação recorrente
-mantêm gates próprios.
-
-| ID | Capacidade | Estado local | Prova real / pendência |
-|---|---|---|---|
-| A01 | Instalação limpa e MCP | Cache Deno vazio, lock congelado, onze migrations em banco novo; MCP SDK HTTP, dois donos/retry/recuperação/recusas Auth aprovados | Não equivale a OS novo; onze migrations hospedadas e MCP SDK HTTPS com OAuth nativo têm prova separada; conversa pessoal ChatGPT também comprovada |
-| A02 | Isolamento por usuário | SQL/RLS/FKs, busca/exportação/jobs testados | SQL e Auth/MCP hospedados com dois usuários sintéticos: leitura, busca, exportação e sessão revogada aprovados; conta acadêmica e eventuais novos mecanismos exigem provas próprias |
-| A03 | Isolamento por conexão | IDs colidentes e relações cruzadas testados | Segunda instalação/duas contas Google reais pendentes |
-| A04 | Segredos em todas as superfícies | Exclusões verificadas; scan índice/histórico e markers no gate | Auditoria pré-publicação realizada; remoto público contém somente código/docs genéricos; evidências e credenciais privadas excluídas |
-| A05 | Conteúdo hostil e redirects | Rede limitada, saídas como dados; PDF em worker terminável/limites e script hostil sem execução; HTML como texto | Conversa pessoal hospedada recuperou fixture hostil sintética sem executar/exportar/aprovar; fontes hostis reais e redirects reais continuam com provas próprias |
-| A06 | Deltas idempotentes | SQL real, retry e recibo | Cliente MCP hospedado com OAuth nativo: retry e idempotência aprovados; uso acadêmico real pendente |
-| A07 | Memória antes de refresh com falha | Domínio e ferramenta MCP gravam recibo antes do refresh dirigido | MCP pessoal hospedado: delta sintético persistiu antes de conexão inexistente; retry conservou recibo/versão e nova conversa recuperou-o. Timeout real do Moodle continua pendente |
-| A08 | Concorrência web/mobile | Transação/lock/version em Postgres testados | Duas superfícies reais pendentes |
-| A09 | Preferência contextual e história | Vigência, superação/retirada explícita, prioridade do escopo específico, hipóteses e conflitos sem escolha por recência; SQL + MCP SDK; milissegundos das datas SQL preservados e testados | 21 preferências legadas revisadas por fonte/escopo/classificação, sem promover vigência. Consulta MCP pessoal conservou 17 legados globais em histórico/revisão, nenhum em applicable; aplicação contextual acadêmica atual continua pendente |
-| A10 | Recuperação sem chat | Cliente SDK novo recupera evento no HTTP local | Skill pessoal 1.0.3 instalada; conversa nova recuperou cronologia/estado coletivo com fontes e limites e relatou skills__read/context/history/search. Provas de instalação e uso separadas; uso móvel e demais cenários atuais continuam com gates próprios |
-| A11 | Relato de entrega | Alvos ativos por contexto, ambiguidade/versionamento/relato idempotente; SQL real sem falsa confirmação | MCP pessoal hospedado com dados sintéticos recusou dois alvos ambíguos; escolha focal registrou um relato e retry preservou ID/versão. Relato acadêmico humano e fonte real pendentes |
-| A12 | Falsa confirmação | Completion/nota não provam entrega; rotas perigosas bloqueadas | MCP pessoal hospedado manteve `completion:true` sintético separado de `user_report`; horário real nulo e envio externo `not_verified`. Submissão acadêmica real não ocorreu |
-| A13 | Autoria e versão publicada | Comparação por rascunho explícito/observação Moodle qualificada, autoria/cobertura e diferenças testadas em SQL | Comparação em conta real/HTML ainda precisa de prova específica; não presume equivalência semântica |
-| A14 | Reabertura | Estado independente; refresh SQL/fixture muda visibilidade false→true→false preservando relato/observações, sem progresso monotônico | Visibilidade não prova devolução; reabertura/devolução Moodle reais pendentes |
-| A15 | Fusos e datas vagas | MCP hub_time_context por IDs/observação, IANA/DST Lisboa/São Paulo, dia inteiro/fuso desconhecido/fim indeterminado; quatro testes normalização/SQL/SDK aprovados | Backend f5cadcb implantado, função ACTIVE v17 e metadados do plugin atualizados. Conversa ChatGPT nova leu prazo e dia inteiro sintéticos com fusos/incerteza; sem trace bruto ou datas acadêmicas atuais. Sem UI de planejamento nova |
-| A16 | Moodle real | Adaptador próprio + fixtures e fluxo guiado de chave móvel | Conexão no Supabase próprio e MCP pessoal leram dois cursos, 11 seções, 50 módulos, seis fóruns e discussões/postagens. Lote hospedado autorizado espelhou os dois cursos e preservou 22 PDFs/39.493.053 bytes com SHA-256 íntegro. Extração hospedada concluiu 1.434 páginas (18 sem texto/OCR); renovação real da chave ainda pendente |
-| A17 | Outro Moodle | Fixtures de subdiretório/funções faltantes; banco IDs colidentes | Segunda instalação/IFSP não comprovados |
-| A18 | Erros/cobertura/cursor | Curso Moodle retoma discussão/posts após reinício/esgotamento, percorre além de 50 fóruns/páginas e trata reordenação; lease por chave impede lotes simultâneos e cerca respostas tardias; cursor não avança em partial | Lote real dos dois cursos concluiu janelas de discussão/postagens sem pendências. `course_completion` ficou unavailable/nocriteriaset nos dois; tarefas do segundo ficaram partial com avisos Moodle. Falha de memória da Edge em PDF grande foi diagnosticada e corrigida; não equivale a prova de timeout Moodle ou atualização periódica |
-| A19 | Google múltiplas contas | OAuth/HTTP persistente, conta verificada, cofre/CAS/epoch, callback tardio e aliases OIDC/negação parcial testados | App próprio Externo/Testing configurado; conta institucional com nove permissões confirmadas após OAuth incremental de escrita Docs/Sheets/Slides. Segunda conta real pendente |
-| A20 | Cursores/refresh Google | Gmail/Calendar/Drive com paginação/checkpoints/expiração/historyId exato e MCP SDK; 16 testes, lease por chave e reconfiguração concorrente recusada; orçamento restante limita páginas de leitura | Refresh real CAS 1→2, duas páginas reais de Gmail/Drive sem duplicação e Calendar inicial→incremental com cursor durável comprovados. Janela Calendar sem eventos; alterações de conteúdo, falhas/expiração reais, segunda conta e operação durável pendentes |
-| A21 | Docs/Sheets/Slides nativos | Leitura nativa; criação de planilha com células tipadas/fórmulas locais; edição Docs e novo slide/caixa/texto com revisão atômica em fixture; prévia integral operada em dois viewports | No lote hospedado aprovado, três recursos sintéticos privados foram criados e lidos; Doc recebeu texto, Sheets conservou tipos/fórmula A4=5 e Slides recebeu slide/caixa/texto com geometria conferida. Edição de células existentes continua pendente |
-| A22 | Escrita segura | Autoridade persistente/SQL/UI, snapshot sob lock, aprovação expira/consumo único e resultado incerto antes de envio; executor sintético | Cinco versões foram aprovadas pelo titular na UI e consumidas uma vez; cinco operações reais `succeeded`, IDs/revisões/readback conferidos e replay dos mesmos IDs sem reenvio. Resultado incerto real não ocorreu; escrita acadêmica fora do lote não autorizada |
-| A23 | Arquivos úteis | PDF acadêmico real/15 páginas via HTTP/SQL/SDK local e worker navegador; hash/retomada/dono/cancelamento. Snapshots JSON nativos Google com seleção/proveniência/hash e recuperação offline por partes, guardas de conexão/Unicode/tamanho; SQL/SDK em fixture | No backend hospedado, 22 PDFs acadêmicos foram preservados; consulta independente confirmou bytes/hashes, e MCP recuperou arquivo/entidade/observação sem Moodle. Parser Edge indisponível; worker cliente implantado e PDF sintético hospedado com Auth nativo. Worker hospedado extraiu os 22 PDFs: 1.434 páginas, 18 sem texto, zero truncamento; MCP recuperou página profunda após retomada. Docs/Slides reais preservados e recuperados offline; imagem sem interpretação/OCR segue lacuna explícita |
-| A24 | Pacote AraLearn | Pacote MCP paginado por entidade, versões/hash, bibliografia/direitos conflitantes, has_content/intro como dados; grafo limitado da seção com IDs qualificados/proveniência/ambiguidade e papéis relacionados. Treze SQL + SDK aprovados, sem leitura presumida | MCP pessoal hospedado comprovou grafo com fonte sintética e limpeza dirigida; onze fingerprints privados iguais ao backup. Moodle real tem estrutura/postagens, 22 PDFs e 1.434 páginas processadas; análise acadêmica contextual e conteúdo visual sem OCR continuam pendentes |
-| A25 | Migração reproduzível | 57 arquivos brutos, 109 registros curados; staging/import local idempotentes | Origem atual reconferida; importação hospedada autorizada/executada, nove contextos/57 hashes/109 deltas-vínculos; revisão semântica/virada pendentes |
-| A26 | Regressão acadêmica | 4 verificações privadas/10 cenários; cliente MCP novo recuperou 109 registros com referências e documento bruto | Dez cenários revisados semanticamente, 34 referências cobertas nas fontes. Os dois cenários corrigidos foram repetidos em conversa nova com Skill 1.0.3 instalada, sem inserir sua orientação no prompt; marco/valor, precisão temporal e distinções do trabalho coletivo preservados. Revisão de preferências legadas e virada permanecem separadas |
-| A27 | Backup e virada | Staging export/restore; dump restaurado em banco novo, 14 tabelas/binários/RLS/grants conferidos | Snapshot nativo hospedado restaurado em banco local novo: onze tabelas/fingerprints, 59 binários/hash (57 originais + duas observações Google), RLS e isolamento. Restore Auth do provedor, revisão final e virada pendentes |
-| A28 | MCP remoto/OAuth | Cliente SDK HTTP local e adaptador do gateway/assinaturas/sessão revogada sintéticos | HTTPS/discovery, autorização-code/PKCE nativos, MCP SDK novo e sessão revogada comprovados com usuários sintéticos; titular confirmou e-mail/consentimento e consultou a conta por ChatGPT em nova conversa. Extensão móvel dispensada pelo titular em 2026-10-06, sem prova no telefone |
-| A29 | Celular/web | Design AraLearn MIT, coluna até 430 px e ícones; Chrome/viewport móvel/formulários/aprovação/temas/exportação/saída e inspeção visual; Pages/PKCE/consentimento/CSP e cadastro/renovação Moodle HTTPS em fixture | Fluxo de link móvel guiado, extração somente da chave Web Service e QA visual/funcional sintética em 390/1280 px aprovados; interface autenticada hospedada mostra a conexão Moodle e o novo controle. Teste em smartphone/app real dispensado pelo titular; não foi executado nem conta como aprovado |
-| A30 | Operação sustentável | Jobs/retries/cobertura/retomada/lease/fencing; medição por tentativa de duração/chamadas despachadas/memória compartilhada amostrada, quatro testes e 48 regressões aprovados. SDK mede volume lógico só do dono | Calendar delimitado real: uma chamada/359 ms, heap compartilhado amostrado, RSS indisponível=null; métricas iguais no recibo e hub_jobs persistido. Não comprova todas as fontes, falhas reais ou pico. Painel Free/cotas e tamanho físico por consulta administrativa conferidos separadamente; contagem de gestão OAuth não faz parte do lote. Sem garantia de uptime/cron; limites de conteúdo seguem explícitos |
-
-Evidência real em `.private/evidence/`; nunca transportar dados pessoais para testes/CI públicos. STATUS e relatório de validação registram comandos e contagens executadas. Requisitos parciais continuam no plano sem redução de escopo.
+Resultados correntes estão no `../STATUS.md` e no registro privado por cenário.
+A matriz A01–A30 anterior conserva valor histórico no Git, mas não substitui o
+contrato vigente nem transforma provas antigas em resultados desta release.

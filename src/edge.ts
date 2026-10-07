@@ -2,7 +2,6 @@ import { Hub } from "./domain.ts";
 import { type AuthConfig, createVerifier } from "./auth.ts";
 import { createHandler } from "./http.ts";
 import type { ConnectionService } from "./connections.ts";
-import type { GoogleConnections } from "./google_connections.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 
 /** Supabase terminates TLS and forwards /<function>/... over HTTP to the runtime. */
@@ -48,7 +47,6 @@ export function createEdgeHandler(
   auth: AuthConfig,
   publicUrl: string,
   connections?: ConnectionService,
-  google?: GoogleConnections,
   ui?: {
     origin: string;
     supabaseUrl?: string;
@@ -77,7 +75,6 @@ export function createEdgeHandler(
     publishableKey: ui?.publishableKey,
     verify: createVerifier(auth),
     connections,
-    google,
     actions: ui?.actions,
   });
   return async (req: Request) => {
