@@ -2,7 +2,8 @@
 
 Atualizado em 2026-10-07. Primeira entrega em implementação na branch `entrega-1`. Backend 0.2.2
 publicado e ferramentas atualizadas no ChatGPT. A memória foi conferida em conversa nova. Plugin
-1.1.1 preparado; o instrumento de upload recusou a pasta deste checkout. O refresh preservou a
+1.1.1 preparado; acesso aos arquivos autorizado e configuração do DevTools ajustada. A conexão
+ativa ainda usa as permissões anteriores; a tentativa de nova conexão expirou. O refresh preservou a
 conexão e a Skill anterior, mas regenerou os metadados como 1.0.0; resta instalar e conferir o
 pacote novo. **R1 não está concluída**: a ponte completa pelo host ChatGPT até o Moodle sintético
 ainda requer homologação.
@@ -76,8 +77,9 @@ tem transporte em partes implementado e desativado, após uma prova somente leit
 recusa do corpo monolítico. O executor passou em 17 grupos locais contra PostgreSQL real, com
 recuperação após resposta perdida e revisão independente sem achados materiais. O caminho
 monolítico foi retirado da operação, com fontes e recibos preservados. Isso não constitui uma
-importação hospedada. Próximo passo executável: instalar o plugin quando a pasta AraHub for
-autorizada no instrumento e executar os lotes que receberem autorização, com preflight atual.
+importação hospedada. Próximo passo executável: reconectar o Chrome DevTools MCP para carregar
+a configuração autorizada, instalar o plugin e executar os lotes que receberem autorização,
+com preflight atual.
 Topologia de homologação remota,
 revisão da rota institucional, processamento remoto e virada da memória têm gates próprios.
 Contextos já declarados como testes técnicos ficam fora da retomada, busca e preferências cotidianas
@@ -91,5 +93,6 @@ sinaliza material que mudou desde a versão explicitamente vinculada ao rascunho
 escopo textual, lacunas visuais e inventário limitado de campos, sem afirmar preenchimento.
 
 Matriz corrente: 57 cenários aprovados de 66; nove critérios P0 permanecem sem fechamento.
-Cinco pedidos humanos foram enviados e aguardam resposta. Checkpoint operacional detalhado:
+Dos cinco pedidos humanos enviados, o acesso local do DevTools foi autorizado; quatro aguardam
+resposta. O plugin ainda não foi instalado. Checkpoint operacional detalhado:
 `.private/entrega-1/STATUS.md`; decisões: `.private/entrega-1/PENDENCIAS-HUMANAS.md`.
