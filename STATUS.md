@@ -68,12 +68,16 @@ reenviado. Status de assignment continua bloqueado em produção por efeitos ind
 sintética não altera essa política. O processador local não é executor remoto nem rotina recorrente
 ativa.
 
-Harness de identidade nativa integrado e publicado, sem exigir nova credencial direta de banco.
+Código do harness de identidade nativa publicado, sem exigir nova credencial direta de banco;
+a autenticação desse novo alvo pelo ChatGPT ainda depende da homologação.
 A prévia de virada tem executor privado desativado, recuperação atualizada e configuração real do
 Projeto inspecionada; autorização específica foi solicitada. A importação adicional de materiais
-está recebendo transporte em partes após uma prova somente leitura revelar recusa do corpo
-monolítico. Próximo passo executável: fechar essa correção privada, instalar o plugin quando a
-pasta AraHub for autorizada no instrumento e executar os lotes que receberem autorização.
+tem transporte em partes implementado e desativado, após uma prova somente leitura revelar
+recusa do corpo monolítico. O executor passou em 17 grupos locais contra PostgreSQL real, com
+recuperação após resposta perdida e revisão independente sem achados materiais. O caminho
+monolítico foi retirado da operação, com fontes e recibos preservados. Isso não constitui uma
+importação hospedada. Próximo passo executável: instalar o plugin quando a pasta AraHub for
+autorizada no instrumento e executar os lotes que receberem autorização, com preflight atual.
 Topologia de homologação remota,
 revisão da rota institucional, processamento remoto e virada da memória têm gates próprios.
 Contextos já declarados como testes técnicos ficam fora da retomada, busca e preferências cotidianas
