@@ -1,8 +1,9 @@
 # Estado do AraHub
 
 Atualizado em 2026-10-07. Primeira entrega em implementação na branch `entrega-1`.
-A implantação anterior continua ativa. A release nova ainda não foi publicada
-nem validada em uma nova conversa; **R1 não está concluída**.
+Backend 0.2.0 e interface publicados; plugin pessoal 1.1.0 instalado e verificado
+em uma conversa nova. **R1 não está concluída**: a ponte completa pelo host
+ChatGPT até o Moodle sintético ainda requer homologação.
 
 O contrato vigente está em [docs/ENTREGA-1.md](docs/ENTREGA-1.md), com plano e
 aceite reconciliados. O pacote privado foi validado e está excluído do Git.
@@ -21,6 +22,12 @@ A escala local de 10 mil posts e 100 mil observações/ocorrências teve p95 de 
 Backup hospedado por leitura foi restaurado localmente, incluindo hashes de 81
 arquivos; restauração do provedor Auth não está demonstrada.
 
+No alvo hospedado existente, 32 verificações de Auth/OAuth/SDK passaram. As 14
+migrations foram reconciliadas e os dados anteriores permaneceram íntegros. O
+plugin instalado expõe 42 ferramentas atuais. A conversa nova recuperou fontes,
+trajetória, preferências e diferenças entre rascunhos e publicação relatada, sem
+promover relatos a confirmação institucional.
+
 No Moodle Lab real, o SDK MCP enviou arquivo exportado do conector, com declaração
 aprovada, e confirmou a submissão e os bytes. Tópico com anexo e resposta também
 passaram. A visão do estudante foi conferida por interação e inspeção visual em
@@ -37,9 +44,10 @@ Resultado incerto não é reenviado. Status de assignment continua bloqueado em
 produção por efeitos indiretos: validação sintética não altera essa política.
 O processador local não é executor remoto nem rotina recorrente ativa.
 
-Próximo passo executável: fechar negativas do Lab, rever o índice e preparar a
-release nos alvos de hospedagem já autorizados; validar Auth/SDK/UI hospedados,
-atualizar plugin e testar nova conversa. Topologia de homologação remota, revisão
-da rota institucional, processamento remoto e virada da memória têm gates próprios.
+Próximo passo executável: fechar negativas e leituras do Lab, integrar o harness,
+reconciliar a matriz por nível e conferir a interface hospedada. Topologia de
+homologação remota, revisão da rota institucional, processamento remoto e virada
+da memória têm gates próprios. Conteúdo sintético histórico identificado na conta
+anterior está preservado e requer tratamento explícito; não conta como dado pessoal.
 
 Checkpoint operacional detalhado: `.private/entrega-1/STATUS.md`.

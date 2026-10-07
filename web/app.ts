@@ -423,14 +423,10 @@ function renderPreferences(view: PreferencesView | null) {
   const conflicts = view.conflicts ?? [];
   const history = view.history ?? [];
   const conflicted = new Set(conflicts.flatMap((conflict) => conflict.ids));
-  const review = (view.review_required ?? []).filter((entry) =>
-    !conflicted.has(entry.id)
-  );
+  const review = (view.review_required ?? []).filter((entry) => !conflicted.has(entry.id));
   const overridden = view.contextual_overrides?.length ?? 0;
   summary.textContent =
-    (view.coverage === "partial"
-      ? "Cobertura parcial: parte do histórico não foi lida. "
-      : "") +
+    (view.coverage === "partial" ? "Cobertura parcial: parte do histórico não foi lida. " : "") +
     `${applicable.length} vigente(s), ${conflicts.length} conflito(s), ` +
     `${review.length} para revisar` +
     (overridden ? `, ${overridden} sobreposto(s) por escopo mais específico` : "") +
@@ -475,8 +471,7 @@ function renderPreferences(view: PreferencesView | null) {
 function renderConnectionHealth(connections: { state: string }[]) {
   const target = el("connection-health");
   if (!connections.length) {
-    target.textContent =
-      "Nenhuma conexão registrada. Conecte o Moodle para começar.";
+    target.textContent = "Nenhuma conexão registrada. Conecte o Moodle para começar.";
     return;
   }
   const counts = new Map<string, number>();
@@ -647,14 +642,24 @@ async function renderActions() {
   // Initial session recovery and SIGNED_IN can render concurrently. Replace the
   // list only when the response is ready so both do not append the same content.
   list.replaceChildren();
-  if (!actions.length) {
-    list.append(note("Nenhuma ação acadêmica aguardando sua autorização."));
-  }
+  const history = document.createElement("details");
+  history.id = "action-history";
+  const historyTitle = document.createElement("summary");
+  history.append(historyTitle);
+  const historyEntries = document.createElement("div");
+  historyEntries.className = "grid";
+  history.append(historyEntries);
+  let activeCount = 0, historyCount = 0;
   for (const view of actions) {
     const action = view.action;
     const description = describeAction(action.operation, action.content);
     const entry = document.createElement("article");
     entry.className = "panel action-card";
+    const historical = description.retired ||
+      ["succeeded", "failed", "denied", "expired"].includes(view.state);
+    const targetList = historical ? historyEntries : list;
+    if (historical) historyCount++;
+    else activeCount++;
     const heading = document.createElement("h3");
     heading.textContent = description.title;
     entry.append(heading);
@@ -666,17 +671,8 @@ async function renderActions() {
           ? "Operação retirada do AraHub. O material já preservado continua na memória; esta interface não autoriza nem executa esta operação."
           : "Operação acadêmica ainda sem revisão nesta interface. Atualize a interface antes de decidir.",
       ));
-      entry.append(note(`Operação registrada: ${description.operation}.`));
       entry.append(note(actionStateLabels[view.state] ?? "Verificar estado"));
-      const approve = labeledButton("Autorizar esta ação", "button primary");
-      approve.disabled = true;
-      const deny = labeledButton("Recusar ação", "button quiet");
-      deny.disabled = true;
-      const controls = document.createElement("div");
-      controls.className = "actions";
-      controls.append(approve, deny);
-      entry.append(controls);
-      list.append(entry);
+      targetList.append(entry);
       continue;
     }
     if (description.connection.length) {
@@ -705,9 +701,18 @@ async function renderActions() {
       files.className = "file-list";
       for (const file of description.files) {
         const item = document.createElement("li");
+        const formats: Record<string, string> = {
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            "Documento Word",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+            "Apresentação PowerPoint",
+          "application/pdf": "PDF",
+          "text/plain": "Texto",
+        };
+        const format = formats[file.mime] ?? file.mime;
         item.textContent = file.size
-          ? `${file.name} · ${file.mime} · ${file.size}`
-          : `${file.name} · ${file.mime}`;
+          ? `${file.name} · ${format} · ${file.size}`
+          : `${file.name} · ${format}`;
         files.append(item);
       }
       entry.append(files);
@@ -724,7 +729,7 @@ async function renderActions() {
       statement.className = "statement";
       statement.textContent = description.statement.text;
       entry.append(statement);
-      if (description.statement.required) {
+      if (description.statement.required && view.state === "prepared") {
         assent = document.createElement("input");
         assent.type = "checkbox";
         const label = document.createElement("label");
@@ -773,9 +778,7 @@ async function renderActions() {
             approve.disabled = required && !(assent?.checked ?? false);
             deny.disabled = false;
             msg(
-              e instanceof Error
-                ? e.message
-                : "Não foi possível registrar sua decisão.",
+              e instanceof Error ? e.message : "Não foi possível registrar sua decisão.",
             );
           }
         });
@@ -785,7 +788,12 @@ async function renderActions() {
       controls.append(approve, deny);
       entry.append(controls);
     }
-    list.append(entry);
+    targetList.append(entry);
+  }
+  if (!activeCount) list.append(note("Nenhuma ação acadêmica aguardando sua autorização."));
+  if (historyCount) {
+    historyTitle.textContent = `Histórico de ações (${historyCount})`;
+    list.append(history);
   }
 }
 el("login-form").addEventListener("submit", async (e) => {

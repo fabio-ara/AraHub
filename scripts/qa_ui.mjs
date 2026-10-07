@@ -401,11 +401,13 @@ try {
     assert.equal(await page.locator("#google-setup").count(), 0);
     assert.equal(await page.locator("#google-connect-form").count(), 0);
     const bodyText = await page.locator("body").textContent();
-    for (const forbidden of [
-      "Google",
-      "Ampliar permissões",
-      "Conectar outra conta",
-    ]) assert.ok(!bodyText.includes(forbidden), forbidden);
+    for (
+      const forbidden of [
+        "Google",
+        "Ampliar permissões",
+        "Conectar outra conta",
+      ]
+    ) assert.ok(!bodyText.includes(forbidden), forbidden);
 
     // Access health and the Moodle connection.
     assert.match(await page.locator("#connection-health").textContent(), /^Acesso: /);
@@ -492,7 +494,7 @@ try {
 
     // Focused academic approval surface.
     const cards = page.locator("#action-list > .panel");
-    assert.equal(await cards.count(), 4);
+    assert.equal(await cards.count(), 3);
     const forum = cards.nth(0);
     const forumText = await forum.textContent();
     assert.ok(forumText.includes("Publicar novo tópico no fórum"));
@@ -582,10 +584,13 @@ try {
       { exact: true },
     ).waitFor();
 
-    const legacy = cards.nth(3);
+    const history = page.locator("#action-history");
+    assert.equal(await history.getAttribute("open"), null);
+    await history.locator("summary").click();
+    const legacy = history.locator(".action-card");
     const legacyText = await legacy.textContent();
     assert.ok(legacyText.includes("Operação aposentada"));
-    assert.ok(legacyText.includes("Operação registrada: docs_insert_text."));
+    assert.ok(!legacyText.includes("docs_insert_text"));
     assert.ok(legacyText.includes("não autoriza nem executa esta operação"));
     // The retired operation keeps no raw content and cannot be authorized.
     assert.ok(!legacyText.includes("window.__sourceExecuted"));
@@ -593,13 +598,13 @@ try {
       await legacy.getByRole("button", {
         name: "Autorizar esta ação",
         exact: true,
-      }).isDisabled(),
-      true,
+      }).count(),
+      0,
     );
     assert.equal(
       await legacy.getByRole("button", { name: "Recusar ação", exact: true })
-        .isDisabled(),
-      true,
+        .count(),
+      0,
     );
     assert.equal(await page.evaluate(() => window.__sourceExecuted), undefined);
     assert.equal(decisions.length, 3);
@@ -622,9 +627,7 @@ try {
       true,
     );
     assert.ok(
-      await page.locator(".app-shell").evaluate((el) =>
-        el.getBoundingClientRect().width
-      ) <= 460,
+      await page.locator(".app-shell").evaluate((el) => el.getBoundingClientRect().width) <= 460,
     );
     assert.deepEqual(
       await page.locator("button:visible").evaluateAll((buttons) =>
