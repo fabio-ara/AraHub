@@ -1,6 +1,12 @@
 # Estado do AraHub
 
-Atualizado: 2026-10-06. Branch main; código MIT/Pages publicados e backend Supabase implantado. **Produto completo A01–A30 ainda não entregue.** Este checkpoint substitui o histórico do chat.
+Atualizado: 2026-10-07. Branch main; código MIT/Pages publicados e backend Supabase implantado. **Produto completo A01–A30 ainda não entregue.** Este checkpoint substitui o histórico do chat.
+
+## Direção anunciada para a próxima sessão
+
+O titular prepara um novo prompt e pacote para uma **mudança profunda do modelo**. Esse material ainda não foi recebido; ao chegar, auditá-lo, reconciliar a especificação e reescrever a documentação de produto com a qualidade e clareza desejadas no AraLearn. A nova especificação determinará a implementação; não tratar a arquitetura ou os critérios A01–A30 abaixo como intocáveis. O titular não quer manter legado, camadas de compatibilidade nem fallbacks da solução substituída. Migrar dados úteis e preservar segurança, proveniência e recuperação durante a substituição, sem acumular dois caminhos permanentes.
+
+Visão já explicitada: AraHub será um segundo cérebro acadêmico e uma ferramenta MCP de Moodle, começando pela ULisboa e pelo curso atual, mas projetado para organizações e formatos de curso variados. O acesso ao Moodle deve ser eficiente e contextual ao curso consultado, oferecendo capacidades pertinentes sem despejar todas as funcionalidades em cada uso; o contrato exato por ferramenta será definido no pacote. A memória deve indexar biografia, história, contextos, atividades, calendário, bibliografia e outros fatores que dificultam a autorregulação de estudantes a distância. Deve conservar contradições, mudanças e incertezas dos ambientes reais para retomada e interpretação, sem fabricar uma narrativa limpa. Calibrar a integração em ambientes Moodle de demonstração com organizações diferentes e distinguir essas provas da conta real ULisboa. Trabalhar autonomamente após receber o pacote, com testes proporcionais e documentação de produto bem escrita; não iniciar outra refatoração estrutural com base apenas nesta nota.
 
 ## Mandato e autorizações
 
