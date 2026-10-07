@@ -1,9 +1,24 @@
 # Clientes e primeiro uso
 
-A interface auxiliar serve para entrar, conectar fontes, conferir leituras e
-revisar alterações. O trabalho acadêmico acontece no assistente conectado ao MCP.
-Uma conexão do painel Supabase não equivale à entrada no AraHub; o consentimento
-Google é separado de ambos.
+A interface auxiliar serve para entrada inicial, conexão de fontes, renovação e
+revisão de alterações externas. O trabalho acadêmico cotidiano acontece no
+assistente conectado ao MCP; não é preciso abrir o painel a cada consulta.
+O AraHub é o caminho para Moodle e memória contextual. Para escrever e formatar
+Docs, Sheets ou Slides e trabalhar no Gmail, prefira os plugins oficiais Google
+no mesmo assistente. As ferramentas Google próprias do AraHub têm cobertura
+menor; suas provas sintéticas não demonstram paridade editorial. A articulação
+entre plugins ocorre pelo assistente: o servidor AraHub não invoca internamente
+os outros plugins. Uma conexão do painel Supabase não equivale à entrada no
+AraHub; o consentimento Google é separado de ambos.
+
+Exemplo depois da conexão Moodle: “AraHub, mostre as discussões e postagens
+novas do meu curso, compare-as com o contexto histórico e indique quais PDFs
+embasam sua análise.” O plugin identifica a conexão no contexto do proprietário,
+consulta a fonte sob demanda, percorre páginas e recupera versões/materiais
+pertinentes. Novidade significa diferença entre observações com cobertura;
+sem uma consulta recente não há promessa de atualização imediata. Registros
+duráveis produzidos na conversa são gravados explicitamente, não por captura
+passiva de todo o chat.
 
 1. Entre na interface HTTPS da sua instalação. Abra o link de acesso no mesmo
    navegador que iniciou o pedido; não envie esse link ou código ao assistente.
@@ -17,6 +32,19 @@ Google é separado de ambos.
 4. Acrescente a Skill genérica ao pacote pessoal para orientar recuperação e
    persistência. Preparar o pacote, atualizar o plugin e invocar a Skill em conversa
    nova são provas separadas. O MCP não captura automaticamente o chat.
+
+Para Moodle, em Conexões → Moodle, informe a origem e o token de Web Service
+somente no formulário HTTPS. O assistente pode então consultar cursos e iniciar
+uma atualização dirigida; a cobertura informa funções indisponíveis, erros e
+trechos ainda não percorridos. Atualmente não há monitoramento automático nem
+garantia de publicação em tempo real. Se o token não oferecer determinada
+função, a ausência de registros não prova ausência de atividade no Moodle.
+O mesmo plugin oferece consulta dirigida de páginas de discussões e postagens.
+`hub_observations` lista todas as versões preservadas de uma entidade e
+`hub_observation` lê cada versão por trechos; `hub_entity_context` mostra apenas
+as cinco observações mais recentes como prévia. Após mudança de seção, o pacote
+de estudo usa a seção atual do módulo, e as relações antigas seguem consultáveis
+como histórico, não como materiais atuais.
 
 O pacote pessoal pode ligar-se ao aplicativo MCP já registrado por `.app.json`,
 conforme o [formato oficial](https://developers.openai.com/plugins/build/plugins).

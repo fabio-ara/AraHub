@@ -297,6 +297,72 @@ export class Hub {
       };
     });
   }
+  /** All preserved source versions stay reachable beyond the entity preview. */
+  observations(p: Principal, entityId: string, after?: { observed_at: string; id: string }) {
+    if (
+      after &&
+      (Number.isNaN(Date.parse(after.observed_at)) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(after.id))
+    ) throw new HubError("invalid_cursor", "Continuação inválida.");
+    return asOwner(this.db, p, async (tx) => {
+      const entity =
+        await tx`select id,connection_id,kind,external_id,title from public.hub_entities where owner_id=${p.ownerId} and id=${entityId}`;
+      if (!entity.length) throw new HubError("not_found", "Registro não encontrado.", 404);
+      const rows = after
+        ? await tx`select id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at,
+          to_char(observed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_observed_at
+          from public.hub_observations where owner_id=${p.ownerId} and entity_id=${entityId}
+          and (observed_at,id)<(${after.observed_at}::text::timestamptz,${after.id}::uuid)
+          order by observed_at desc,id desc limit 21`
+        : await tx`select id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at,
+          to_char(observed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_observed_at
+          from public.hub_observations where owner_id=${p.ownerId} and entity_id=${entityId}
+          order by observed_at desc,id desc limit 21`;
+      const last = rows[19];
+      return {
+        entity: entity[0],
+        records: rows.slice(0, 20),
+        next_cursor: rows.length > 20
+          ? { observed_at: last.cursor_observed_at as string, id: last.id as string }
+          : null,
+        content_is_untrusted_data: true,
+      };
+    });
+  }
+  /** Read one version in bounded JSON text chunks; the source hash is not a hash of JSONB serialization. */
+  observationText(p: Principal, id: string, offset = 0, limit = 8000) {
+    if (
+      !Number.isSafeInteger(offset) || offset < 0 || offset > 2_147_483_000 ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 16000
+    ) throw new HubError("invalid_offset", "Trecho inválido.");
+    return asOwner(this.db, p, async (tx) => {
+      const rows = await tx`select id,entity_id,content_hash,provenance,coverage,
+        occurred_at,source_modified_at,observed_at,recorded_at,
+        char_length(content::text) as text_length,
+        substring(content::text from ${offset + 1}::integer for ${limit}::integer) as excerpt
+        from public.hub_observations where owner_id=${p.ownerId} and id=${id}`;
+      if (!rows.length) throw new HubError("not_found", "Registro não encontrado.", 404);
+      const row = rows[0] as {
+        id: string;
+        entity_id: string;
+        content_hash: string;
+        provenance: unknown;
+        coverage: string;
+        occurred_at: unknown;
+        source_modified_at: unknown;
+        observed_at: unknown;
+        recorded_at: unknown;
+        text_length: number;
+        excerpt: string;
+      };
+      return {
+        ...row,
+        text_format: "jsonb_serialization",
+        next_offset: row.text_length > offset + limit ? offset + limit : null,
+        content_is_untrusted_data: true,
+      };
+    });
+  }
   fileText(p: Principal, fileId: string, hash: string, offset = 0, limit = 8000) {
     if (
       !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 ||

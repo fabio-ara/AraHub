@@ -126,6 +126,10 @@ async function resolveSection(
       join public.hub_entities s on s.owner_id=r.owner_id and s.id=r.from_id
       where f.owner_id=${ownerId} and f.id=${activityId} and f.kind='module'
         and s.kind='section' and s.connection_id=f.connection_id
+        and (f.state->>'section_id' is null or s.state->>'section_id' is null
+          or (f.state->>'section_id'=s.state->>'section_id'
+            and (f.state->>'course_id' is null or s.state->>'course_id' is null
+              or f.state->>'course_id'=s.state->>'course_id')))
       union
       -- Focal e conteudo: modulo -> has_content -> focal, depois a secao do modulo.
       select s.id, s.external_id, s.title
@@ -137,6 +141,10 @@ async function resolveSection(
       where f.owner_id=${ownerId} and f.id=${activityId} and f.kind not in ('module','section')
         and m.kind='module' and m.connection_id=f.connection_id
         and s.kind='section' and s.connection_id=f.connection_id
+        and (m.state->>'section_id' is null or s.state->>'section_id' is null
+          or (m.state->>'section_id'=s.state->>'section_id'
+            and (m.state->>'course_id' is null or s.state->>'course_id' is null
+              or m.state->>'course_id'=s.state->>'course_id')))
       union
       -- Focal e a propria secao.
       select s.id, s.external_id, s.title
@@ -178,8 +186,14 @@ async function graphPage(
       select m.id as module_id, m.state as module_state
       from public.hub_relations hr
       join public.hub_entities m on m.owner_id=hr.owner_id and m.id=hr.to_id
+      join public.hub_entities s on s.owner_id=hr.owner_id and s.id=hr.from_id
       where hr.owner_id=${ownerId} and hr.from_id=${sectionId} and hr.kind='has_module'
         and m.kind='module' and m.connection_id=${connectionId}
+        and s.kind='section' and s.connection_id=${connectionId}
+        and (m.state->>'section_id' is null or s.state->>'section_id' is null
+          or (m.state->>'section_id'=s.state->>'section_id'
+            and (m.state->>'course_id' is null or s.state->>'course_id' is null
+              or m.state->>'course_id'=s.state->>'course_id')))
     ),
     direct as (
       select e.id, e.connection_id, e.kind, e.title

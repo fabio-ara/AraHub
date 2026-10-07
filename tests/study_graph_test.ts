@@ -678,3 +678,158 @@ Deno.test("A24 grafo de secao: offset invalido e atividade de outro dono sao rec
     await db.end();
   }
 });
+
+Deno.test("A24 Moodle reorganizado: modulo conserva ID e historico, grafo usa somente secao atual", async () => {
+  const db = createDb(LOCAL_DB), hub = new Hub(db);
+  const owner = { ownerId: crypto.randomUUID() };
+  try {
+    await seedOwner(db, owner);
+    const conn = await hub.connect(owner, "moodle", "Moodle móvel", null, "moodle-move");
+    const before = await hub.entity(
+      owner,
+      conn.id,
+      "section",
+      "moodle:course/7/section/11",
+      "Antes",
+      {
+        course_id: 7,
+        section_id: 11,
+      },
+    );
+    const after = await hub.entity(
+      owner,
+      conn.id,
+      "section",
+      "moodle:course/7/section/12",
+      "Depois",
+      {
+        course_id: 7,
+        section_id: 12,
+      },
+    );
+    const module = await hub.entity(
+      owner,
+      conn.id,
+      "module",
+      "moodle:course/7/module/90",
+      "Tarefa",
+      {
+        course_id: 7,
+        section_id: 11,
+        module_id: 90,
+      },
+    );
+    const activity = await hub.entity(
+      owner,
+      conn.id,
+      "assignment",
+      "moodle:course/7/assignment/90",
+      "Atividade",
+    );
+    const oldMaterial = await hub.entity(
+      owner,
+      conn.id,
+      "page",
+      "moodle:course/7/page/1",
+      "Material antigo",
+    );
+    const newMaterial = await hub.entity(
+      owner,
+      conn.id,
+      "page",
+      "moodle:course/7/page/2",
+      "Material novo",
+    );
+    const oldSibling = await hub.entity(
+      owner,
+      conn.id,
+      "module",
+      "moodle:course/7/module/91",
+      "Irmão antigo",
+      {
+        course_id: 7,
+        section_id: 11,
+        module_id: 91,
+      },
+    );
+    const newSibling = await hub.entity(
+      owner,
+      conn.id,
+      "module",
+      "moodle:course/7/module/92",
+      "Irmão novo",
+      {
+        course_id: 7,
+        section_id: 12,
+        module_id: 92,
+      },
+    );
+    await relate(db, owner, before.id, module.id, "has_module", arc(conn.id, "s/11", "structure"));
+    await relate(
+      db,
+      owner,
+      before.id,
+      oldSibling.id,
+      "has_module",
+      arc(conn.id, "s/11", "structure"),
+    );
+    await relate(
+      db,
+      owner,
+      after.id,
+      newSibling.id,
+      "has_module",
+      arc(conn.id, "s/12", "structure"),
+    );
+    await relate(
+      db,
+      owner,
+      module.id,
+      activity.id,
+      "has_content",
+      arc(conn.id, "m/90", "module_instance"),
+    );
+    await relate(
+      db,
+      owner,
+      oldSibling.id,
+      oldMaterial.id,
+      "has_content",
+      arc(conn.id, "m/91", "module_instance"),
+    );
+    await relate(
+      db,
+      owner,
+      newSibling.id,
+      newMaterial.id,
+      "has_content",
+      arc(conn.id, "m/92", "module_instance"),
+    );
+    const initial = await graph(db, owner, activity.id);
+    assert.equal(initial.section_coverage.section_id, before.id);
+    assert.deepEqual(initial.entities.map((e) => e.id), [oldMaterial.id]);
+
+    const moved = await hub.entity(
+      owner,
+      conn.id,
+      "module",
+      "moodle:course/7/module/90",
+      "Tarefa",
+      {
+        course_id: 7,
+        section_id: 12,
+        module_id: 90,
+      },
+    );
+    assert.equal(moved.id, module.id);
+    await relate(db, owner, after.id, module.id, "has_module", arc(conn.id, "s/12", "structure"));
+    const current = await graph(db, owner, activity.id);
+    assert.equal(current.section_coverage.ambiguous, false);
+    assert.equal(current.section_coverage.section_id, after.id);
+    assert.deepEqual(current.entities.map((e) => e.id), [newMaterial.id]);
+    const historical = await hub.entityContext(owner, module.id);
+    assert.equal(historical.relations.filter((r) => r.kind === "has_module").length, 2);
+  } finally {
+    await db.end();
+  }
+});

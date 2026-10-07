@@ -6,7 +6,22 @@ Provas novas de implantação: onze migrations e backend hospedados, código MIT
 publicados; 32 verificações HTTPS com Auth/OAuth nativos, MCP SDK, isolamento entre
 dois usuários sintéticos e sessão revogada. Worker PDF executado na interface hospedada
 em dois viewports, com gravação real e zero violações CSP. A entrada humana por e-mail e o cliente pessoal ChatGPT foram comprovados;
-celular físico ainda exige sua própria prova.
+o teste em celular físico foi dispensado pelo titular em 2026-10-06 e permanece
+sem prova.
+
+Prioridade atual definida pelo titular: Moodle hospedado e memória METD para
+retomada/análise. Gmail, Drive e Calendar oficiais são o caminho principal para
+essas fontes; as provas
+Google do AraHub abaixo registram capacidades estreitas já implementadas, sem
+demonstrar paridade com os plugins oficiais. A matriz original permanece visível
+para que nenhuma lacuna seja apagada por mudança de foco.
+
+Nesta revisão, o MCP ganhou consulta dirigida e paginada de discussões/postagens
+Moodle e acesso por cursor a todas as versões de observação preservadas, com
+trechos limitados e isolamento. O grafo de estudo agora separa a seção atual de
+vínculos históricos após deslocamento de módulo. Prova local: 242 testes e
+instalação SQL limpa com 12 migrations; ainda falta a conexão Moodle real no
+projeto hospedado e a atualização do pacote pessoal.
 
 | ID | Capacidade | Estado local | Prova real / pendência |
 |---|---|---|---|

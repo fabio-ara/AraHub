@@ -6,10 +6,38 @@ import { createDb } from "../src/db.ts";
 import { Hub } from "../src/domain.ts";
 import { createVerifier } from "../src/auth.ts";
 import { createHandler } from "../src/http.ts";
+import type { ConnectionService } from "../src/connections.ts";
 
 Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético", async () => {
   const db = createDb("postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub");
   const hub = new Hub(db), owner = crypto.randomUUID(), sid = crypto.randomUUID();
+  const moodleConnectionId = crypto.randomUUID();
+  const connections = {
+    moodle: async (p: { ownerId: string }, id: string) => {
+      assert.equal(p.ownerId, owner);
+      assert.equal(id, moodleConnectionId);
+      return {
+        getForumDiscussions: async (
+          forumId: number,
+          options: { page?: number; perPage?: number },
+        ) => ({
+          coverage: "complete",
+          data: [{ id: 17, name: "Discussão sintética" }],
+          pagination: { page: options.page, per_page: options.perPage, has_more: false },
+          forum_id: forumId,
+        }),
+        getDiscussionPosts: async (
+          discussionId: number,
+          options: { offset?: number; limit?: number },
+        ) => ({
+          coverage: "partial",
+          data: [{ id: 18, subject: "Postagem sintética" }],
+          pagination: { offset: options.offset, limit: options.limit, has_more: true },
+          discussion_id: discussionId,
+        }),
+      };
+    },
+  } as unknown as ConnectionService;
   const { privateKey, publicKey } = await generateKeyPair("ES256");
   const auth = {
     issuer: "https://synthetic.invalid/auth",
@@ -32,7 +60,12 @@ Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético
   await db`insert into auth.users(id) values(${owner})`;
   const server = Deno.serve(
     { hostname: "127.0.0.1", port: 8789, onListen: () => {} },
-    createHandler(hub, { auth, publicUrl: "http://127.0.0.1:8789", verify: createVerifier(auth) }),
+    createHandler(hub, {
+      auth,
+      publicUrl: "http://127.0.0.1:8789",
+      verify: createVerifier(auth),
+      connections,
+    }),
   );
   const client = new Client({ name: "acceptance-fixture", version: "1.0.0" });
   try {
@@ -72,6 +105,10 @@ Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético
     );
     const tools = await client.listTools();
     assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_context"));
+    assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_observations"));
+    assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_observation"));
+    assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_moodle_discussions"));
+    assert.ok(tools.tools.some((t: { name: string }) => t.name === "hub_moodle_posts"));
     assert.equal(
       tools.tools.find((t: { name: string }) => t.name === "hub_record_delta")?.annotations
         ?.readOnlyHint,
@@ -82,6 +119,24 @@ Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético
       const content = r.content as { text: string }[];
       return JSON.parse(content[0].text);
     };
+    const discussions = await call("hub_moodle_discussions", {
+      connection_id: moodleConnectionId,
+      forum_id: 5,
+      page: 2,
+      per_page: 10,
+    });
+    assert.equal(discussions.coverage, "complete");
+    assert.equal(discussions.forum_id, 5);
+    assert.equal(discussions.pagination.page, 2);
+    const posts = await call("hub_moodle_posts", {
+      connection_id: moodleConnectionId,
+      discussion_id: 17,
+      offset: 20,
+      limit: 20,
+    });
+    assert.equal(posts.coverage, "partial");
+    assert.equal(posts.discussion_id, 17);
+    assert.equal(posts.pagination.offset, 20);
     const ctx = await call("hub_create_context", {
       title: "Retomada sintética MCP",
       scope: { genre: "forum" },

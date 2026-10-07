@@ -118,6 +118,11 @@ janelas e o orçamento por execução (`forum_calls_per_run`).
 - Relações qualificadas em `hub_relations`: `has_section`, `has_module`,
   `has_content`, `has_discussion`, `has_post`, `has_item`,
   `tracks_completion`, `has_completion`.
+- IDs de módulo são estáveis dentro do curso ao mudar de seção. O estado e a
+  observação novos registram a seção atual; a relação antiga não é apagada.
+  O grafo do pacote compara `section_id`/`course_id` atuais antes de derivar
+  materiais da mesma seção, evitando tratar a relação antiga como atual.
+  Observações históricas têm paginação e leitura por trechos no MCP.
 - O upsert de entidade mescla o estado (`state = hub_entities.state ||
   excluded.state`) para não sobrescrever dimensões do usuário (`user_report`,
   memória, edição). Posts guardam `author_userid`. O checkpoint, ao contrário,

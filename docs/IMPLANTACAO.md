@@ -22,7 +22,7 @@ A interface MIT será publicada como pacote estático em GitHub Pages, no subpat
 
 ## Virada
 
-Reconsultar commit remoto da origem somente de leitura, curar delta se houver, reconciliar importação e validar nova conversa/arquivos. Ativar o cliente e verificar nova chamada no smartphone, delta e continuidade web. Registrar marco de corte e rollback. Até isso acontecer, a origem permanece referência operacional disponível.
+Reconsultar commit remoto da origem somente de leitura, curar delta se houver, reconciliar importação e validar nova conversa/arquivos. O titular dispensou a prova em smartphone físico em 2026-10-06; isso não a transforma em teste aprovado. Registrar marco de corte e rollback. Até isso acontecer, a origem permanece referência operacional disponível.
 
 ## Pendências de produto
 
