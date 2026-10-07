@@ -1,66 +1,69 @@
 # Estado do AraHub
 
-Atualizado em 2026-10-07. Primeira entrega em implementação na branch `entrega-1`.
-Backend 0.2.1 e interface publicados; correção 0.2.2 validada localmente, em
-implantação. Plugin pessoal 1.1.0 instalado e verificado
-em uma conversa nova. **R1 não está concluída**: a ponte completa pelo host
-ChatGPT até o Moodle sintético ainda requer homologação.
+Atualizado em 2026-10-07. Primeira entrega em implementação na branch `entrega-1`. Backend 0.2.2
+publicado e ferramentas atualizadas no ChatGPT. A memória foi conferida em conversa nova. Plugin
+1.1.1 preparado; o instrumento de upload recusou a pasta deste checkout. O refresh preservou a
+conexão e a Skill anterior, mas regenerou os metadados como 1.0.0; resta instalar e conferir o
+pacote novo. **R1 não está concluída**: a ponte completa pelo host ChatGPT até o Moodle sintético
+ainda requer homologação.
 
-O contrato vigente está em [docs/ENTREGA-1.md](docs/ENTREGA-1.md), com plano e
-aceite reconciliados. O pacote privado foi validado e está excluído do Git.
-Os registros anteriores continuam no histórico; dados/evidências ficam privados.
+O contrato vigente está em [docs/ENTREGA-1.md](docs/ENTREGA-1.md), com plano e aceite reconciliados.
+O pacote privado foi validado e está excluído do Git. Os registros anteriores continuam no
+histórico; dados/evidências ficam privados.
 
-Implementado: importação de arquivos do host com conferência de bytes; preparação,
-aprovação humana e execução de ações Moodle; retirada Google operacional com
-histórico preservado; DOCX/HTML estruturados e fila local; processamento separado
-de vídeo; preferências, obrigações, atenção e histórico por ocorrência; interface
-simplificada. Modelos e fontes privadas permanecem fora da distribuição.
+Implementado: importação de arquivos do host com conferência de bytes; preparação, aprovação humana
+e execução de ações Moodle; retirada Google operacional com histórico preservado; DOCX/HTML
+estruturados e fila local; processamento separado de vídeo; preferências, obrigações, atenção e
+histórico por ocorrência; interface simplificada. Modelos e fontes privadas permanecem fora da
+distribuição.
 
-Validação da 0.2.1: 211 testes passaram, sem falhas, e dois ignorados possuem gates
-próprios. A 0.2.2 passou em 12 testes dirigidos e tipos/Edge; a suíte ampla anterior
-não foi repetida. Tipos, Edge, instalação nova com 14 migrations, dois donos e isolamento
-passaram. A interface foi interagida e inspecionada em dois viewports com fixtures.
-A escala local de 10 mil posts e 100 mil observações/ocorrências teve p95 de 183 ms.
-Backup hospedado por leitura foi restaurado localmente, incluindo hashes de 81
-arquivos; restauração do provedor Auth não está demonstrada.
+Validação da 0.2.1: 211 testes passaram, sem falhas, e dois ignorados possuem gates próprios. A
+0.2.2 passou em 12 testes dirigidos e tipos/Edge; a suíte ampla anterior não foi repetida. Tipos,
+Edge, instalação nova com 14 migrations, dois donos e isolamento passaram. A interface foi
+interagida e inspecionada em dois viewports com fixtures. A escala local de 10 mil posts e 100 mil
+observações/ocorrências teve p95 de 183 ms. Backup hospedado por leitura foi restaurado localmente,
+incluindo hashes de 81 arquivos; restauração do provedor Auth não está demonstrada.
 
-No alvo hospedado existente, 32 verificações de Auth/OAuth/SDK passaram. As 14
-migrations foram reconciliadas e os dados anteriores permaneceram íntegros. O
-plugin instalado expõe 42 ferramentas atuais. A conversa nova recuperou fontes,
-trajetória, preferências e diferenças entre rascunhos e publicação relatada, sem
-promover relatos a confirmação institucional.
+No alvo hospedado existente, 32 verificações de Auth/OAuth/SDK passaram na 0.2.1. As 14 migrations
+foram reconciliadas e os dados anteriores permaneceram íntegros. O plugin instalado expõe 42
+ferramentas atuais. A conversa nova recuperou fontes, trajetória, preferências e diferenças entre
+rascunhos e publicação relatada, sem promover relatos a confirmação institucional. Na 0.2.2, nova
+conversa e chamadas reais do conector confirmaram nove contextos pessoais e recuperação explícita
+dos dois testes preservados. Treze consultas SQL somente leitura reconfirmaram 14 migrations, 11
+tabelas do titular inalteradas e 419 conteúdos/ocorrências.
 
-No Moodle Lab real, o SDK MCP enviou arquivo exportado do conector, com declaração
-aprovada, e confirmou a submissão e os bytes. Tópico com anexo e resposta também
-passaram. A visão do estudante foi conferida por interação e inspeção visual em
-aba normal do Chrome. Vinte e dois subcasos negativos passaram. Uma segunda
-versão Moodle passou pela cadeia SDK, e duas origens físicas com IDs iguais
-foram isoladas em 17 verificações. O reset da segunda instância tem prova própria.
-Isso não substitui a ponte pelo arquivo do host no aplicativo ChatGPT instalado.
+No Moodle Lab real, o SDK MCP enviou arquivo exportado do conector, com declaração aprovada, e
+confirmou a submissão e os bytes. Tópico com anexo e resposta também passaram. A visão do estudante
+foi conferida por interação e inspeção visual em aba normal do Chrome. Vinte e dois subcasos
+negativos passaram. Uma segunda versão Moodle passou pela cadeia SDK, e duas origens físicas com IDs
+iguais foram isoladas em 17 verificações. O reset da segunda instância exigiu recuperação dos
+helpers residuais; recibos preservam a primeira falha e a remoção final conferida, sem afetar o Lab
+original ou os serviços vizinhos. A correção do controlador passou nas guardas dirigidas; não foi
+alegado outro reset completo. Isso não substitui a ponte pelo arquivo do host no aplicativo ChatGPT
+instalado.
 
-Materiais institucionais atuais: leitura autorizada, processamento e preservação
-local de 19 ocorrências/18 binários distintos; recuperação via MCP e isolamento
-verificados. Transcrição automática permanece sem revisão de exatidão. Nenhuma
-escrita de teste foi feita na universidade.
+Materiais institucionais atuais: leitura autorizada, processamento e preservação local de 19
+ocorrências/18 binários distintos; recuperação via MCP e isolamento verificados. Comparação de
+fichas, vídeo sintético acima de 20 MiB e exportações DOCX/PDF/PPTX tiveram provas próprias; cinco
+arquivos/seis páginas ou slides foram inspecionados visualmente. Transcrição automática permanece
+sem revisão de exatidão. Nenhuma escrita de teste foi feita na universidade.
 
-Aprovação vem da sessão humana autenticada, vinculada ao conteúdo e ao alvo.
-Resultado incerto não é reenviado. Status de assignment continua bloqueado em
-produção por efeitos indiretos: validação sintética não altera essa política.
-O processador local não é executor remoto nem rotina recorrente ativa.
+Aprovação vem da sessão humana autenticada, vinculada ao conteúdo e ao alvo. Resultado incerto não é
+reenviado. Status de assignment continua bloqueado em produção por efeitos indiretos: validação
+sintética não altera essa política. O processador local não é executor remoto nem rotina recorrente
+ativa.
 
-Próximo passo executável: publicar a 0.2.2 e conferir a memória no cliente real,
-integrar o harness e reconciliar a matriz por nível. Topologia de
-homologação remota, revisão da rota institucional, processamento remoto e virada
-da memória têm gates próprios. Contextos já declarados como testes técnicos ficam
-fora da retomada, busca e preferências cotidianas na 0.2.2. Permanecem acessíveis
-por consulta explícita, histórico e exportação; nenhum registro foi apagado ou
-reclassificado. Títulos e conteúdo não determinam essa separação.
+Próximo passo executável: integrar o harness e reconciliar a matriz por nível; enviar o plugin
+preparado quando a pasta AraHub for autorizada no instrumento. Topologia de homologação remota,
+revisão da rota institucional, processamento remoto e virada da memória têm gates próprios.
+Contextos já declarados como testes técnicos ficam fora da retomada, busca e preferências cotidianas
+na 0.2.2. Permanecem acessíveis por consulta explícita, histórico e exportação; nenhum registro foi
+apagado ou reclassificado. Títulos e conteúdo não determinam essa separação.
 
-Correções validadas após os testes reais: links dos capítulos HTML conservados
-na leitura textual; matrícula suspensa classificada como acesso negado; mudança
-de seção com um único vínculo atual e histórico preservado. A atenção distingue
-colegas presentes de colegas efetivamente respondidos e sinaliza material que
-mudou desde a versão explicitamente vinculada ao rascunho. PDFs retornam escopo
-textual, lacunas visuais e inventário limitado de campos, sem afirmar preenchimento.
+Correções validadas após os testes reais: links dos capítulos HTML conservados na leitura textual;
+matrícula suspensa classificada como acesso negado; mudança de seção com um único vínculo atual e
+histórico preservado. A atenção distingue colegas presentes de colegas efetivamente respondidos e
+sinaliza material que mudou desde a versão explicitamente vinculada ao rascunho. PDFs retornam
+escopo textual, lacunas visuais e inventário limitado de campos, sem afirmar preenchimento.
 
 Checkpoint operacional detalhado: `.private/entrega-1/STATUS.md`.

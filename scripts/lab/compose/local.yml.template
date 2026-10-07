@@ -1,0 +1,76 @@
+# Moodle Lab — extensao local do moodlehq/moodle-docker (nao substitui base.yml).
+#
+# Regras aplicadas:
+#  - o codigo Moodle vive em um VOLUME NOMEADO (html), populado dentro do Docker.
+#    Bind mount do Windows para o codigo travava o instalador em p9_client_rpcWrite;
+#    o volume elimina o I/O 9p no caminho quente.
+#  - dataroot em volume nomeado (labdata), compartilhado por webserver e cron.
+#  - !override troca a lista de volumes do webserver do base.yml (evita alvo duplicado).
+#  - servico cron dedicado (o compose base do moodle-docker nao traz cron).
+#  - etiqueta de propriedade com o UUID da instancia em cada servico e volume.
+services:
+  webserver:
+    volumes: !override
+      - html:/var/www/html
+      - labdata:/var/www/moodledata
+      - "${ASSETDIR}/web/apache2_faildumps.conf:/etc/apache2/conf-enabled/moodle-faildump.conf"
+      - "${ASSETDIR}/web/apache2_mailpit.conf:/etc/apache2/conf-enabled/apache2_mailpit.conf"
+      - "${ARAHUB_LAB_TOOLS}:/opt/arahub-lab/tools:ro"
+      - "${ARAHUB_LAB_PRIVATE}:/opt/arahub-lab/private:ro"
+      - "${ARAHUB_LAB_FIXTURES}:/opt/arahub-lab/fixtures:ro"
+    labels:
+      com.arahub.lab.instance: "${ARAHUB_LAB_INSTANCE_ID}"
+      com.arahub.lab.role: "webserver"
+
+  db:
+    labels:
+      com.arahub.lab.instance: "${ARAHUB_LAB_INSTANCE_ID}"
+      com.arahub.lab.role: "db"
+
+  mailpit:
+    ports:
+      - "${ARAHUB_LAB_MAIL_PORT}:8025"
+    labels:
+      com.arahub.lab.instance: "${ARAHUB_LAB_INSTANCE_ID}"
+      com.arahub.lab.role: "mailpit"
+
+  cron:
+    image: "moodlehq/moodle-php-apache:${MOODLE_DOCKER_PHP_VERSION}"
+    depends_on:
+      - db
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while [ ! -f /var/www/moodledata/.arahub-lab-installed ]; do sleep 5; done
+        while true; do
+          php /var/www/html/admin/cli/cron.php >/var/log/arahub-lab-cron.log 2>&1 || true
+          sleep 60
+        done
+    volumes:
+      - html:/var/www/html
+      - labdata:/var/www/moodledata
+      - "${ARAHUB_LAB_TOOLS}:/opt/arahub-lab/tools:ro"
+      - "${ARAHUB_LAB_PRIVATE}:/opt/arahub-lab/private:ro"
+      - "${ARAHUB_LAB_FIXTURES}:/opt/arahub-lab/fixtures:ro"
+    environment:
+      MOODLE_DOCKER_RUNNING: 1
+      MOODLE_DOCKER_DBTYPE: pgsql
+      MOODLE_DOCKER_DBNAME: moodle
+      MOODLE_DOCKER_DBUSER: moodle
+      MOODLE_DOCKER_DBPASS: "m@0dl3ing"
+      MOODLE_DOCKER_WEB_HOST: "${MOODLE_DOCKER_WEB_HOST}"
+      MOODLE_DOCKER_WEB_PORT: "${MOODLE_DOCKER_WEB_PORT}"
+    labels:
+      com.arahub.lab.instance: "${ARAHUB_LAB_INSTANCE_ID}"
+      com.arahub.lab.role: "cron"
+
+volumes:
+  html:
+    labels:
+      com.arahub.lab.instance: "${ARAHUB_LAB_INSTANCE_ID}"
+      com.arahub.lab.role: "code"
+  labdata:
+    labels:
+      com.arahub.lab.instance: "${ARAHUB_LAB_INSTANCE_ID}"
+      com.arahub.lab.role: "dataroot"
