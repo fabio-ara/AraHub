@@ -370,7 +370,7 @@ export class Hub {
     ) throw new HubError("invalid_offset", "Trecho inválido.");
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select id,name,mime_type,sha256,extraction,char_length(extracted_text) as text_length,substring(extracted_text from ${
+        await tx`select id,name,mime_type,sha256,extraction - 'pages' as extraction,char_length(extracted_text) as text_length,substring(extracted_text from ${
           offset + 1
         }::integer for ${limit}::integer) as excerpt from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`;
       if (!rows.length) throw new HubError("not_found", "Arquivo não encontrado.", 404);
@@ -397,7 +397,7 @@ export class Hub {
     }
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select f.id,f.entity_id,f.name,f.sha256,f.extraction,substring(f.extracted_text from greatest(position(lower(${query}) in lower(f.extracted_text))-120,1) for 800) as excerpt from public.hub_files f where f.owner_id=${p.ownerId} and f.extracted_text ilike ${
+        await tx`select f.id,f.entity_id,f.name,f.sha256,f.extraction - 'pages' as extraction,substring(f.extracted_text from greatest(position(lower(${query}) in lower(f.extracted_text))-120,1) for 800) as excerpt from public.hub_files f where f.owner_id=${p.ownerId} and f.extracted_text ilike ${
           "%" + query + "%"
         } order by f.name,f.id limit 21 offset ${offset}`;
       return {

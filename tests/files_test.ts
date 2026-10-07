@@ -25,18 +25,25 @@ Deno.test("A02 A23 A24: arquivos por proprietário, hash/continuação e pacote 
       async (tx) =>
         (await tx`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content,extracted_text,extraction) values(${a.ownerId},${material.id},'fixture.txt','text/plain',${hash},${content.length},${
           Buffer.from(content)
-        },'argumento A\nargumento B\n','{"complete":true}') returning id`)[0],
+        },'argumento A\nargumento B\n',${
+          tx.json({ complete: true, pages: [{ page: 1, text: "PAGINA_NAO_LISTADA" }] })
+        }) returning id`)[0],
     );
     const first = await hub.fileText(a, file.id, hash, 0, 11);
     assert.equal(first.excerpt, "argumento A");
     assert.equal(first.next_offset, 11);
+    const firstMetadata = first as unknown as { extraction: Record<string, unknown> };
+    assert.equal(Object.hasOwn(firstMetadata.extraction, "pages"), false);
     const second = await hub.fileText(a, file.id, hash, 11, 20);
     assert.equal(second.next_offset, null);
     await assert.rejects(hub.fileText(a, file.id, "wrong-hash"), /mudou/);
     await assert.rejects(hub.fileText(b, file.id, hash), /não encontrado/);
     assert.equal((await hub.files(b)).records.length, 0);
+    assert.equal(Object.hasOwn((await hub.files(a)).records[0].extraction, "pages"), false);
     assert.equal((await hub.searchDocuments(b, "argumento")).records.length, 0);
-    assert.equal((await hub.searchDocuments(a, "argumento")).records.length, 1);
+    const matches = await hub.searchDocuments(a, "argumento");
+    assert.equal(matches.records.length, 1);
+    assert.equal(Object.hasOwn(matches.records[0].extraction, "pages"), false);
     await asOwner(db, a, async (tx) => {
       await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence) values(${a.ownerId},${activity.id},${material.id},'required','{"rights":"study only"}')`;
     });
