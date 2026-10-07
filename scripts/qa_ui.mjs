@@ -285,8 +285,10 @@ try {
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
     assert.equal(
       await page.locator("#moodle-origin").evaluate((el) => el.readOnly),
-      false,
+      true,
     );
+    await page.locator("#moodle-origin").click();
+    assert.equal(await page.locator("#moodle-origin").evaluate((el) => el.readOnly), false);
     await page.locator("#google-setup > summary").click();
     await page.locator("#google-connect-form").scrollIntoViewIfNeeded();
     assert.equal(

@@ -130,7 +130,7 @@ let pdfJob: AbortController | null = null;
 function resetMoodleForm() {
   renewingMoodle = null;
   (el("moodle-connect-form") as HTMLFormElement).reset();
-  (el("moodle-origin") as HTMLInputElement).readOnly = false;
+  (el("moodle-origin") as HTMLInputElement).readOnly = true;
   el("moodle-cancel-renewal").hidden = true;
   setAction(el("moodle-submit"), "key", "Conectar Moodle");
 }
@@ -903,6 +903,15 @@ if (supabase) {
 await render();
 await consent();
 await googleCallback();
+
+for (const event of ["pointerdown", "focus"]) {
+  el("moodle-origin").addEventListener(event, () => {
+    if (renewingMoodle) return;
+    const origin = el("moodle-origin") as HTMLInputElement;
+    origin.readOnly = false;
+    if (origin.value.includes("@") && !origin.value.startsWith("https://")) origin.value = "";
+  });
+}
 
 el("moodle-mobile-open").addEventListener("click", () => {
   try {
