@@ -26,3 +26,11 @@ Se a instituição não disponibilizar o serviço móvel ou uma função de leit
 o AraHub deve informar a limitação; não obtenha nem compartilhe credenciais por
 outros meios. Este roteiro não comprova disponibilidade para todos os tipos de
 conta ChatGPT, nem equivale a publicação no diretório de plugins.
+
+Para atualizar uma instalação pessoal existente, atualize primeiro a lista de
+ferramentas e depois envie a nova versão do pacote pelo menu do próprio plugin.
+Na implantação validada, a atualização das ferramentas preservou a conexão e a
+Skill, mas regenerou os metadados como versão 1.0.0. Reenviar o pacote corrigiu
+a versão exibida. Confira a versão, a Skill e a conta após o upload e faça uma
+leitura em conversa nova. Preserve o ID do aplicativo e a conta existente;
+`scripts/prepare_plugin.ts` prepara esse pacote em uma pasta privada.
