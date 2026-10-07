@@ -11,6 +11,17 @@ Instância inicial: [interface](https://fabio-ara.github.io/AraHub/) e
 pelo administrador e confirmação por e-mail; inscrições públicas estão fechadas.
 O código público permite hospedar outras instâncias, sem acesso aos dados desta.
 
+Para ligar o Moodle sem terminal ou Codex, entre na interface e abra Conexões → Moodle.
+Informe o endereço HTTPS da instalação e use o ícone de entrada: ele abre o fluxo móvel
+oficial do Moodle. Após entrar pela conta da instituição, copie o **endereço do link**
+“Abrir o aplicativo” (clique direito ou toque longo), cole-o em “Chave ou link móvel”
+no AraHub e confirme a conexão. O fluxo do Moodle reutiliza uma chave válida ou cria
+outra quando o serviço móvel permite; não exige login prévio no aplicativo móvel.
+O AraHub descarta a chave privada de autologin presente no link, valida a identidade
+na API e guarda a chave Web Service cifrada. O serviço móvel pode ter permissões mais
+amplas que as 16 funções de leitura oferecidas pelo AraHub. Esse cadastro guiado não
+é OAuth nem torna a instância inicial aberta a qualquer pessoa.
+
 ## Prova local
 
 Requer Docker, Deno 2.9 e Node/npm para o CLI Supabase quando criar migrations. A imagem de Postgres e bibliotecas estão fixadas; `deno.lock` é versionado.

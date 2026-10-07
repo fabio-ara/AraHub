@@ -3,6 +3,7 @@ import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
 import { actionPreview } from "./action_preview.ts";
 import { extractClientPdf, PDF_CLIENT_MAX_BYTES } from "./pdf_client.ts";
+import { moodleMobileLaunchUrl, parseMoodleMobileLink } from "./moodle_mobile.ts";
 const siteBase = new URL("../", import.meta.url).href;
 const route = (path: string) => sitePath(siteBase, path);
 const localCredentialEntry = ["localhost", "127.0.0.1", "[::1]"].includes(
@@ -39,6 +40,7 @@ for (
     ["refresh", "rotate", "Atualizar visão"],
     ["export", "download", "Preparar exportação privada"],
     ["moodle-submit", "key", "Conectar Moodle"],
+    ["moodle-mobile-open", "sign-in", "Abrir entrada oficial do Moodle"],
     ["moodle-cancel-renewal", "remove-state", "Cancelar renovação"],
     ["google-connect", "account-add", "Conectar outra conta Google"],
     ["google-cancel-upgrade", "remove-state", "Cancelar alteração de permissões"],
@@ -902,6 +904,18 @@ await render();
 await consent();
 await googleCallback();
 
+el("moodle-mobile-open").addEventListener("click", () => {
+  try {
+    const origin = (el("moodle-origin") as HTMLInputElement).value;
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const passport = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    globalThis.open(moodleMobileLaunchUrl(origin, passport), "_blank", "noopener,noreferrer");
+    msg("Na página Moodle, copie o endereço do link para abrir o aplicativo e cole-o aqui.");
+  } catch {
+    msg("Confira o endereço HTTPS do Moodle.");
+  }
+});
+
 el("moodle-connect-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (
@@ -912,14 +926,18 @@ el("moodle-connect-form").addEventListener("submit", async (e) => {
   const button = el("moodle-submit") as HTMLButtonElement;
   button.disabled = true;
   const secret = el("moodle-token") as HTMLInputElement;
-  const payload = {
-    label: (el("moodle-label") as HTMLInputElement).value,
-    origin: (el("moodle-origin") as HTMLInputElement).value,
-    token: secret.value,
-    ...(renewingMoodle ? { connection_id: renewingMoodle } : {}),
-  };
+  const supplied = secret.value.trim();
   secret.value = "";
   try {
+    const credential = /^[a-z][a-z0-9+.-]*:\/\/token=/i.test(supplied)
+      ? parseMoodleMobileLink(supplied)
+      : supplied;
+    const payload = {
+      label: (el("moodle-label") as HTMLInputElement).value,
+      origin: (el("moodle-origin") as HTMLInputElement).value,
+      token: credential,
+      ...(renewingMoodle ? { connection_id: renewingMoodle } : {}),
+    };
     const response = await fetch(endpoint("/api/connections/moodle"), {
       method: "POST",
       headers: {

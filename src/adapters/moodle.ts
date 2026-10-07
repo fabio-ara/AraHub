@@ -22,6 +22,7 @@
 import { HubError } from "../contracts.ts";
 import type { Coverage, Provenance } from "../contracts.ts";
 import { request as httpsRequest } from "node:https";
+import { PinnedHttpError, sendPinnedHttp } from "./pinned_http.ts";
 
 // --- Tipos fundamentais ----------------------------------------------------
 
@@ -1196,7 +1197,7 @@ export class MoodleAdapter {
           reject(error);
         });
       });
-      request.on("error", (error) => reject(this.transportError(error, options.fn)));
+      request.on("error", reject);
       request.setTimeout(this.timeoutMs, () => {
         const timeoutError = new Error("Tempo da consulta Moodle excedido.");
         timeoutError.name = "TimeoutError";
@@ -1204,8 +1205,41 @@ export class MoodleAdapter {
       });
       if (options.body !== undefined) request.write(options.body);
       request.end();
-    }).catch((error) => {
+    }).catch(async (error) => {
       if (error instanceof MoodleError) throw error;
+      // Supabase Edge accepts node:https but does not implement its custom
+      // lookup callback. Keep the DNS pin with a TCP socket upgraded to TLS;
+      // the hostname still drives SNI and certificate verification.
+      if ((error as { code?: unknown })?.code === "ERR_NOT_IMPLEMENTED") {
+        try {
+          return await sendPinnedHttp({
+            url: options.url,
+            method: options.method,
+            headers: options.headers,
+            body: options.body,
+            address,
+            maxBytes: options.maxBytes,
+            timeoutMs: this.timeoutMs,
+          });
+        } catch (fallbackError) {
+          if (fallbackError instanceof PinnedHttpError) {
+            if (fallbackError.code === "limit_exceeded") {
+              throw new MoodleError("limit_exceeded", ERROR_MESSAGES.limit_exceeded, {
+                functionName: options.fn,
+              });
+            }
+            if (fallbackError.code === "parsing_error") {
+              throw new MoodleError("parsing_error", ERROR_MESSAGES.parsing_error, {
+                functionName: options.fn,
+              });
+            }
+            throw new MoodleError("timeout", ERROR_MESSAGES.timeout, {
+              functionName: options.fn,
+            });
+          }
+          throw this.transportError(fallbackError, options.fn);
+        }
+      }
       throw this.transportError(error, options.fn);
     });
   }
@@ -1543,7 +1577,18 @@ export class MoodleAdapter {
       const { data, warnings } = this.splitWarnings(raw);
       const discussions = pickArray(data, "discussions");
       const normalized = await this.normalizeValue(discussions);
-      const list = Array.isArray(normalized) ? (normalized as MoodleRecord[]) : [];
+      // Moodle exposes the first post as `id` in this response; `discussion`
+      // is the ID accepted by mod_forum_get_discussion_posts. Keep source
+      // fields and add unambiguous aliases for callers.
+      const list = Array.isArray(normalized)
+        ? (normalized as MoodleRecord[]).map((item) => ({
+          ...item,
+          ...(Number.isInteger(item.discussion) && Number(item.discussion) > 0
+            ? { discussion_id: item.discussion }
+            : {}),
+          ...(Number.isInteger(item.id) && Number(item.id) > 0 ? { first_post_id: item.id } : {}),
+        }))
+        : [];
       return {
         data: list,
         warnings,

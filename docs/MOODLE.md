@@ -63,14 +63,14 @@ traversal, garantindo que `/ava` e `/moodle` funcionem sem abrir a porta para
   embutido (decimal ou hexadecimal) em `::ffff:0:0/96` e `::/96`. A
   checagem é estrutural e por faixa; não depende de node:net, que só confere
   formato.
-- Conexão fixada no caminho real: a produção não usa fetch global. O envio usa
-  node:https com lookup preso ao endereço público recém-validado, então o runtime
-  não re-resolve o hostname entre a validação e o connect (fecha a janela
-  TOCTOU/DNS rebinding). Host, SNI e verificação TLS continuam sendo os do
-  hostname configurado, pois só o endereço do socket é fixado. Sem endereço
-  validado a conexão falha fechada com security_error. Neste runtime (Deno
-  2.9.3) o hook lookup foi verificado com uma requisição real: handshake TLS com
-  o hostname configurado e resposta HTTP recebida do endereço fixado.
+- Conexão fixada no caminho real: no Deno local, node:https usa lookup preso ao
+  endereço público recém-validado. O runtime Edge hospedado retorna
+  `ERR_NOT_IMPLEMENTED` para esse hook; nesse caso, um socket TCP conecta ao IP
+  validado e `Deno.startTls` verifica SNI e certificado contra o hostname
+  original antes de enviar a requisição HTTP/1.1. O parser limita cabeçalhos,
+  bytes, tempo e framing; não segue redirects nem desliga a verificação TLS.
+  A prova hospedada confirmou HTTP 200 com IP fixado/nome correto e rejeição
+  do certificado quando o nome foi trocado. Sem endereço validado, falha fechada.
 - Resposta REST limitada por maxResponseBytes (padrão 16 MiB), pelo Content-Length
   declarado e pela contagem real de bytes transmitidos.
 - Timeout de consulta e de download (padrão 30 s), aplicado ao socket e ao corpo.

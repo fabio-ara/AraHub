@@ -10,6 +10,10 @@ const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const connectionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const googleConnectionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const mobileToken = "a".repeat(32);
+const mobilePrivateToken = "b".repeat(32);
+const mobileLink = "moodlemobile://token=" +
+  Buffer.from(`${"c".repeat(32)}:::${mobileToken}:::${mobilePrivateToken}`).toString("base64");
 const googleReadScopes = [
   "openid",
   "email",
@@ -54,6 +58,8 @@ try {
     }]
   ) {
     const context = await browser.newContext({ viewport });
+    await context.route("https://moodle.fixture.invalid/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/html", body: "<title>Moodle sintético</title>" }));
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
     let renewed = false, actionApproved = false, googleUpgraded = false;
@@ -141,7 +147,7 @@ try {
         const input = request.postDataJSON();
         assert.equal(input.connection_id, connectionId);
         assert.equal(input.origin, "https://moodle.fixture.invalid");
-        assert.equal(input.token, "synthetic-renewal-marker");
+        assert.equal(input.token, mobileToken);
         renewed = true;
         return reply({ renewed: true });
       }
@@ -244,6 +250,16 @@ try {
       true,
     );
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
+    const popupPromise = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "Abrir entrada oficial do Moodle" }).click();
+    const popup = await popupPromise;
+    await popup.waitForURL(/moodle\.fixture\.invalid/, { timeout: 5000 });
+    const launch = new URL(popup.url());
+    assert.equal(launch.origin, "https://moodle.fixture.invalid");
+    assert.equal(launch.pathname, "/admin/tool/mobile/launch.php");
+    assert.equal(launch.searchParams.get("service"), "moodle_mobile_app");
+    assert.match(launch.searchParams.get("passport") ?? "", /^[a-f0-9]{32}$/);
+    await popup.close();
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       true,
@@ -256,7 +272,7 @@ try {
       new URL(`connections-${viewport.width}.png`, folder),
       capture,
     );
-    await page.locator("#moodle-token").fill("synthetic-renewal-marker");
+    await page.locator("#moodle-token").fill(mobileLink);
     await page.getByRole("button", { name: "Renovar Moodle", exact: true })
       .click();
     await page.getByText(

@@ -72,7 +72,10 @@
                   <form id="moodle-connect-form" hidden>
                     <label>Nome<input id="moodle-label" required maxlength="100" placeholder="Meu Moodle"></label>
                     <label>Endereço<input id="moodle-origin" type="url" required placeholder="https://moodle.exemplo.edu"></label>
-                    <label>Token de leitura<input id="moodle-token" type="password" autocomplete="off" required minlength="8"></label>
+                    <p class="note">Abra a página oficial, entre na sua conta e copie o endereço do link “Abrir o aplicativo” (clique direito ou toque longo).</p>
+                    <div class="actions"><button type="button" id="moodle-mobile-open" class="icon-ghost" aria-label="Abrir entrada oficial do Moodle" title="Abrir entrada oficial do Moodle"></button></div>
+                    <label>Chave ou link móvel<input id="moodle-token" type="password" autocomplete="off" required minlength="8"></label>
+                    <p class="note">A chave móvel pode ter permissões amplas; o AraHub usa apenas funções de leitura.</p>
                     <div
                       class="actions"><button type="submit" id="moodle-submit" class="primary" aria-label="Conectar Moodle" title="Conectar Moodle"></button><button type="button" id="moodle-cancel-renewal" class="icon-ghost" aria-label="Cancelar renovação" title="Cancelar renovação" hidden></button></div>
                   </form>

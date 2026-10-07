@@ -406,9 +406,11 @@ Deno.test("positiveId e limites de cursos", async () => {
 });
 
 Deno.test("forum: paginacao de discussoes e validacao de limites", async () => {
-  const discussions = [1, 2, 3].map((id) => ({ discussion: id, name: "d" + id }));
+  const discussions = [1, 2, 3].map((id) => ({ id: 100 + id, discussion: id, name: "d" + id }));
   const { adapter } = adapterWith(siteFirst(() => json({ discussions, warnings: [] })));
   const page = await adapter.getForumDiscussions(9, { page: 0, perPage: 3 });
+  assert.equal(page.data?.[0].discussion_id, 1);
+  assert.equal(page.data?.[0].first_post_id, 101);
   assert.equal(page.data?.length, 3);
   assert.equal(page.pagination?.has_more, true);
   assert.equal(page.pagination?.per_page, 3);
