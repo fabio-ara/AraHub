@@ -4,6 +4,19 @@ import { asOwner, type Db } from "./db.ts";
 import { type Delta, HubError, type Principal, type Provider } from "./contracts.ts";
 import { preferenceSchema, resolvePreferences } from "./preferences.ts";
 import { studyGraphPage } from "./study_graph.ts";
+import type postgres from "postgres";
+
+/** Technical fixtures are selected by their declared scope, never title/body.
+ * The narrow mobile signature recognizes an older acceptance fixture format.
+ * Records remain available by explicit context ID, history and full export.
+ */
+function syntheticContexts(tx: postgres.TransactionSql, owner: string) {
+  return tx`select id from public.hub_contexts where owner_id=${owner} and (
+    scope->>'environment' in ('synthetic','synthetic-host-lab','test')
+    or scope->>'purpose'='acceptance-test'
+    or (scope->>'purpose'='validation' and scope->>'surface'='mobile'
+      and scope->>'run' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-skill-[0-9]+[.][0-9]+[.][0-9]+$'))`;
+}
 
 export const deltaSchema = z.object({
   idempotency_key: z.string().min(8).max(200),
@@ -115,7 +128,7 @@ export class Hub {
       };
     }
   }
-  context(p: Principal, id?: string, offset = 0, deltaOffset = 0) {
+  context(p: Principal, id?: string, offset = 0, deltaOffset = 0, includeSynthetic = false) {
     if (
       !Number.isSafeInteger(offset) || offset < 0 ||
       !Number.isSafeInteger(deltaOffset) || deltaOffset < 0 || (id && offset !== 0)
@@ -123,7 +136,9 @@ export class Hub {
     return asOwner(this.db, p, async (tx) => {
       const candidates = id
         ? await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} and id=${id}`
-        : await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} order by updated_at desc,id limit 21 offset ${offset}`;
+        : await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId}
+          and (${includeSynthetic} or id not in (${syntheticContexts(tx, p.ownerId)}))
+          order by updated_at desc,id limit 21 offset ${offset}`;
       const contexts = candidates.slice(0, 20);
       if (id && !contexts.length) throw new HubError("not_found", "Registro não encontrado.", 404);
       const ids = contexts.map((c) => c.id as string);
@@ -143,6 +158,11 @@ export class Hub {
         connections,
         coverage: {
           memory: "persisted",
+          memory_scope: id
+            ? "explicit_context"
+            : includeSynthetic
+            ? "including_declared_tests"
+            : "personal_excluding_declared_tests",
           contexts: candidates.length > 20 ? "partial" : "complete",
           deltas: deltas.length > 50 ? "partial" : "complete",
           sources:
@@ -152,17 +172,22 @@ export class Hub {
       };
     });
   }
-  search(p: Principal, query: string, offset = 0) {
+  search(p: Principal, query: string, offset = 0, includeSynthetic = false) {
     if (!query.trim() || query.length > 300 || !Number.isSafeInteger(offset) || offset < 0) {
       throw new HubError("invalid_query", "Consulta inválida.");
     }
     return asOwner(this.db, p, async (tx) => {
       const rows =
-        await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version from public.hub_deltas where owner_id=${p.ownerId} and (to_tsvector('simple',content) @@ plainto_tsquery('simple',${query}) or content ilike ${
+        await tx`select id,context_id,kind,content,evidence_kind,scope,preference,provenance,version from public.hub_deltas where owner_id=${p.ownerId}
+          and (${includeSynthetic} or context_id not in (${syntheticContexts(tx, p.ownerId)}))
+          and (to_tsvector('simple',content) @@ plainto_tsquery('simple',${query}) or content ilike ${
           "%" + query + "%"
         }) order by recorded_at desc,id limit 21 offset ${offset}`;
       const contexts =
-        await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId} and title ilike ${
+        await tx`select id,title,scope,version,updated_at from public.hub_contexts where owner_id=${p.ownerId}
+          and (${includeSynthetic} or id not in (${
+          syntheticContexts(tx, p.ownerId)
+        })) and title ilike ${
           "%" + query + "%"
         } order by updated_at desc,id limit 21 offset ${offset}`;
       return {
@@ -171,6 +196,9 @@ export class Hub {
         next_offset: rows.length > 20 || contexts.length > 20 ? offset + 20 : null,
         record_next_offset: rows.length > 20 ? offset + 20 : null,
         context_next_offset: contexts.length > 20 ? offset + 20 : null,
+        memory_scope: includeSynthetic
+          ? "including_declared_tests"
+          : "personal_excluding_declared_tests",
         content_is_untrusted_data: true,
       };
     });
@@ -180,7 +208,8 @@ export class Hub {
     const instant = at ? z.string().datetime({ offset: true }).parse(at) : new Date().toISOString();
     return asOwner(this.db, p, async (tx) => {
       const all =
-        await tx`select id,context_id,content,evidence_kind,scope,preference,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and kind='preference' and scope <@ ${
+        await tx`select id,context_id,content,evidence_kind,scope,preference,provenance,version,recorded_at from public.hub_deltas where owner_id=${p.ownerId} and kind='preference'
+          and context_id not in (${syntheticContexts(tx, p.ownerId)}) and scope <@ ${
           tx.json(checkedScope)
         } order by recorded_at desc,id limit 201`;
       return resolvePreferences(all, instant);
@@ -290,8 +319,7 @@ export class Hub {
         await tx`select id,content_id,content_hash,provenance,coverage,occurred_at,source_modified_at,observed_at,recorded_at from public.hub_observation_timeline where owner_id=${p.ownerId} and entity_id=${id} order by observed_at desc,id desc limit 5`;
       // A timeline preserva cada ocorrência, inclusive a revisita A→B→A, com a data
       // da própria ocorrência; o corpo vem do snapshot deduplicado por hash.
-      const [current] =
-        await tx`select (e.state->'provider_record' = o.content) as matches_current,
+      const [current] = await tx`select (e.state->'provider_record' = o.content) as matches_current,
           (e.state ? 'provider_record') as provider_record_present
           from public.hub_entities e
           left join lateral (select content from public.hub_observation_timeline
