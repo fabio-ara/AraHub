@@ -841,18 +841,46 @@ export class Materials {
         : ["Binário preservado; extração por página ainda não disponível."],
       source_coverage: downloaded.coverage,
     };
-    const file = await asOwner(
-      this.hub.db,
-      p,
-      async (tx) =>
-        (await tx`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content,extracted_text,extraction) values(${p.ownerId},${entity.id},${binary.filename},${binary.mimetype},${binary.sha256},${binary.byte_length},${
-          Buffer.from(binary.bytes)
-        },${binary.text ?? null},${
+    // The Edge runtime cannot serialize a large bytea parameter without
+    // exceeding its worker memory limit. Keep one transaction and append
+    // bounded parameters; a failed request rolls back the incomplete file.
+    const file = await asOwner(this.hub.db, p, async (tx) => {
+      const stored =
+        (await tx`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content,extracted_text,extraction) values(${p.ownerId},${entity.id},${binary.filename},${binary.mimetype},${binary.sha256},${binary.byte_length},decode('', 'hex'),${
+          binary.text ?? null
+        },${
           tx.json(extraction)
-        }) on conflict(owner_id,entity_id,sha256) do update set name=excluded.name returning id,entity_id,sha256,bytes,mime_type,extraction`)[
+        }) on conflict(owner_id,entity_id,sha256) do update set name=excluded.name returning id,entity_id,sha256,bytes,mime_type,extraction,octet_length(binary_content)::integer as stored_bytes`)[
           0
-        ],
-    );
+        ];
+      if (!stored) {
+        throw new HubError("material_unavailable", "Não foi possível guardar o arquivo.", 503);
+      }
+      const storedBytes = Number(stored.stored_bytes);
+      if (storedBytes !== binary.byte_length) {
+        if (storedBytes !== 0) {
+          throw new HubError(
+            "material_conflict",
+            "Arquivo já guardado com tamanho divergente.",
+            409,
+          );
+        }
+        const chunkBytes = 1024 * 1024;
+        for (let offset = 0; offset < binary.byte_length; offset += chunkBytes) {
+          const chunk = Buffer.from(binary.bytes.subarray(offset, offset + chunkBytes));
+          await tx`update public.hub_files set binary_content = binary_content || ${chunk}::bytea where owner_id=${p.ownerId} and id=${stored.id}`;
+        }
+      }
+      const verified =
+        (await tx`select octet_length(binary_content)::integer as stored_bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as stored_sha from public.hub_files where owner_id=${p.ownerId} and id=${stored.id}`)[
+          0
+        ];
+      if (
+        !verified || Number(verified.stored_bytes) !== binary.byte_length ||
+        verified.stored_sha !== binary.sha256
+      ) throw new HubError("material_conflict", "Verificação do arquivo guardado falhou.", 409);
+      return stored;
+    });
     await asOwner(this.hub.db, p, async (tx) => {
       await tx`insert into public.hub_observations(owner_id,entity_id,content,content_hash,provenance,coverage,observed_at) values(${p.ownerId},${entity.id},${
         tx.json({ file_id: file.id, sha256: binary.sha256, bytes: binary.byte_length })
