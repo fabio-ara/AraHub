@@ -10,6 +10,8 @@ Visão já explicitada: AraHub será um segundo cérebro acadêmico e uma ferram
 
 Horizonte adicional confirmado pelo titular, mesmo se omitido no futuro pacote: **retirar as ferramentas próprias de escrita Google** na refatoração, sem caminho legado ou fallback para elas. O projeto deve enxugar partes periféricas e aprofundar Moodle e memória acadêmica. Foi pensado para acompanhar muitos anos de vida acadêmica: preservação durável, recuperação inteligível e acesso futuro ao conhecimento são critérios centrais, inclusive quando fontes, cursos, organização e interpretações mudarem. A implementação atual de escrita Google é evidência histórica versionada, não requisito a conservar. Ao removê-la, tratar conscientemente dados já guardados e autorizações existentes; não apagar material privado por efeito colateral. Definir a arquitetura concreta após ler o pacote novo.
 
+`AraHub-Entrega-1.zip` apareceu na raiz em 2026-10-07 e foi excluído do Git. Não foi aberto nem aplicado nesta sessão; o titular ainda enviará o prompt da nova sessão para orientar sua leitura.
+
 ## Mandato e autorizações
 
 Executar até limites reais da sessão/ferramentas/permissões, sem parar ao concluir uma fatia. Requisitos e provas em docs/ACEITE.md; consultar a especificação pertinente do bootstrap privado. Engenharia/local/sintéticos autorizados; fontes e projetos irmãos somente leitura. Dados/credenciais/bootstrap ficam fora do Git.
