@@ -16,12 +16,14 @@ Google do AraHub abaixo registram capacidades estreitas já implementadas, sem
 demonstrar paridade com os plugins oficiais. A matriz original permanece visível
 para que nenhuma lacuna seja apagada por mudança de foco.
 
-Nesta revisão, o MCP ganhou consulta dirigida e paginada de discussões/postagens
-Moodle e acesso por cursor a todas as versões de observação preservadas, com
-trechos limitados e isolamento. O grafo de estudo agora separa a seção atual de
-vínculos históricos após deslocamento de módulo. Prova local: 242 testes e
-instalação SQL limpa com 12 migrations; ainda falta a conexão Moodle real no
-projeto hospedado e a atualização do pacote pessoal.
+O MCP pessoal hospedado já lê a conexão Moodle real: dois cursos, estrutura,
+fóruns, discussões e postagens, sem alterar a fonte. O backend v20 usa DNS/IP
+validado e TLS com verificação de nome no Edge. A entrada guiada pelo fluxo
+móvel oficial está publicada no Pages; usa uma sessão Moodle do próprio usuário
+e pode criar a chave quando o serviço móvel permite. A instalação SQL local tem
+12 migrations; as onze primeiras foram reconciliadas no projeto hospedado.
+Sincronização durável real, preservação de PDFs acadêmicos e operação recorrente
+mantêm gates próprios.
 
 | ID | Capacidade | Estado local | Prova real / pendência |
 |---|---|---|---|
@@ -40,9 +42,9 @@ projeto hospedado e a atualização do pacote pessoal.
 | A13 | Autoria e versão publicada | Comparação por rascunho explícito/observação Moodle qualificada, autoria/cobertura e diferenças testadas em SQL | Comparação em conta real/HTML ainda precisa de prova específica; não presume equivalência semântica |
 | A14 | Reabertura | Estado independente; refresh SQL/fixture muda visibilidade false→true→false preservando relato/observações, sem progresso monotônico | Visibilidade não prova devolução; reabertura/devolução Moodle reais pendentes |
 | A15 | Fusos e datas vagas | MCP hub_time_context por IDs/observação, IANA/DST Lisboa/São Paulo, dia inteiro/fuso desconhecido/fim indeterminado; quatro testes normalização/SQL/SDK aprovados | Backend f5cadcb implantado, função ACTIVE v17 e metadados do plugin atualizados. Conversa ChatGPT nova leu prazo e dia inteiro sintéticos com fusos/incerteza; sem trace bruto ou datas acadêmicas atuais. Sem UI de planejamento nova |
-| A16 | Moodle real | Adaptador próprio + fixtures | Prova real local de leitura e pequeno arquivo; renovação HTTP/SQL sintética preserva identidade/histórico e respeita desconexão; renovação real/IP remoto pendentes |
+| A16 | Moodle real | Adaptador próprio + fixtures e fluxo guiado de chave móvel | Conexão no Supabase próprio e MCP pessoal leram dois cursos, 11 seções, 50 módulos, seis fóruns e discussões/postagens com cobertura completa nas consultas realizadas; metadados de PDF visíveis. Preservação hospedada de arquivo acadêmico e renovação real ainda pendentes |
 | A17 | Outro Moodle | Fixtures de subdiretório/funções faltantes; banco IDs colidentes | Segunda instalação/IFSP não comprovados |
-| A18 | Erros/cobertura/cursor | Curso Moodle retoma discussão/posts após reinício/esgotamento, percorre além de 50 fóruns/páginas e trata reordenação; lease por chave impede lotes simultâneos e cerca respostas tardias; cursor não avança em partial | Orçamento/timeout hospedados e medição real pendentes |
+| A18 | Erros/cobertura/cursor | Curso Moodle retoma discussão/posts após reinício/esgotamento, percorre além de 50 fóruns/páginas e trata reordenação; lease por chave impede lotes simultâneos e cerca respostas tardias; cursor não avança em partial | Consultas dirigidas hospedadas deram cobertura completa para os cursos/fóruns/postagens amostrados. Lote durável real, orçamento/timeout hospedados e medição real pendentes |
 | A19 | Google múltiplas contas | OAuth/HTTP persistente, conta verificada, cofre/CAS/epoch, callback tardio e aliases OIDC/negação parcial testados | App próprio Externo/Testing configurado; conta institucional com nove permissões confirmadas após OAuth incremental de escrita Docs/Sheets/Slides. Segunda conta real pendente |
 | A20 | Cursores/refresh Google | Gmail/Calendar/Drive com paginação/checkpoints/expiração/historyId exato e MCP SDK; 16 testes, lease por chave e reconfiguração concorrente recusada; orçamento restante limita páginas de leitura | Refresh real CAS 1→2, duas páginas reais de Gmail/Drive sem duplicação e Calendar inicial→incremental com cursor durável comprovados. Janela Calendar sem eventos; alterações de conteúdo, falhas/expiração reais, segunda conta e operação durável pendentes |
 | A21 | Docs/Sheets/Slides nativos | Leitura nativa; criação de planilha com células tipadas/fórmulas locais; edição Docs e novo slide/caixa/texto com revisão atômica em fixture; prévia integral operada em dois viewports | No lote hospedado aprovado, três recursos sintéticos privados foram criados e lidos; Doc recebeu texto, Sheets conservou tipos/fórmula A4=5 e Slides recebeu slide/caixa/texto com geometria conferida. Edição de células existentes continua pendente |
@@ -53,7 +55,7 @@ projeto hospedado e a atualização do pacote pessoal.
 | A26 | Regressão acadêmica | 4 verificações privadas/10 cenários; cliente MCP novo recuperou 109 registros com referências e documento bruto | Dez cenários revisados semanticamente, 34 referências cobertas nas fontes. Os dois cenários corrigidos foram repetidos em conversa nova com Skill 1.0.3 instalada, sem inserir sua orientação no prompt; marco/valor, precisão temporal e distinções do trabalho coletivo preservados. Revisão de preferências legadas e virada permanecem separadas |
 | A27 | Backup e virada | Staging export/restore; dump restaurado em banco novo, 14 tabelas/binários/RLS/grants conferidos | Snapshot nativo hospedado restaurado em banco local novo: onze tabelas/fingerprints, 59 binários/hash (57 originais + duas observações Google), RLS e isolamento. Restore Auth do provedor, revisão final e virada pendentes |
 | A28 | MCP remoto/OAuth | Cliente SDK HTTP local e adaptador do gateway/assinaturas/sessão revogada sintéticos | HTTPS/discovery, autorização-code/PKCE nativos, MCP SDK novo e sessão revogada comprovados com usuários sintéticos; titular confirmou e-mail/consentimento e consultou a conta por ChatGPT em nova conversa. Extensão móvel dispensada pelo titular em 2026-10-06, sem prova no telefone |
-| A29 | Celular/web | Design AraLearn MIT, coluna até 430 px e ícones; Chrome/viewport móvel/formulários/aprovação/temas/exportação/saída e inspeção visual; Pages/PKCE/consentimento/CSP e cadastro/renovação Moodle HTTPS em fixture | Web/viewport comprovados; teste em smartphone/app real e delta entre superfícies dispensados pelo titular em 2026-10-06. Não foram executados nem contam como aprovados |
+| A29 | Celular/web | Design AraLearn MIT, coluna até 430 px e ícones; Chrome/viewport móvel/formulários/aprovação/temas/exportação/saída e inspeção visual; Pages/PKCE/consentimento/CSP e cadastro/renovação Moodle HTTPS em fixture | Fluxo de link móvel guiado, extração somente da chave Web Service e QA visual/funcional sintética em 390/1280 px aprovados; interface autenticada hospedada mostra a conexão Moodle e o novo controle. Teste em smartphone/app real dispensado pelo titular; não foi executado nem conta como aprovado |
 | A30 | Operação sustentável | Jobs/retries/cobertura/retomada/lease/fencing; medição por tentativa de duração/chamadas despachadas/memória compartilhada amostrada, quatro testes e 48 regressões aprovados. SDK mede volume lógico só do dono | Calendar delimitado real: uma chamada/359 ms, heap compartilhado amostrado, RSS indisponível=null; métricas iguais no recibo e hub_jobs persistido. Não comprova todas as fontes, falhas reais ou pico. Painel Free/cotas e tamanho físico por consulta administrativa conferidos separadamente; contagem de gestão OAuth não faz parte do lote. Sem garantia de uptime/cron; limites de conteúdo seguem explícitos |
 
 Evidência real em `.private/evidence/`; nunca transportar dados pessoais para testes/CI públicos. STATUS e relatório de validação registram comandos e contagens executadas. Requisitos parciais continuam no plano sem redução de escopo.
