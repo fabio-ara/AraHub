@@ -71,6 +71,39 @@ A15: `hub_time_context` lê datas por IDs qualificados, observação/cobertura/p
 
 Fixture A11/A15: dois vínculos e três recursos exclusivamente sintéticos foram inseridos no projeto próprio depois de reconciliação de IDs, exercitados pelo MCP/ChatGPT e removidos por transação com guardas de dono, nomes, IDs e descendentes. Recibo de limpeza: zero contextos/conexões/entidades temporários. Fingerprints das onze tabelas do dono iguais ao snapshot anterior; dados privados importados e contexto móvel preservados. Evidência privada em .private/evidence/reconciliation-hosted-*/ e .private/evidence/time-context-hosted-client-proof.json. Próximo passo executável está em .private/cloud/RESUME-CURRENT.json.
 
+Correção posterior do MCP: `hub_file_text` e `hub_search_documents` também
+deixaram de anexar o vetor completo de páginas à resposta. Commit `2391cee`,
+função AraHub ACTIVE v23; checks raiz/Edge e 13 testes dirigidos passaram,
+scan do índice Git sem achados. O cliente MCP hospedado devolveu trecho de 120
+caracteres e 20 resultados de busca sem campo `pages`; o acesso dirigido por
+ID/hash/página permanece disponível. O conteúdo acadêmico não foi publicado.
+
+Serviço público: o titular escolheu **preparar para aprovação**, sem abrir
+inscrições. A leitura administrativa do Auth hospedado confirmou
+`disable_signup=true`, confirmação de e-mail ativa e ausência de SMTP, CAPTCHA
+e login social; prova sanitizada em
+`.private/evidence/public-service-auth-preflight.json`. Auditoria estática
+encontrou RLS por dono, mas nenhuma cota por pessoa nem exclusão com tratamento
+de backups; falta segunda conta real consentida. A FK que bloqueava apagar
+`auth.users` foi corrigida na 13ª migration: exclusão local de usuário
+sintético limpou todas as tabelas por dono sem afetar o segundo; instalação
+limpa de 13 migrations passou. No Supabase hospedado, registro/FK foram
+conferidos e 22 PDFs permanecem; nenhuma conta real foi apagada. Provas em
+`.private/evidence/public-service-delete-cascade-hosted-proof.json` e
+`.private/fresh-install/`. O cadastro por e-mail padrão
+não atende visitantes e o diretório do ChatGPT tem revisão/políticas próprias,
+inclusive risco para conector Moodle não oficial com chave móvel. Proposta de
+ativação, limites e gates em `docs/LOTE-SERVICO-PUBLICO.md`; roteiro já utilizável
+por contas autorizadas em `docs/INSTALAR-MCP-SEM-CODEX.md`. Próximo passo: fixar
+provedor de entrada, custos, cotas e retenção com o titular antes de implementar
+abertura; continuar fechada a instância pessoal. Diretório público, convite,
+faturamento e agendamento seguem sem autorização.
+
+O titular informou que outro chat prepara um pacote de refatoração ampla do
+modelo, com testes em ambiente de demonstração. O pacote ainda não foi
+recebido; quando chegar, auditar o mandato novo contra o estado real antes de
+estimar prazo ou iniciar outra mudança estrutural.
+
 ## Retomada sem este chat
 
 Leia este arquivo, Git e documentos da etapa. Configuração/autorizações/IDs/evidência operacional em .private/cloud/CHECKPOINT.json; bootstrap privado conserva contrato, docs/ACEITE.md conserva gates. Bancos de instalação/restore/staging e snapshots têm nomes únicos e foram preservados. Servidor local/comandos no README; fontes irmãs intactas. Não importar fixtures no domínio privado real ou trocar chaves do cofre.

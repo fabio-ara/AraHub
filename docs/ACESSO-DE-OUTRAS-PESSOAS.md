@@ -42,6 +42,11 @@ configurar seu Auth e suas cotas sem acessar os dados do titular.
 
 ## Lote para eventual serviço público
 
+O titular escolheu **preparar** esse serviço para revisão, sem aprovar sua
+abertura. A proposta, gates, custos ainda não resolvidos e o caminho de
+instalação pessoal sem Codex estão em
+[Preparação do serviço público](LOTE-SERVICO-PUBLICO.md).
+
 Antes de alterar a instância pessoal, apresentar ao titular o provedor de
 entrada escolhido, eventual custo e conta responsável, domínio/redirecionamentos,
 política de retenção/exclusão, limites de uso e prova de isolamento com uma

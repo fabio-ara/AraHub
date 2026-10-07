@@ -11,6 +11,7 @@ Instância inicial: [interface](https://fabio-ara.github.io/AraHub/) e
 pelo administrador e confirmação por e-mail; inscrições públicas estão fechadas.
 O código público permite hospedar outras instâncias, sem acesso aos dados desta.
 [Entrada de outras pessoas e limites da instância atual](docs/ACESSO-DE-OUTRAS-PESSOAS.md).
+[Instalação pessoal do MCP sem Codex para contas autorizadas](docs/INSTALAR-MCP-SEM-CODEX.md).
 
 Para ligar o Moodle sem terminal ou Codex, entre na interface e abra Conexões → Moodle.
 Informe o endereço HTTPS da instalação e use o ícone de entrada: ele abre o fluxo móvel

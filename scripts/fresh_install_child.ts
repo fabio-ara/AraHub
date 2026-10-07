@@ -1,5 +1,5 @@
 // Filho do gate A01. Roda sob um DENO_DIR novo e lock congelado, cria um banco
-// local exclusivo, aplica a identidade sintética e as onze migrations e então
+// local exclusivo, aplica a identidade sintética e as migrations atuais e então
 // exercita o servidor MCP pelo SDK oficial em transporte HTTP. Não é implantação
 // hospedada nem Auth real: identidade, banco e tokens são sintéticos e locais.
 //
@@ -53,7 +53,7 @@ try {
     if (file.isFile && file.name.endsWith(".sql")) migrations.push(file.name);
   }
   migrations.sort();
-  check(migrations.length === 11, `Esperadas 11 migrations, encontradas ${migrations.length}.`);
+  check(migrations.length > 0, "Nenhuma migration encontrada.");
   for (const file of migrations) {
     const sql = await Deno.readTextFile(new URL(`../supabase/migrations/${file}`, import.meta.url));
     await db.begin(async (tx) => {

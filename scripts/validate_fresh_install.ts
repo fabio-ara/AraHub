@@ -3,7 +3,7 @@
 // Orquestra um processo filho (scripts/fresh_install_child.ts) sob um DENO_DIR
 // novo, criado exclusivamente em .private/fresh-install/, com lock congelado.
 // Isso prova que as dependências travadas são baixadas do zero e não vêm de
-// cache algum; o filho então aplica as onze migrations em um banco local novo e
+// cache algum; o filho então aplica as migrations atuais em um banco local novo e
 // exercita o servidor MCP pelo SDK oficial em transporte HTTP.
 //
 // Uso (a partir da raiz do repositório):
@@ -17,6 +17,11 @@ import { fileURLToPath } from "node:url";
 
 const RESULT_MARKER = "ARAHUB_FRESH_RESULT ";
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const expectedMigrations = [];
+for await (const file of Deno.readDir(join(ROOT_DIR, "supabase", "migrations"))) {
+  if (file.isFile && file.name.endsWith(".sql")) expectedMigrations.push(file.name);
+}
+expectedMigrations.sort();
 
 async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -126,7 +131,11 @@ await Deno.writeTextFile(
 );
 
 const required: [string, unknown][] = [
-  ["migrations_applied=11", result?.migrations_applied === 11],
+  ["migrations_applied=current", result?.migrations_applied === expectedMigrations.length],
+  [
+    "migration_names=current",
+    JSON.stringify(result?.migrations) === JSON.stringify(expectedMigrations),
+  ],
   ["rls_verified", result?.rls_verified === true],
   ["two_owners_verified", result?.two_owners_verified === true],
   ["idempotency_verified", result?.idempotency_verified === true],
