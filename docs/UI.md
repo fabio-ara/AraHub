@@ -26,6 +26,8 @@ remoção não altera registros, vigência, fontes ou ferramentas MCP.
   HTML e outros formatos oferecem download; conteúdo HTML/SVG nunca é executado
   no domínio da interface. Mais itens entram automaticamente conforme a rolagem.
   Não há controles de extração ou processamento. Versões e ocorrências são preservadas.
+  A listagem inclui recursos e artefatos acadêmicos; o arquivo histórico do repositório
+  e snapshots técnicos Google continuam na memória, sem ocupar esta biblioteca.
 - **Novo acesso Moodle:** formulário próprio pelo ícone de adicionar, sem cartão
   expansível na tela de conexões. A orientação de entrada fica na ajuda contextual.
 - **Ações acadêmicas:** tela focada de aprovação descrita abaixo. Intenções pendentes

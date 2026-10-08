@@ -231,8 +231,8 @@ async function loadLibrary(append = false) {
     libraryLoaded = true;
     for (const file of page.files as LibraryFile[]) {
       const size = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(
-        file.bytes / 1024 / 1024,
-      ) + " MB";
+        file.bytes < 1024 * 1024 ? file.bytes / 1024 : file.bytes / 1024 / 1024,
+      ) + (file.bytes < 1024 * 1024 ? " KB" : " MB");
       const detail = [file.source, size].filter(Boolean).join(" · ");
       const entry = card(safeFileName(file.name), detail);
       entry.classList.add("material-row");

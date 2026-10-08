@@ -23,13 +23,15 @@ export class Library {
     const rows = await asOwner(this.db, p, (tx) =>
       tx`
       select f.id,f.name,f.mime_type,f.sha256,f.bytes,
-        e.title as source_title,c.label as source,
+        e.title as source_title,
+        case when c.provider='migration' then '' else c.label end as source,
         (f.bytes between 1 and ${LIBRARY_MAX_BYTES}
           and octet_length(f.binary_content)=f.bytes) as available
       from public.hub_files f
       join public.hub_entities e on e.owner_id=f.owner_id and e.id=f.entity_id
       join public.hub_connections c on c.owner_id=e.owner_id and c.id=e.connection_id
       where f.owner_id=${p.ownerId} and f.binary_content is not null
+        and e.kind in ('resource','artifact')
         and (${after ?? null}::uuid is null or f.id>${after ?? null}::uuid)
       order by f.id limit 21`);
     return {

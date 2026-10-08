@@ -20,6 +20,17 @@ Deno.test("biblioteca: sessão web real assinada, partes íntegras, paginação,
     await db`insert into auth.users(id) values(${p.ownerId}),(${other.ownerId})`;
     const connection = await hub.connect(p, "migration", "Biblioteca sintética", null, "fixture");
     const entity = await hub.entity(p, connection.id, "resource", "library", "Material sintético");
+    const legacy = await hub.entity(
+      p,
+      connection.id,
+      "source_document",
+      "old-repo",
+      "Memória importada",
+    );
+    await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content)
+      values(${p.ownerId},${legacy.id},'verificar.py','text/plain',${hash},${bytes.length},${
+      Buffer.from(bytes)
+    })`;
     const [file] =
       await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content)
       values(${p.ownerId},${entity.id},'material.pdf','application/pdf',${hash},${bytes.length},${
@@ -35,6 +46,10 @@ Deno.test("biblioteca: sessão web real assinada, partes íntegras, paginação,
     const first = await library.list(p);
     const second = await library.list(p, first.next_id);
     assert.equal(first.files.length, 20);
+    assert.ok(first.files.every((f) => f.source === "" && f.name !== "verificar.py"));
+    const [preserved] =
+      await db`select count(*)::integer as n from public.hub_files where entity_id=${legacy.id}`;
+    assert.equal(preserved.n, 1);
     assert.equal(second.files.length, 2);
     assert.equal(second.next_id, null);
     assert.equal(new Set([...first.files, ...second.files].map((f) => f.id)).size, 22);
