@@ -4,7 +4,7 @@ Moodle e memória acadêmica longitudinal por MCP. O AraHub permite consultar cu
 discussões e retomar, com proveniência, o contexto histórico antes mantido no METD/GitHub. Código
 novo MIT; materiais acadêmicos e dados de usuários conservam seus direitos.
 
-Implementação em desenvolvimento: Postgres com RLS, referências por usuário/conexão, deltas
+A instância pessoal está em produção: Postgres com RLS, referências por usuário/conexão, deltas
 idempotentes e versões concorrentes, MCP Streamable HTTP, adaptador Moodle e memória privada
 importada. **O uso cotidiano ocorre no ChatGPT pelo plugin AraHub.** A interface auxiliar reúne
 entrada, conexão segura do Moodle, preferências, exportação e aprovação de ações. Para Gmail,
@@ -23,6 +23,13 @@ administrador e confirmação por e-mail; inscrições públicas estão fechadas
 hospedar outras instâncias, sem acesso aos dados desta.
 [Entrada de outras pessoas e limites da instância atual](docs/ACESSO-DE-OUTRAS-PESSOAS.md).
 [Instalação pessoal do MCP sem Codex para contas autorizadas](docs/INSTALAR-MCP-SEM-CODEX.md).
+
+Para usar a conta já conectada, converse no ChatGPT com o plugin AraHub: “Retome meu contexto e os
+materiais desta atividade” ou “Encontre o fórum da disciplina e mostre o caminho e o link direto”.
+Arquivos produzidos na conversa podem ser preservados no AraHub; publicações e entregas acadêmicas
+passam pela revisão da ação na interface. A memória está disponível entre conversas. Atualizações
+do Moodle são feitas quando solicitadas; o acompanhamento automático fora da conversa ainda não
+está ativo na instância inicial.
 
 Para ligar o Moodle sem terminal ou Codex, entre na interface e abra Conexões → Moodle. Informe o
 endereço HTTPS da instalação e use o ícone de entrada: ele abre o fluxo móvel oficial do Moodle.
