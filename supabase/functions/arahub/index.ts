@@ -5,6 +5,7 @@ import { ConnectionService } from "../../../src/connections.ts";
 import { TokenVault } from "../../../src/adapters/token_vault.ts";
 import { PersistentActionStore } from "../../../src/approval_store.ts";
 import { OwnSubmissionStatusPolicies } from "../../../src/own_submission_status.ts";
+import { MaterialTransfers } from "../../../src/material_transfer.ts";
 const required = (name: string) => {
   const v = Deno.env.get(name);
   if (!v) throw new Error(`Configuração ausente: ${name}`);
@@ -53,5 +54,11 @@ const edgeHandler = createEdgeHandler(hub, auth, base, connections, {
   supabaseUrl: required("SUPABASE_URL"),
   publishableKey: required("ARAHUB_PUBLISHABLE_KEY"),
   actions: new PersistentActionStore(db, { sessionActive: auth.sessionActive }),
+  materialTransfers: MaterialTransfers.configured(
+    db,
+    base,
+    auth,
+    Deno.env.get("ARAHUB_MATERIAL_TRANSFER_KEY"),
+  ),
 });
 Deno.serve(createSupabaseGatewayHandler(edgeHandler, base));

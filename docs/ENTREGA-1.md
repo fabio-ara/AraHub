@@ -51,9 +51,26 @@ consulta não autoriza upload nem entrega. Prova de Lab não amplia consentiment
 
 DOCX/HTML têm extração estruturada e fila durável. O executor local roda fora da
 requisição MCP, com timeout e preservação da melhor representação do mesmo hash.
-Vídeo usa ferramentas locais separadas. Uma extração concluída não comprova
-leitura humana; fala transcrita não comprova análise visual. Não existe executor
-remoto nem agendamento recorrente ativo por efeito desta implementação.
+Vídeo pode usar ferramentas locais separadas ou o ambiente hospedado do cliente,
+quando este realmente oferecer execução. `hub_material_transfer` prepara a
+transferência privada de um binário íntegro próprio para esse ambiente, com ID,
+hash, até 128 MiB e validade de cinco minutos. A capacidade usa chave separada,
+cabeçalho (nunca query string), sessão/cliente ativos e RLS em cada chunk de 1 MiB.
+A revogação interrompe chunks posteriores; não apaga bytes já recebidos. O cliente
+não segue redirecionamentos, não registra o cabeçalho e confere tamanho/hash antes
+de analisar. Esta ferramenta exige `ARAHUB_MATERIAL_TRANSFER_KEY` protegida de
+32 bytes em base64; ausente a chave, ferramenta e rota ficam indisponíveis.
+
+Uma extração concluída não comprova leitura humana; fala transcrita não comprova
+análise visual. O protocolo MCP transporta conteúdo e ferramentas; a inferência
+depende de capacidades efetivas do cliente. O caminho pessoal de vídeo exige
+custo adicional zero e qualidade em português de Portugal: modelos leves são
+provisórios, não critério de aceitação. Validar um modelo maior (primeiro candidato:
+Whisper `large-v3` integral) com trecho real, termos acadêmicos, nomes, omissões e
+tempos; registrar modelo/hash, parâmetros, cobertura sonora/visual e lacunas.
+Preservar a representação anterior e ancorar a derivada no hash da fonte.
+Execução hospedada durante uma conversa não comprova recorrência ou disponibilidade
+ilimitada. Não existe agendamento recorrente ativo por efeito desta implementação.
 
 Cadastro público, outros LMS, papéis docentes no produto e marketplace ficam
 para depois. Isso não reduz os critérios de isolamento, recuperação, fóruns,

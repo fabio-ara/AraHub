@@ -7,6 +7,7 @@ import { TokenVault } from "./adapters/token_vault.ts";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { PersistentActionStore } from "./approval_store.ts";
 import { OwnSubmissionStatusPolicies } from "./own_submission_status.ts";
+import { MaterialTransfers } from "./material_transfer.ts";
 
 const mode = Deno.env.get("APP_MODE") ?? "configured";
 const synthetic = mode === "synthetic";
@@ -64,6 +65,12 @@ const handler = createHandler(hub, {
   supabaseUrl: Deno.env.get("SUPABASE_URL"),
   publishableKey: Deno.env.get("SUPABASE_PUBLISHABLE_KEY"),
   syntheticLogin,
+  materialTransfers: MaterialTransfers.configured(
+    db,
+    publicUrl,
+    auth,
+    Deno.env.get("ARAHUB_MATERIAL_TRANSFER_KEY"),
+  ),
   connections: vault
     ? new ConnectionService(
       hub,

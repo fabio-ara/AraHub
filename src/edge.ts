@@ -3,6 +3,7 @@ import { type AuthConfig, createVerifier } from "./auth.ts";
 import { createHandler } from "./http.ts";
 import type { ConnectionService } from "./connections.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
+import type { MaterialTransfers } from "./material_transfer.ts";
 
 /** Supabase terminates TLS and forwards /<function>/... over HTTP to the runtime. */
 export function createSupabaseGatewayHandler(
@@ -52,6 +53,7 @@ export function createEdgeHandler(
     supabaseUrl?: string;
     publishableKey?: string;
     actions?: PersistentActionStore;
+    materialTransfers?: MaterialTransfers;
   },
 ) {
   const base = new URL(publicUrl);
@@ -76,6 +78,7 @@ export function createEdgeHandler(
     verify: createVerifier(auth),
     connections,
     actions: ui?.actions,
+    materialTransfers: ui?.materialTransfers,
   });
   return async (req: Request) => {
     const original = new URL(req.url);

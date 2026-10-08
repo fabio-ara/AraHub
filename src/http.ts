@@ -8,6 +8,7 @@ import { Sync } from "./sync.ts";
 import { z } from "zod";
 import type { PersistentActionStore } from "./approval_store.ts";
 import { Materials } from "./materials.ts";
+import type { MaterialTransfers } from "./material_transfer.ts";
 
 interface HttpConfig {
   auth: Pick<AuthConfig, "resource" | "issuer">;
@@ -18,6 +19,7 @@ interface HttpConfig {
   syntheticLogin?: () => Promise<string>;
   connections?: ConnectionService;
   actions?: PersistentActionStore;
+  materialTransfers?: MaterialTransfers;
 }
 export function createHandler(hub: Hub, config: HttpConfig) {
   return async (req: Request): Promise<Response> => {
@@ -37,6 +39,9 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           product: "AraHub",
           state: "service_available",
         });
+      }
+      if (u.pathname === "/api/material-transfer" && config.materialTransfers) {
+        return await config.materialTransfers.download(req);
       }
       if (
         u.pathname === "/.well-known/oauth-protected-resource" ||
@@ -104,9 +109,17 @@ export function createHandler(hub: Hub, config: HttpConfig) {
             p,
             config.connections,
             config.actions,
+            config.materialTransfers,
           );
         }
-        return await handleMcp(req, hub, p, config.connections, config.actions);
+        return await handleMcp(
+          req,
+          hub,
+          p,
+          config.connections,
+          config.actions,
+          config.materialTransfers,
+        );
       }
       if (
         u.pathname === "/api/actions" && req.method === "GET" && config.actions

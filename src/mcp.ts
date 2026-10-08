@@ -14,6 +14,7 @@ import { PreservedMaterials } from "./preserved_materials.ts";
 import { Artifacts, hostFileSchema } from "./artifacts.ts";
 import { MoodleActions, moodleActionSchema } from "./moodle_actions.ts";
 import { DocumentMaterials } from "./document_materials.ts";
+import type { MaterialTransfers } from "./material_transfer.ts";
 import {
   acknowledgeReadSchema,
   Attention,
@@ -28,8 +29,9 @@ export async function handleMcp(
   principal: Principal,
   connections?: ConnectionService,
   actions?: PersistentActionStore,
+  materialTransfers?: MaterialTransfers,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.2.4" });
+  const server = new McpServer({ name: "arahub", version: "0.2.5" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {
@@ -45,6 +47,19 @@ export async function handleMcp(
     }
   };
   const artifacts = new Artifacts(hub);
+  if (materialTransfers) {
+    server.registerTool(
+      "hub_material_transfer",
+      {
+        description:
+          "Obtém acesso privado por cinco minutos a um binário próprio já preservado (até 128 MiB), para transferência direta ao ambiente do cliente, fora da UI. Exige ID/hash; não transfere credenciais Moodle. Use URL e cabeçalho somente em requisição HTTPS sem redirecionamentos, sem exibir/registrar o cabeçalho; valide bytes/SHA-256 antes de analisar. Não abrir link no navegador, acionar download/Salvar como ou mudar preferências. Obter bytes não comprova análise. Para áudio PT-PT, modelos leves são provisórios; validar modelo e trecho reais. Não autoriza serviços pagos ou recorrência.",
+        inputSchema: { file_id: z.string().uuid(), sha256: z.string().regex(/^[a-f0-9]{64}$/) },
+        annotations: read,
+      },
+      (a: { file_id: string; sha256: string }) =>
+        response(() => materialTransfers.prepare(principal, a.file_id, a.sha256)),
+    );
+  }
   const attention = new Attention(hub);
   server.registerTool(
     "hub_attention",
