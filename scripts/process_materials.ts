@@ -128,6 +128,36 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Preserve the prior derived text before replacing a transcription of the same source. */
+export async function archiveAsrRevision(directory: string): Promise<string | null> {
+  const files: Array<{ name: string; bytes: Uint8Array; sha256: string }> = [];
+  for (const name of ["transcription.json", "transcript.srt", "extraction.json", "text.txt"]) {
+    try {
+      const bytes = await Deno.readFile(directory + "/" + name);
+      files.push({ name, bytes, sha256: await sha256Hex(bytes) });
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound)) throw e;
+    }
+  }
+  if (!files.length) return null;
+  const manifest = files.map(({ name, sha256, bytes }) => ({ name, sha256, bytes: bytes.length }));
+  const revision = await sha256Hex(new TextEncoder().encode(JSON.stringify(manifest)));
+  const destination = directory + "/history/" + revision;
+  await Deno.mkdir(destination, { recursive: true });
+  for (const file of files) {
+    try {
+      await Deno.writeFile(destination + "/" + file.name, file.bytes, { createNew: true });
+    } catch (e) {
+      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+      if (await sha256Hex(await Deno.readFile(destination + "/" + file.name)) !== file.sha256) {
+        throw new Error("Histórico de ASR divergente; reprocessamento interrompido.");
+      }
+    }
+  }
+  await Deno.writeTextFile(destination + "/manifest.json", JSON.stringify(manifest, null, 2));
+  return revision;
+}
+
 type Kind = "docx" | "html" | "pdf" | "video" | "audio" | "unsupported";
 
 function kindOf(extension: string): Kind {
@@ -305,6 +335,7 @@ async function main(): Promise<void> {
     const prior = previous.get(sha);
     if (
       prior && !options.force &&
+      !(options.transcribe && (kind === "video" || kind === "audio")) &&
       !(options.reprocessMedia && (kind === "video" || kind === "audio")) &&
       prior.version === EXTRACTOR_VERSION &&
       await fileExists(targetDir + "/extraction.json")
@@ -409,9 +440,10 @@ async function main(): Promise<void> {
         : null;
       const captionsInFile = probe.text_subtitle_streams > 0;
       const canReuseAsr = cachedTranscription !== null &&
-        shouldReuseTranscription(cachedStamp, expectedStamp) &&
+        (!options.transcribe || shouldReuseTranscription(cachedStamp, expectedStamp)) &&
         await fileExists(targetDir + "/transcript.srt");
       const needsAsr = options.transcribe && !captionsInFile && !canReuseAsr;
+      if (needsAsr) await archiveAsrRevision(targetDir);
       const result = await processVideo(path, {
         probe,
         byteLength: bytes.byteLength,

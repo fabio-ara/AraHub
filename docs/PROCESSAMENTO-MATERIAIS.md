@@ -8,6 +8,15 @@ e declara o que ficou de fora. É
 genérico: não contém dados de usuários, nomes, trechos de fonte acadêmica nem
 contas.
 
+O cliente hospedado também pode receber o binário privado pela ponte descrita
+em [ENTREGA-1.md](ENTREGA-1.md), processá-lo com suas capacidades efetivas e
+registrar texto derivado no AraHub. Esse caminho não usa a CPU do Edge para ASR.
+Qualidade PT-PT, latência e RAM são avaliadas juntas numa amostra real; tamanho
+do modelo e benchmarks de outra máquina não substituem essa avaliação. Uma
+passagem rápida pode orientar refinamento seletivo, mantendo cobertura, lacunas
+e versões. Fonte: [faster-whisper](https://github.com/SYSTRAN/faster-whisper) e
+[anúncio oficial do Whisper Turbo](https://github.com/openai/whisper/discussions/2363).
+
 ## Escopo implementado
 
 Três arquivos novos, sem alterar a integração raiz (`src/materials.ts`,
@@ -337,9 +346,13 @@ Para mídia, o CLI acrescenta a transcrição e os quadros:
 - `--transcribe` liga o ASR local **só quando o arquivo não tem legenda** (a
   legenda da fonte tem precedência);
 - `--transcribe` exige `--model` e `--model-sha` explícitos; não escolhe `base`
-  nem reaproveita implicitamente o pin histórico. Modelos leves não satisfazem
-  o critério de qualidade PT-PT; uma execução ASR permanece não revisada até
-  conferência do áudio. Modelo e hash são conferidos antes de executar;
+  nem reaproveita implicitamente o pin histórico. Uma passagem com modelo rápido
+  é provisória e precisa de avaliação de qualidade PT-PT; uma execução ASR permanece
+  não revisada até conferência do áudio. Modelo e hash são conferidos antes de executar;
+- uma nova transcrição compara o cache por motor/modelo/idioma, mesmo quando o
+  manifesto de extração já existe. Antes de substituir ASR, os textos e metadados
+  anteriores ficam em `history/<hash-da-representação>/`, com hashes individuais.
+  Repetições preservam a mesma versão; histórico divergente interrompe a escrita.
 - `--frames N` grava quadros PNG privados nos meios dos segmentos de fala (ou
   distribuídos pela duração quando não há transcrição), com `frames/frames.json`
   descrevendo instante, tamanho e sha256;
@@ -505,7 +518,10 @@ leitura "completa".
 
 ## Disponibilidade de ASR
 
-### Operação local (implementada e executada)
+### Ensaio local histórico (não é a seleção atual de modelo)
+
+O recibo abaixo preserva a primeira prova de execução. Não recomenda o modelo
+`base` para português de Portugal nem autoriza reaproveitá-lo implicitamente.
 
 | Verificação | Resultado |
 |---|---|
@@ -523,18 +539,34 @@ do pin é recusado (`model_integrity`) e um modelo inválido falha com
 `asr_failed`, nunca virando transcrição. Nenhum áudio, vídeo ou transcrição sai
 da máquina: o filtro roda em CPU (`use_gpu=false`) sobre o arquivo preservado.
 
-### Recurso remoto (pendente de decisão)
+### Processamento no cliente hospedado
 
-O que **não** está resolvido é o processamento autônomo, sem a máquina do
-titular ligada. O runtime hospedado (Supabase Edge: 2 s de CPU, 256 MB, sem Web
-Worker API) não sustenta decodificação/transcrição pesada, como já registrado
-para PDF; e o modelo de ~148 MB e a transcrição em CPU não cabem nesse
-orçamento. A decisão de infraestrutura continua sendo uma só: **executor local
-dedicado** (a máquina que já roda o CLI, com o modelo pinado) ou **serviço de
-transcrição explicitamente autorizado** (custo/escopo próprios). Nenhum dos dois
-foi contratado ou presumido; a operação local é o caminho comprovado até aqui, e
-uma rotina prometida como recorrente só é chamada ativa com executor e
-agendamento autorizados.
+O Edge transfere o binário privado em partes verificáveis; o ambiente hospedado
+do cliente executa ASR e análise visual. O consumidor Work demonstrou essa
+transferência e a execução de `large-v3` completo via faster-whisper/CTranslate2
+em INT8, com fala real PT-PT. A concordância entre saídas não certifica a
+transcrição. O recibo privado distingue custo de preparação, carga, inferência,
+RAM e cobertura; não se extrapola o desempenho medido para qualquer arquivo.
+
+Na fonte ensaiada, uma passagem sem VAD produziu texto suspeito na cauda de
+baixa energia e um tempo além da duração. A revisão com Silero VAD eliminou essa
+saída mantendo as orientações acadêmicas. As duas versões permanecem distintas.
+Verificar os limites temporais e os trechos selecionados/omitidos é obrigatório
+para interpretar o resultado: VAD detecta provável fala, não relevância, e não
+substitui a análise visual dos intervalos sem fala.
+
+Para vídeos curtos, a execução integral otimizada pode ser suficiente. Para
+fontes longas, avaliar uma passagem rápida de contexto e refinamento dos trechos
+relevantes, mantendo amostras de conferência fora deles. Dividir o texto derivado
+em intervalos identificados e consultar apenas as partes necessárias evita
+colocar transcrições inteiras na janela do modelo. Preservar o bruto, uma síntese
+separada e lacunas explícitas; a síntese não substitui o material completo.
+
+Esse caminho usa os recursos já disponíveis no cliente, sem serviço de ASR pago.
+Depende das capacidades e limites efetivos da conversa; não promete execução
+ilimitada, persistência dos pesos entre sessões ou agenda automática. Novas
+sessões podem precisar obter o modelo novamente. A execução em conversa não
+ativa recorrência nem comprova comportamento depois de fechar o cliente.
 
 ## Limitações e pendências
 
@@ -549,8 +581,8 @@ agendamento autorizados.
 - Vídeo: legenda é da fonte e não verificada contra o áudio; idiomas não são
   detectados (o idioma é declarado por quem chama); legendas de imagem exigem
   OCR; quadro isolado é material para inspeção, não análise visual.
-- ASR local: exige `ffmpeg` com o filtro `whisper`, o modelo ggml presente
-  (~148 MB, fora do Git) e uma máquina ligada; a saída não foi revisada por
+- ASR local: exige `ffmpeg` com o filtro `whisper`, o modelo ggml explicitamente
+  selecionado e presente (fora do Git) e uma máquina ligada; a saída não foi revisada por
   humano e pode errar nomes, números, ortografia e pontuação — a acurácia **não**
   é verificada por este pipeline (`accuracy_verified:false`); `queue` é uma **duração** no
   ffmpeg 9.0.1 (não uma contagem) e o valor usado foi conferido pela cobertura
