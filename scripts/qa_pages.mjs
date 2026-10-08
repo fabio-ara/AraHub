@@ -113,6 +113,13 @@ try {
         let path = url.pathname.slice("/AraHub/".length);
         if (!path || path.endsWith("/")) path += "index.html";
         if (!files.has(path)) return route.abort();
+        if (["ui/app.js", "ui/theme.js", "ui/style.css"].includes(path)) {
+          assert.match(
+            url.searchParams.get("v") ?? "",
+            /^[a-f0-9]{64}$/,
+            "assets versionados evitam mistura com cache anterior",
+          );
+        }
         return route.fulfill({
           status: 200,
           contentType: path.endsWith(".js")

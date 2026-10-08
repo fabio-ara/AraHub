@@ -128,11 +128,17 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
       /name="arahub-api-base" content="https:\/\/api\.invalid\/functions\/v1\/arahub"/,
     );
     assert.ok(
-      index.includes('href="/AraHub/ui/style.css"'),
+      index.includes(
+        `href="/AraHub/ui/style.css?v=${
+          onDisk.files.find((f) => f.path === "ui/style.css")!.sha256
+        }"`,
+      ),
       "CSS absoluto com prefixo",
     );
     assert.ok(
-      index.includes('src="/AraHub/ui/app.js"'),
+      index.includes(
+        `src="/AraHub/ui/app.js?v=${onDisk.files.find((f) => f.path === "ui/app.js")!.sha256}"`,
+      ),
       "bundle absoluto com prefixo",
     );
     assert.ok(
@@ -154,11 +160,25 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
 
     const privacy = await Deno.readTextFile(new URL("privacy.html", directory));
     assert.ok(index.includes('href="/AraHub/privacy.html"'));
-    assert.ok(privacy.includes('href="/AraHub/ui/style.css"'));
+    assert.ok(
+      privacy.includes(
+        `href="/AraHub/ui/style.css?v=${
+          onDisk.files.find((f) => f.path === "ui/style.css")!.sha256
+        }"`,
+      ),
+    );
     assert.ok(privacy.includes('name="referrer" content="no-referrer"'));
-    assert.ok(privacy.includes('src="/AraHub/ui/theme.js"'));
+    assert.ok(
+      privacy.includes(
+        `src="/AraHub/ui/theme.js?v=${onDisk.files.find((f) => f.path === "ui/theme.js")!.sha256}"`,
+      ),
+    );
     assert.ok(privacy.includes("script-src 'self'"));
-    assert.ok(index.includes('src="/AraHub/ui/theme.js"'));
+    assert.ok(
+      index.includes(
+        `src="/AraHub/ui/theme.js?v=${onDisk.files.find((f) => f.path === "ui/theme.js")!.sha256}"`,
+      ),
+    );
     assert.ok(index.indexOf("/ui/theme.js") < index.indexOf("/ui/style.css"));
     assert.doesNotMatch(privacy, /app\.js/);
     const copies = await Promise.all(
@@ -193,8 +213,8 @@ Deno.test("raiz sem subpath mantém caminhos absolutos simples", async () => {
     const index = await Deno.readTextFile(
       new URL("index.html", new URL(result.directory)),
     );
-    assert.ok(index.includes('href="/ui/style.css"'));
-    assert.ok(index.includes('src="/ui/app.js"'));
+    assert.match(index, /href="\/ui\/style\.css\?v=[a-f0-9]{64}"/);
+    assert.match(index, /src="\/ui\/app\.js\?v=[a-f0-9]{64}"/);
     assert.ok(!index.includes("/AraHub/"));
   } finally {
     await cleanup();

@@ -142,3 +142,7 @@ da interface, em `.private/evidence/ui/`.
 A QA do Pages verifica paginação automática e alinhamento da biblioteca. Não aciona
 os controles de abrir/baixar. `tests/library_test.ts` verifica a transferência diretamente
 pela API, com banco SQL, JWT assinado, isolamento, revogação, integridade e limites.
+
+O pacote Pages usa URLs de JS/CSS com SHA-256 do conteúdo na consulta `v`,
+compartilhadas por entrada, callbacks e Privacidade. Uma atualização não reutiliza
+a URL do bundle anterior em cache. Nenhuma preferência do navegador é alterada.

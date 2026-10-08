@@ -143,7 +143,7 @@ function contentSecurityPolicy(
 
 function buildIndex(
   html: string,
-  params: { apiBase: string; assetPrefix: string; csp: string },
+  params: { apiBase: string; assetPrefix: string; csp: string; versions: Record<string, string> },
 ): Uint8Array {
   const charset = '<meta charset="utf-8">';
   const apiMarker = '<meta name="arahub-api-base" content="">';
@@ -172,9 +172,15 @@ function buildIndex(
       apiMarker,
       `<meta name="arahub-api-base" content="${escapeAttribute(params.apiBase)}">`,
     )
-    .replace(styleHref, `href="${params.assetPrefix}/ui/style.css"`)
-    .replace(scriptSrc, `src="${params.assetPrefix}/ui/app.js"`)
-    .replace('src="/ui/theme.js"', `src="${params.assetPrefix}/ui/theme.js"`)
+    .replace(
+      styleHref,
+      `href="${params.assetPrefix}/ui/style.css?v=${params.versions["style.css"]}"`,
+    )
+    .replace(scriptSrc, `src="${params.assetPrefix}/ui/app.js?v=${params.versions["app.js"]}"`)
+    .replace(
+      'src="/ui/theme.js"',
+      `src="${params.assetPrefix}/ui/theme.js?v=${params.versions["theme.js"]}"`,
+    )
     .replace('href="/privacy.html"', `href="${params.assetPrefix}/privacy.html"`);
   return encode(prepared);
 }
@@ -190,12 +196,26 @@ export async function prepareUiPackage(
   const deployRoot = options.deployRoot ??
     new URL("../.private/deploy/", import.meta.url);
 
+  // A changed document must never reuse a previous build's cached JS/CSS URL.
+  const assets = Object.fromEntries(
+    await Promise.all(
+      ["app.js", "theme.js", "style.css"].map(async (name) =>
+        [name, await Deno.readFile(new URL(name, source))] as const
+      ),
+    ),
+  );
+  const versions = Object.fromEntries(
+    await Promise.all(
+      Object.entries(assets).map(async ([name, bytes]) => [name, await sha256Hex(bytes)]),
+    ),
+  );
   const html = buildIndex(
     await Deno.readTextFile(new URL("index.html", source)),
     {
       apiBase: options.apiBase,
       assetPrefix: ui.basePath,
       csp: contentSecurityPolicy(backendOrigin, identityOrigin),
+      versions,
     },
   );
   const files: [string, Uint8Array][] = [
@@ -204,17 +224,23 @@ export async function prepareUiPackage(
       "privacy.html",
       encode(
         (await Deno.readTextFile(new URL("privacy.html", source)))
-          .replace('href="/ui/style.css"', `href="${ui.basePath}/ui/style.css"`)
-          .replace('src="/ui/theme.js"', `src="${ui.basePath}/ui/theme.js"`),
+          .replace(
+            'href="/ui/style.css"',
+            `href="${ui.basePath}/ui/style.css?v=${versions["style.css"]}"`,
+          )
+          .replace(
+            'src="/ui/theme.js"',
+            `src="${ui.basePath}/ui/theme.js?v=${versions["theme.js"]}"`,
+          ),
       ),
     ],
-    ["ui/theme.js", await Deno.readFile(new URL("theme.js", source))],
-    ["ui/app.js", await Deno.readFile(new URL("app.js", source))],
+    ["ui/theme.js", assets["theme.js"]],
+    ["ui/app.js", assets["app.js"]],
     [
       "ui/pdf-parser.worker.js",
       await Deno.readFile(new URL("pdf-parser.worker.js", source)),
     ],
-    ["ui/style.css", await Deno.readFile(new URL("style.css", source))],
+    ["ui/style.css", assets["style.css"]],
     [".nojekyll", new Uint8Array(0)],
     ["oauth/consent/index.html", html],
     ["oauth/callback/index.html", html],
