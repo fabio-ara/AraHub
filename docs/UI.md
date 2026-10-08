@@ -1,12 +1,16 @@
 # Interface do AraHub
 
-Superfície auxiliar mínima do AraHub: acesso, conexões Moodle com saúde, preferências
-por escopo legíveis, exportação privada e uma tela focada de aprovação acadêmica. O uso
+Superfície auxiliar mínima do AraHub: acesso, conexões Moodle, biblioteca de materiais, exportação privada
+e uma tela focada de aprovação acadêmica. O uso
 cotidiano continua no chat; a interface não é um painel de operações técnicas.
 
 Arquivos: `web/index.html`, `web/app.ts`, `web/action_preview.ts`, `web/style.css`,
 `web/privacy.html`, `web/theme.ts` e `web/icons.ts`. O bundle `web/app.js` é gerado e ignorado pelo Git
 (`deno task web:build`).
+
+Preferências e revisão de registros importados pertencem à memória e ao fluxo do
+assistente. A interface não oferece nem carrega a antiga lista “para revisar”. Sua
+remoção não altera registros, vigência, fontes ou ferramentas MCP.
 
 ## Superfícies
 
@@ -15,15 +19,18 @@ Arquivos: `web/index.html`, `web/app.ts`, `web/action_preview.ts`, `web/style.cs
 - **Conexões:** lista as conexões Moodle do dono. O estado normal fica em ícone com
   nome acessível e dica; falhas de acesso continuam visíveis quando exigem atenção. Renovar, atualizar cursos e
   desconectar agem sobre a origem Moodle; nenhum estado prova frescor da fonte.
-- **Preferências:** lê `GET /api/preferences?scope={}` e apresenta o que está vigente,
-  os conflitos e o que exige revisão humana, com escopo, vigência e situação em português.
 - **Exportação privada:** `GET /api/export` mostra o JSON do dono; credenciais têm
   recuperação separada e nunca entram na exportação.
-- **PDFs:** tela própria, acessível pelo ícone de documento quando disponível.
+- **Materiais:** biblioteca dos originais preservados, com nome, origem e tamanho. Abrir
+  (PDF, imagens, texto e áudio/vídeo compatíveis) e baixar são ícones à direita. DOCX,
+  HTML e outros formatos oferecem download; conteúdo HTML/SVG nunca é executado
+  no domínio da interface. Mais itens entram automaticamente conforme a rolagem.
+  Não há controles de extração ou processamento. Versões e ocorrências são preservadas.
 - **Novo acesso Moodle:** formulário próprio pelo ícone de adicionar, sem cartão
   expansível na tela de conexões. A orientação de entrada fica na ajuda contextual.
 - **Ações acadêmicas:** tela focada de aprovação descrita abaixo. Intenções pendentes
-  abrem essa tela na entrada; sem ações, não há aviso vazio na tela inicial.
+  abrem essa tela na entrada; sem ações pendentes ou resultado incerto, o acesso fica oculto.
+  Operações aposentadas e estados terminais não aparecem nessa tela; o histórico permanece na memória.
 
 ## Remoção da operação Google própria
 
@@ -37,16 +44,18 @@ não ocupam a configuração das conexões ativas.
 ## Contrato de dados consumido
 
 - `GET /api/config` → `synthetic`, `canConnectMoodle`, `canApproveActions`,
-  `canExtractPdf`.
+  `canBrowseMaterials`.
 - `GET /api/context` → `contexts`, `deltas`, `connections`, `coverage`.
-- `GET /api/preferences?scope=<JSON>` → `hub.preferences(p, scope)`: `applicable`,
-  `history` (com `status`), `conflicts`, `contextual_overrides`, `review_required`,
-  `coverage`, `at`. A interface chama com `scope={}`.
 - `GET /api/actions` → lista de `{ action, state }` do dono.
 - `POST /api/actions/approve` e `POST /api/actions/deny` → `{ action_id,
   content_hash, statement_accepted }`.
 - `POST /api/connections/moodle`, `POST /api/connections/disconnect`,
-  `POST /api/sync/moodle-courses`, `POST /api/pdf/*`.
+  `POST /api/sync/moodle-courses`.
+- `POST /api/library/list` → até 20 originais e cursor; `POST /api/library/part` →
+  parte de até 1 MiB, vinculada ao dono, ID e SHA-256. Sessão pessoal revalidada em
+  cada parte, sem credencial em URL. O cliente recusa truncamento e confere o hash
+  completo antes de abrir ou baixar; limite de 128 MiB por original. Rotas de extração
+  PDF existentes permanecem disponíveis, mas não são chamadas pela biblioteca.
 
 ### Conteúdo da ação acadêmica
 
@@ -75,11 +84,9 @@ técnicos no fluxo; hashes (`sha256`, `fingerprint`) não aparecem na revisão h
 
 ### Operações não reconhecidas
 
-Operação fora das três acadêmicas vira **registro histórico**, sem conteúdo cru:
-"Operação aposentada" quando a origem não é `moodle.*` (por exemplo, a escrita Google
-retirada) ou "Operação não reconhecida" quando é `moodle.*` sem revisão nesta interface.
-Nos dois casos os botões de autorizar e recusar ficam **indisponíveis**: esta interface
-não aprova legado.
+Operações aposentadas não são renderizadas. Uma operação Moodle desconhecida ainda
+pendente mostra que não pode ser revisada nesta interface e não oferece aprovação.
+Nenhum registro histórico é removido do banco.
 
 ## Aprovação acadêmica
 
@@ -103,7 +110,7 @@ os rótulos visíveis e cartões que a versão anterior introduziu.
 Todas as telas usam a mesma coluna de até 460 px e altura de 100dvh, com cabeçalho
 fixo, margens alinhadas, rodapé reservado e conteúdo rolável sem encolher controles.
 As listas são linhas simples. Botões medem 44 × 44 px, com `aria-label`, título,
-foco visível e estados habilitado/selecionado. Permissões e declaração de autoria
+foco visível e estados habilitado/selecionado. Grupos de ações ficam alinhados à direita. Permissões e declaração de autoria
 continuam explícitas na revisão da ação, sem mudar os controles de autorização.
 
 O tema claro/escuro/sistema é inicializado antes do CSS pelo bundle compartilhado
@@ -126,9 +133,12 @@ node scripts/qa_ui.mjs
 ```
 
 `scripts/qa_ui.mjs` sobe um navegador isolado com fixtures sintéticos (nenhuma conta
-real) e cobre login, conexões, preferências com escopo/conflito/revisão via
-`/api/preferences`, renovação Moodle pelo link móvel, aprovação das três ações
-acadêmicas com `statement_accepted` correto, operação retirada como registro histórico
-com botões indisponíveis, texto hostil não executado, ausência de Google e de JSON cru,
+real) e cobre login, conexões, ausência da revisão interna de preferências,
+renovação Moodle pelo link móvel, aprovação das três ações
+acadêmicas com `statement_accepted` correto, ausência das operações aposentadas, texto hostil não executado, ausência de Google e de JSON cru,
 exportação e saída. As capturas usam o retorno nativo do instrumento e são gravadas fora
 da interface, em `.private/evidence/ui/`.
+
+A QA do Pages verifica paginação automática e alinhamento da biblioteca. Não aciona
+os controles de abrir/baixar. `tests/library_test.ts` verifica a transferência diretamente
+pela API, com banco SQL, JWT assinado, isolamento, revogação, integridade e limites.

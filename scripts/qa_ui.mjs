@@ -241,7 +241,7 @@ try {
       }));
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
-    let renewed = false;
+    let renewed = false, terminalOnly = false;
     const approved = new Set();
     const decisions = [];
     await page.route("**/*", async (route) => {
@@ -258,7 +258,7 @@ try {
           synthetic: false,
           canConnectMoodle: true,
           canApproveActions: true,
-          canExtractPdf: false,
+          canBrowseMaterials: false,
           canAuthorizeOwnStatus: true,
           supabaseUrl: base + "/identity-fixture",
           publishableKey: "public-synthetic-key",
@@ -313,50 +313,7 @@ try {
         });
       }
       if (url.pathname === "/api/preferences") {
-        assert.equal(url.searchParams.get("scope"), "{}");
-        const netiqueta = {
-          id: "p-1",
-          content: "Escrever respostas em português formal.",
-          scope: { course: "Direito Constitucional" },
-          preference: {
-            key: "netiqueta no fórum",
-            state: "active",
-            valid_from: "2026-09-01T00:00:00.000Z",
-          },
-          status: "current",
-        };
-        const pdf = {
-          id: "p-2",
-          content: "Entregar sempre em PDF.",
-          scope: { course: "Direito Constitucional" },
-          preference: { key: "formato de entrega", state: "active" },
-          status: "current",
-        };
-        const docx = {
-          id: "p-3",
-          content: "Entregar em DOCX quando pedido.",
-          scope: {},
-          preference: { key: "formato de entrega", state: "active" },
-          status: "current",
-        };
-        const legacy = {
-          id: "p-4",
-          content: "Prefiro respostas curtas.",
-          scope: {},
-          preference: null,
-          evidence_kind: "user_report",
-          status: "legacy_requires_review",
-        };
-        return reply({
-          at: "2026-10-07T12:00:00.000Z",
-          coverage: "complete",
-          applicable: [netiqueta],
-          history: [netiqueta, pdf, docx, legacy],
-          contextual_overrides: ["p-3"],
-          conflicts: [{ key: "formato de entrega", ids: ["p-2", "p-3"] }],
-          review_required: [pdf, docx, legacy],
-          content_is_untrusted_data: true,
-        });
+        assert.fail("A configuração não deve carregar revisão interna de preferências.");
       }
       if (url.pathname === "/api/connections/moodle") {
         const input = request.postDataJSON();
@@ -370,7 +327,11 @@ try {
         return reply({ format: "arahub-export-v1", data: "fixture-only" });
       }
       if (url.pathname === "/api/actions") {
-        return reply(actionList(approved));
+        return reply(
+          terminalOnly
+            ? actionList(approved).filter((a) => a.state === "succeeded")
+            : actionList(approved),
+        );
       }
       if (
         url.pathname === "/api/actions/approve" ||
@@ -491,7 +452,7 @@ try {
     );
     assert.equal(
       (await page.locator("#privacy").boundingBox()).x,
-      (await page.locator("#connections-tab").boundingBox()).x,
+      (await page.locator("#logout").boundingBox()).x,
     );
     await page.getByRole("button", { name: "Status das minhas entregas", exact: true }).click();
     await page.getByRole("dialog").waitFor();
@@ -501,43 +462,13 @@ try {
     await writeFile(new URL(`own-status-${viewport.width}.png`, folder), await page.screenshot());
     await page.getByRole("button", { name: "Cancelar", exact: true }).click();
     const connectionTitleBox = await page.locator("#connections-view h2").boundingBox();
-    // Preferences come from the scoped endpoint: valid scopes, conflicts, review.
-    await page.getByRole("button", { name: "Preferências", exact: true }).click();
-    await page.locator("#preferences-view").waitFor({ state: "visible" });
-    await checkGeometry("preferences");
-    const preferenceTitleBox = await page.locator("#preferences-view h2").boundingBox();
-    assert.equal(preferenceTitleBox.y, connectionTitleBox.y);
-    assert.equal(preferenceTitleBox.height, connectionTitleBox.height);
-    const preferenceSummary = await page.locator("#preference-summary").textContent();
-    assert.match(
-      preferenceSummary,
-      /1 vigente\(s\), 1 conflito\(s\), 1 para revisar/,
-    );
-    assert.ok(
-      preferenceSummary.includes("1 sobreposto(s) por escopo mais específico"),
-    );
-    assert.ok(!preferenceSummary.includes("visões recentes"));
-    const preferenceText = await page.locator("#preference-list").textContent();
-    assert.ok(preferenceText.includes("netiqueta no fórum"));
-    assert.ok(preferenceText.includes("Escrever respostas em português formal."));
-    assert.ok(preferenceText.includes("Escopo: course=Direito Constitucional."));
-    assert.ok(preferenceText.includes("Conflito: formato de entrega"));
-    assert.ok(preferenceText.includes("Entregar sempre em PDF."));
-    assert.ok(preferenceText.includes("Entregar em DOCX quando pedido."));
-    assert.ok(preferenceText.includes("Prefiro respostas curtas."));
-    assert.ok(
-      preferenceText.includes(
-        "Situação: registro antigo sem chave, requer revisão.",
-      ),
-    );
-    await writeFile(
-      new URL(`preferences-${viewport.width}.png`, folder),
-      await page.screenshot({ fullPage: true, animations: "disabled" }),
-    );
-    await page.getByRole("button", { name: "Conexões", exact: true }).click();
-
+    assert.equal(await page.getByRole("button", { name: "Preferências", exact: true }).count(), 0);
+    assert.equal(await page.locator("#preferences-view, #preference-summary").count(), 0);
     // Moodle renewal through the official mobile link.
     await page.getByRole("button", { name: "Adicionar Moodle", exact: true }).click();
+    const moodleTitleBox = await page.locator("#moodle-view h2").boundingBox();
+    assert.equal(moodleTitleBox.y, connectionTitleBox.y);
+    assert.equal(moodleTitleBox.height, connectionTitleBox.height);
     await page.locator("#moodle-origin").click();
     await page.locator("#moodle-origin").fill("fixture@example.invalid");
     assert.equal(await page.locator("#moodle-origin").inputValue(), "");
@@ -668,28 +599,12 @@ try {
       { exact: true },
     ).waitFor();
 
-    const history = page.locator("#action-history");
-    assert.equal(await history.getAttribute("open"), null);
-    await history.locator("summary").click();
-    const legacy = history.locator(".action-card");
-    const legacyText = await legacy.textContent();
-    assert.ok(legacyText.includes("Operação aposentada"));
-    assert.ok(!legacyText.includes("docs_insert_text"));
-    assert.ok(legacyText.includes("não autoriza nem executa esta operação"));
-    // The retired operation keeps no raw content and cannot be authorized.
-    assert.ok(!legacyText.includes("window.__sourceExecuted"));
-    assert.equal(
-      await legacy.getByRole("button", {
-        name: "Autorizar esta ação",
-        exact: true,
-      }).count(),
-      0,
-    );
-    assert.equal(
-      await legacy.getByRole("button", { name: "Recusar ação", exact: true })
-        .count(),
-      0,
-    );
+    assert.equal(await page.locator("#action-history").count(), 0);
+    assert.equal(await page.getByText("Operação aposentada", { exact: true }).count(), 0);
+    terminalOnly = true;
+    await page.getByRole("button", { name: "Atualizar visão", exact: true }).click();
+    await page.locator("#connections-view").waitFor({ state: "visible" });
+    await page.locator("#actions-tab").waitFor({ state: "hidden" });
     assert.equal(await page.evaluate(() => window.__sourceExecuted), undefined);
     assert.equal(decisions.length, 3);
     assert.equal(
@@ -748,7 +663,7 @@ try {
     await page.getByRole("button", { name: "Sair", exact: true }).click();
     await page.locator("#login").waitFor({ state: "visible" });
     assert.equal(await page.locator("#export-content").textContent(), "");
-    assert.equal(await page.locator("#preference-list").textContent(), "");
+    assert.equal(await page.locator("#preference-list").count(), 0);
     receipts.push({
       viewport,
       login: "provider_stub",
@@ -757,7 +672,7 @@ try {
       academic_assignment_files: "http_stub",
       academic_forum_reply_without_statement: "http_stub",
       retired_operation_historical: true,
-      preferences_scoped_endpoint: true,
+      preference_review_removed_from_configuration: true,
       hostile_text_not_executed: true,
       google_ui_absent: true,
       raw_technical_json_absent: true,

@@ -374,3 +374,25 @@ pre {
   font-size: .875rem;
   color: var(--text-secondary);
 }
+
+.actions {
+  justify-content: flex-end;
+}
+#library-status {
+  min-height: 24px;
+  padding-block: 12px;
+}
+.material-row h3 {
+  font-variant-caps: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: .9rem;
+}
+
+.material-row > p {
+  color: var(--text-secondary);
+  font-size: .875rem;
+}
+.screen-footer {
+  justify-content: flex-end;
+}

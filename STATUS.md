@@ -1,6 +1,8 @@
 # Estado do AraHub
 
-Atualizado em 2026-10-08. **Versão 0.2.7 liberada para uso pessoal cotidiano.** Backend e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
+Atualizado em 2026-10-08. **Versão 0.2.8 preparada para publicação após correção da biblioteca; versão 0.2.7 liberada para uso pessoal cotidiano.** Backend e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
+
+Correção corrente: biblioteca simples de materiais preservados com abrir/baixar, ações à direita e paginação automática; Preferências e histórico de operações aposentadas retirados da interface sem alteração da memória. Leitura privada em partes, sessão pessoal, RLS e conferência do hash completo. Sete testes de transferência/biblioteca passaram e ambos os roteiros de UI passaram em desktop/viewport móvel. Publicação e conferência hospedada desta correção ainda pendentes neste checkpoint; a interface vigente é a registrada abaixo.
 
 Correção visual solicitada pelo titular: removidos cartões de configuração e textos de bastidor; botões só com ícones e nomes acessíveis; telas próprias para Moodle/PDFs; geometria comum e tema persistente também em Privacidade. Validação local: 11 testes dirigidos e os dois roteiros de navegador em desktop/viewport móvel, incluindo aprovações, PDF, consentimento, retorno e recarga em tema escuro. Interface publicada pelo Pages a partir de `4d991fe`, com sete assets conferidos por SHA-256. Na conta real, o Chrome normal confirmou sessão preservada, troca de telas, títulos alinhados e Privacidade em tema escuro após retorno e recarga. Backend e dados inalterados.
 

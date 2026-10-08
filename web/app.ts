@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
 import { actionReview, describeAction } from "./action_preview.ts";
-import { extractClientPdf, PDF_CLIENT_MAX_BYTES } from "./pdf_client.ts";
+import { type LibraryFile, previewMime, readLibraryFile, safeFileName } from "./library.ts";
 import { moodleMobileLaunchUrl, parseMoodleMobileLink } from "./moodle_mobile.ts";
 const siteBase = new URL("../", import.meta.url).href;
 const route = (path: string) => sitePath(siteBase, path);
@@ -40,7 +40,7 @@ function labeledButton(label: string, variant: string) {
 }
 for (
   const [id, icon, label] of [
-    ["pdf-tab", "book-text", "PDFs"],
+    ["pdf-tab", "book-open", "Materiais"],
     ["actions-tab", "ready-state", "Ações acadêmicas"],
     ["moodle-add", "account-add", "Adicionar Moodle"],
     ["moodle-back", "arrow-left", "Voltar às conexões"],
@@ -55,12 +55,10 @@ for (
     ["moodle-cancel-renewal", "remove-state", "Cancelar renovação"],
     ["approve", "ready-state", "Permitir"],
     ["deny", "remove-state", "Recusar"],
-    ["pdf-more", "book-open", "Mais PDFs"],
     ["privacy", "info", "Privacidade"],
   ]
 ) setAction(el(id), icon, label);
 setAction(el("connections-tab"), "account", "Conexões");
-setAction(el("preferences-tab"), "tags", "Preferências");
 const msg = (s: string) => {
   el("message").textContent = s;
 };
@@ -78,7 +76,9 @@ let renewingMoodle: string | null = null;
 let moodleSubmitting = false;
 let pdfCursor: string | null = null;
 let pdfLoading = false;
-let pdfJob: AbortController | null = null;
+let fileJob: AbortController | null = null;
+let libraryLoaded = false;
+let libraryFailed = false;
 function resetMoodleForm() {
   renewingMoodle = null;
   (el("moodle-connect-form") as HTMLFormElement).reset();
@@ -91,13 +91,12 @@ el("moodle-connect-form").hidden = !cfg.canConnectMoodle ||
   !moodleCredentialEntry;
 el("moodle-protected-note").hidden = moodleCredentialEntry ||
   !cfg.canConnectMoodle;
-el("pdf-tab").hidden = !cfg.canExtractPdf;
+el("pdf-tab").hidden = !cfg.canBrowseMaterials;
 el("moodle-add").hidden = !cfg.canConnectMoodle;
 let currentView = "connections";
 let initialView = true;
 const views: Record<string, string> = {
   connections: "connections-view",
-  preferences: "preferences-view",
   pdf: "pdf-view",
   moodle: "moodle-view",
   actions: "actions-panel",
@@ -112,7 +111,7 @@ function showView(which: string) {
     tab?.setAttribute("aria-pressed", String(name === which));
   }
   document.querySelector(".screen-content")?.scrollTo(0, 0);
-  if (which === "pdf") void loadPdfs();
+  if (which === "pdf" && !libraryLoaded) void loadLibrary();
   msg("");
 }
 
@@ -136,17 +135,6 @@ const api = async (path: string) => {
   if (!r.ok) throw new Error(result.message ?? "Não foi possível atualizar.");
   return result;
 };
-async function apiPreferences() {
-  const response = await fetch(
-    endpoint("/api/preferences") + "?scope=" + encodeURIComponent("{}"),
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.message ?? "Preferências indisponíveis.");
-  }
-  return result;
-}
 async function post(path: string, payload: unknown) {
   const response = await fetch(endpoint(path), {
     method: "POST",
@@ -162,132 +150,128 @@ async function post(path: string, payload: unknown) {
   }
   return result;
 }
-async function loadPdfs(append = false) {
-  if (!token || pdfLoading || !cfg.canExtractPdf) return;
-  pdfLoading = true;
+async function openMaterial(file: LibraryFile, download: boolean, button: HTMLButtonElement) {
+  if (!token || fileJob) return;
+  const mime = previewMime(file.mime_type);
+  if (!download && !mime) return;
+  // A normal tab is opened only by the user's explicit click, before async work.
+  const preview = download ? null : window.open("about:blank", "_blank");
+  if (!download && !preview) {
+    msg("Permita abrir o material em uma nova aba.");
+    return;
+  }
+  if (preview) {
+    preview.opener = null;
+    preview.document.title = safeFileName(file.name);
+    preview.document.body.textContent = "Abrindo material…";
+  }
+  const job = new AbortController();
+  fileJob = job;
   const sessionToken = token;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  const timer = setTimeout(() => job.abort(), 180_000);
   try {
-    const page = await post(
-      "/api/pdf/list",
-      append && pdfCursor ? { after: pdfCursor } : {},
+    const bytes = await readLibraryFile(file, (offset) =>
+      fetch(endpoint("/api/library/part"), {
+        method: "POST",
+        signal: job.signal,
+        redirect: "error",
+        headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ file_id: file.id, sha256: file.sha256, offset }),
+      }), job.signal);
+    job.signal.throwIfAborted();
+    if (token !== sessionToken) throw new Error("Sessão encerrada.");
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: download ? "application/octet-stream" : mime! }),
     );
+    // User-facing controls only. Automated QA must exercise the API, never these transfers.
+    if (download) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = safeFileName(file.name);
+      link.click();
+    } else if (preview && !preview.closed) preview.location.replace(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    msg("");
+  } catch (e) {
+    preview?.close();
+    if (token === sessionToken) {
+      msg(
+        job.signal.aborted
+          ? "A abertura demorou demais. Tente novamente."
+          : e instanceof Error
+          ? e.message
+          : "Material indisponível.",
+      );
+    }
+  } finally {
+    clearTimeout(timer);
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    if (fileJob === job) fileJob = null;
+  }
+}
+async function loadLibrary(append = false) {
+  if (!token || pdfLoading || !cfg.canBrowseMaterials || (append && !pdfCursor)) return;
+  pdfLoading = true;
+  libraryFailed = false;
+  const sessionToken = token;
+  const status = el("library-status");
+  status.textContent = "Carregando…";
+  try {
+    const page = await post("/api/library/list", append ? { after: pdfCursor } : {});
     if (token !== sessionToken) return;
     const list = el("pdf-list");
     if (!append) list.replaceChildren();
+    if (append && page.next_id === pdfCursor) {
+      throw new Error("Atualize a biblioteca para continuar.");
+    }
     pdfCursor = page.next_id;
-    el("pdf-more").hidden = !pdfCursor;
-    for (const file of page.files) {
-      const entry = card(
-        file.name,
-        file.coverage === "complete" ? "" : "Leitura parcial",
-      );
+    libraryLoaded = true;
+    for (const file of page.files as LibraryFile[]) {
+      const size = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(
+        file.bytes / 1024 / 1024,
+      ) + " MB";
+      const detail = [file.source, size].filter(Boolean).join(" · ");
+      const entry = card(safeFileName(file.name), detail);
+      entry.classList.add("material-row");
       const actions = document.createElement("div");
       actions.className = "actions";
-      const extract = document.createElement("button");
-      setAction(extract, "book-text", "Extrair texto");
-      extract.disabled = file.coverage === "complete";
-      const cancel = document.createElement("button");
-      setAction(cancel, "remove-state", "Cancelar extração");
-      cancel.hidden = true;
-      cancel.addEventListener("click", () => pdfJob?.abort());
-      extract.addEventListener("click", async () => {
-        if (pdfJob) return;
-        const job = new AbortController();
-        pdfJob = job;
-        extract.disabled = true;
-        cancel.hidden = false;
-        msg("Processando PDF…");
-        try {
-          const response = await fetch(endpoint("/api/pdf/bytes"), {
-            method: "POST",
-            signal: job.signal,
-            headers: {
-              Authorization: `Bearer ${sessionToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ file_id: file.id, sha256: file.sha256 }),
-          });
-          if (!response.ok) {
-            throw new Error("O arquivo está indisponível. Atualize a lista.");
-          }
-          if (
-            response.headers.get("Content-Type")?.split(";")[0] !==
-              "application/pdf"
-          ) {
-            throw new Error("O arquivo não é um PDF.");
-          }
-          // Streaming limit applies even when Content-Length is absent or incorrect.
-          const reader = response.body!.getReader();
-          const chunks: Uint8Array[] = [];
-          let size = 0;
-          try {
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              size += value.length;
-              if (size > PDF_CLIENT_MAX_BYTES) {
-                throw new Error("PDF acima do limite.");
-              }
-              chunks.push(value);
-            }
-          } finally {
-            await reader.cancel();
-          }
-          const bytes = new Uint8Array(size);
-          let offset = 0;
-          for (const chunk of chunks) {
-            bytes.set(chunk, offset);
-            offset += chunk.length;
-          }
-          const extraction = await extractClientPdf(
-            bytes,
-            file.sha256,
-            500,
-            job.signal,
-            file.next_page ?? 1,
-          );
-          if (job.signal.aborted || token !== sessionToken) {
-            throw new Error("Extração cancelada.");
-          }
-          const result = await post("/api/pdf/commit", {
-            file_id: file.id,
-            sha256: file.sha256,
-            extraction,
-          });
-          msg(
-            result.memory.complete
-              ? "PDF pronto para consulta."
-              : result.memory.pages > 0
-              ? "Algumas páginas não puderam ser lidas."
-              : "Não foi possível ler o texto deste PDF.",
-          );
-          if (result.memory.complete) extract.disabled = true;
-          else extract.disabled = false;
-          entry.querySelector("p")!.textContent = result.memory.complete ? "" : "Leitura parcial";
-          // A complete item needs no cursor refresh; keep later list pages visible.
-          if (!result.memory.complete) await loadPdfs();
-        } catch (e) {
-          extract.disabled = false;
-          msg(
-            e instanceof Error ? e.message : "Não foi possível extrair o PDF.",
-          );
-        } finally {
-          cancel.hidden = true;
-          if (pdfJob === job) pdfJob = null;
+      if (file.available) {
+        if (previewMime(file.mime_type)) {
+          const open = document.createElement("button");
+          setAction(open, "preview", "Abrir " + safeFileName(file.name));
+          open.addEventListener("click", () => void openMaterial(file, false, open));
+          actions.append(open);
         }
-      });
-      actions.append(extract, cancel);
+        const download = document.createElement("button");
+        setAction(download, "download", "Baixar " + safeFileName(file.name));
+        download.addEventListener("click", () => void openMaterial(file, true, download));
+        actions.append(download);
+      } else entry.append(note("Arquivo indisponível para abrir ou baixar."));
       entry.append(actions);
       list.append(entry);
     }
-    if (!list.childElementCount) list.textContent = "Nenhum PDF.";
+    status.textContent = list.childElementCount ? "" : "Nenhum material.";
   } catch (e) {
-    msg(e instanceof Error ? e.message : "PDFs indisponíveis.");
+    libraryFailed = true;
+    status.textContent = e instanceof Error ? e.message : "Materiais indisponíveis.";
   } finally {
     pdfLoading = false;
+    if (!libraryFailed) requestAnimationFrame(moreMaterials);
   }
 }
-el("pdf-more").addEventListener("click", () => void loadPdfs(true));
+function moreMaterials() {
+  if (currentView !== "pdf" || !libraryLoaded || libraryFailed || pdfLoading || !pdfCursor) return;
+  const end = el("library-status").getBoundingClientRect();
+  const area = document.querySelector(".screen-content")!.getBoundingClientRect();
+  if (end.top < area.bottom + 160) void loadLibrary(true);
+}
+document.querySelector(".screen-content")!.addEventListener("scroll", moreMaterials, {
+  passive: true,
+});
+window.addEventListener("resize", moreMaterials);
 function card(title: string, detail: string) {
   const card = document.createElement("article");
   card.className = "item-row";
@@ -307,154 +291,11 @@ const connectionState: Record<string, string> = {
   error: "Atualização indisponível",
 };
 
-interface PreferenceEntry {
-  id: string;
-  content?: unknown;
-  scope?: Record<string, string>;
-  preference?: {
-    key?: string;
-    state?: string;
-    valid_from?: string;
-    valid_until?: string;
-  } | null;
-  status?: string;
-}
-
-interface PreferencesView {
-  at?: string;
-  applicable?: PreferenceEntry[];
-  history?: PreferenceEntry[];
-  contextual_overrides?: string[];
-  conflicts?: { key: string; ids: string[] }[];
-  review_required?: PreferenceEntry[];
-  coverage?: string;
-}
-
-const preferenceStatusLabels: Record<string, string> = {
-  current: "vigente",
-  future: "ainda não vigente",
-  superseded: "substituída",
-  withdrawal: "retirada",
-  expired: "expirada",
-  requires_review: "requer revisão",
-  legacy_requires_review: "registro antigo sem chave, requer revisão",
-};
-
-function readableInstant(value: string) {
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed)
-    ? value
-    : new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(parsed);
-}
-
-function preferenceScope(scope: Record<string, string> | undefined) {
-  const entries = Object.entries(scope ?? {}).filter(([, value]) =>
-    typeof value === "string" && value
-  );
-  return entries.length
-    ? "Escopo: " + entries.map(([key, value]) => `${key}=${value}`).join(", ") +
-      "."
-    : "Escopo: global.";
-}
-
-function preferenceValidity(preference: PreferenceEntry["preference"]) {
-  if (!preference) return "";
-  if (preference.state === "withdrawn") return "Retirada permanentemente.";
-  const until = preference.valid_until
-    ? `Vigente até ${readableInstant(preference.valid_until)}.`
-    : "Vigente.";
-  const from = preference.valid_from
-    ? ` Válida desde ${readableInstant(preference.valid_from)}.`
-    : "";
-  return until + from;
-}
-
-function preferenceDetail(entry: PreferenceEntry) {
-  const parts: string[] = [];
-  if (typeof entry.content === "string" && entry.content.trim()) {
-    parts.push(entry.content.trim());
-  }
-  parts.push(preferenceScope(entry.scope));
-  const validity = preferenceValidity(entry.preference);
-  if (validity) parts.push(validity);
-  const status = entry.status ? preferenceStatusLabels[entry.status] : undefined;
-  if (status) parts.push(`Situação: ${status}.`);
-  return parts.join(" ");
-}
-
-function preferenceCard(entry: PreferenceEntry) {
-  const key = entry.preference?.key;
-  return card(
-    typeof key === "string" && key.trim() ? key.trim() : "Registro sem chave",
-    preferenceDetail(entry),
-  );
-}
-
-/** Preferências por escopo: vigentes, conflitos e o que exige revisão humana. */
-function renderPreferences(view: PreferencesView | null) {
-  const list = el("preference-list");
-  const summary = el("preference-summary");
-  list.replaceChildren();
-  if (!view) {
-    summary.textContent = "Preferências indisponíveis no momento.";
-    return;
-  }
-  const applicable = view.applicable ?? [];
-  const conflicts = view.conflicts ?? [];
-  const history = view.history ?? [];
-  const conflicted = new Set(conflicts.flatMap((conflict) => conflict.ids));
-  const review = (view.review_required ?? []).filter((entry) => !conflicted.has(entry.id));
-  const overridden = view.contextual_overrides?.length ?? 0;
-  summary.textContent =
-    (view.coverage === "partial" ? "Cobertura parcial: parte do histórico não foi lida. " : "") +
-    `${applicable.length} vigente(s), ${conflicts.length} conflito(s), ` +
-    `${review.length} para revisar` +
-    (overridden ? `, ${overridden} sobreposto(s) por escopo mais específico` : "") +
-    ".";
-  if (!applicable.length && !conflicts.length && !review.length) {
-    summary.textContent += " Nenhuma preferência registrada.";
-  }
-  if (applicable.length) {
-    list.append(fieldLabel("Vigentes"));
-    for (const entry of applicable) list.append(preferenceCard(entry));
-  }
-  if (conflicts.length) {
-    list.append(fieldLabel("Conflitos"));
-    for (const conflict of conflicts) {
-      const ids = new Set(conflict.ids);
-      const entries = history.filter((entry) => ids.has(entry.id));
-      const conflictCard = card(`Conflito: ${conflict.key}`, "");
-      const items = document.createElement("ul");
-      items.className = "file-list";
-      if (entries.length) {
-        for (const entry of entries) {
-          const item = document.createElement("li");
-          item.textContent = preferenceDetail(entry);
-          items.append(item);
-        }
-      } else {
-        const item = document.createElement("li");
-        item.textContent = "Registros conflitantes não recuperados na página.";
-        items.append(item);
-      }
-      conflictCard.append(items);
-      list.append(conflictCard);
-    }
-  }
-  if (review.length) {
-    list.append(fieldLabel("Requer revisão"));
-    for (const entry of review) list.append(preferenceCard(entry));
-  }
-}
-
 async function render() {
   if (!token) return;
   const sessionToken = token;
   try {
-    const [c, preferences] = await Promise.all([
-      api("/api/context"),
-      apiPreferences().catch(() => null),
-    ]);
+    const c = await api("/api/context");
     if (token !== sessionToken) return;
     el("login").hidden = true;
     el("workspace").hidden = false;
@@ -462,7 +303,6 @@ async function render() {
     el("mode-label").textContent = cfg.synthetic
       ? "Ambiente sintético local. Esta visão não comprova conexão real ou implantação."
       : "";
-    renderPreferences(preferences);
     const connections = el("connection-list");
     connections.replaceChildren();
     for (const cn of c.connections) {
@@ -617,14 +457,7 @@ async function renderActions() {
   // Initial session recovery and SIGNED_IN can render concurrently. Replace the
   // list only when the response is ready so both do not append the same content.
   list.replaceChildren();
-  const history = document.createElement("details");
-  history.id = "action-history";
-  const historyTitle = document.createElement("summary");
-  history.append(historyTitle);
-  const historyEntries = document.createElement("div");
-  historyEntries.className = "grid";
-  history.append(historyEntries);
-  let activeCount = 0, historyCount = 0;
+  let activeCount = 0;
   let nextChange = Infinity;
   for (const view of actions) {
     const action = view.action;
@@ -633,26 +466,21 @@ async function renderActions() {
       nextChange = Math.min(nextChange, review.nextChange);
     }
     const description = describeAction(action.operation, action.content);
+    if (description.retired || ["succeeded", "failed", "denied", "expired"].includes(view.state)) {
+      continue;
+    }
     const entry = document.createElement("article");
     entry.className = "item-row action-card";
-    const historical = description.retired ||
-      ["succeeded", "failed", "denied", "expired"].includes(view.state);
-    const targetList = historical ? historyEntries : list;
-    if (historical) historyCount++;
-    else activeCount++;
+    activeCount++;
     const heading = document.createElement("h3");
     heading.textContent = description.title;
     entry.append(heading);
     if (!description.known) {
-      // Operações retiradas (por exemplo, escrita Google própria) ficam como
-      // registro histórico: nenhum botão pode autorizar este legado.
       entry.append(note(
-        description.retired
-          ? "Operação retirada do AraHub. O material já preservado continua na memória; esta interface não autoriza nem executa esta operação."
-          : "Operação acadêmica ainda sem revisão nesta interface. Atualize a interface antes de decidir.",
+        "Operação acadêmica ainda sem revisão nesta interface. Atualize a interface antes de decidir.",
       ));
       entry.append(note(actionStateLabels[view.state] ?? "Verificar estado"));
-      targetList.append(entry);
+      list.append(entry);
       continue;
     }
     if (description.connection.length) {
@@ -784,18 +612,14 @@ async function renderActions() {
       controls.append(approve, deny);
       entry.append(controls);
     }
-    targetList.append(entry);
+    list.append(entry);
   }
-  el("actions-tab").hidden = !activeCount && !historyCount;
+  el("actions-tab").hidden = !activeCount;
   if (initialView) {
     initialView = false;
     if (activeCount) showView("actions");
   }
-  if (!activeCount && !historyCount && currentView === "actions") showView("connections");
-  if (historyCount) {
-    historyTitle.textContent = `Histórico de ações (${historyCount})`;
-    list.append(history);
-  }
+  if (!activeCount && currentView === "actions") showView("connections");
   if (Number.isFinite(nextChange)) {
     actionExpiryTimer = setTimeout(() =>
       void renderActions().catch(() => {
@@ -855,15 +679,18 @@ el("synthetic-login").addEventListener("click", async () => {
   await render();
 });
 if (supabase) (el("signin") as HTMLButtonElement).disabled = false;
-el("refresh").addEventListener("click", () => void render());
+el("refresh").addEventListener("click", () => {
+  if (currentView === "pdf") void loadLibrary();
+  else void render();
+});
 el("logout").addEventListener("click", async () => {
-  pdfJob?.abort();
+  fileJob?.abort();
   token = null;
   sessionStorage.removeItem("arahub-synthetic-token");
   await supabase?.auth.signOut();
   location.href = route("/");
 });
-for (const which of ["connections", "preferences", "pdf", "actions"]) {
+for (const which of ["connections", "pdf", "actions"]) {
   el(which + "-tab").addEventListener("click", () => showView(which));
 }
 el("moodle-add").addEventListener("click", () => {
@@ -952,12 +779,11 @@ if (supabase) {
       }, 0);
     }
     if (!token) {
-      pdfJob?.abort();
+      fileJob?.abort();
       el("pdf-list").replaceChildren();
       pdfCursor = null;
+      libraryLoaded = false;
       resetMoodleForm();
-      el("preference-list").replaceChildren();
-      el("preference-summary").textContent = "";
       el("connection-list").replaceChildren();
       el("export-content").textContent = "";
       el("export-view").hidden = true;

@@ -7,7 +7,7 @@ novo MIT; materiais acadêmicos e dados de usuários conservam seus direitos.
 A instância pessoal está em produção: Postgres com RLS, referências por usuário/conexão, deltas
 idempotentes e versões concorrentes, MCP Streamable HTTP, adaptador Moodle e memória privada
 importada. **O uso cotidiano ocorre no ChatGPT pelo plugin AraHub.** A interface auxiliar reúne
-entrada, conexão segura do Moodle, preferências, exportação e aprovação de ações. Para Gmail,
+entrada, conexão segura do Moodle, biblioteca de materiais, exportação e aprovação de ações. Para Gmail,
 Drive/Docs/Sheets/Slides e Calendar, use as ferramentas do próprio assistente; o caminho Google
 próprio do AraHub foi aposentado (ver [docs/GOOGLE.md](docs/GOOGLE.md)). O estado comprovado e os
 gates pendentes estão em [STATUS.md](STATUS.md).
@@ -26,7 +26,7 @@ hospedar outras instâncias, sem acesso aos dados desta.
 
 Para usar a conta já conectada, converse no ChatGPT com o plugin AraHub: “Retome meu contexto e os
 materiais desta atividade” ou “Encontre o fórum da disciplina e mostre o caminho e o link direto”.
-**A versão 0.2.7 está liberada para uso pessoal cotidiano, sem instalação ou nova homologação
+**A versão 0.2.8 está liberada para uso pessoal cotidiano, sem instalação ou nova homologação
 necessária na conta já conectada.** A validação seguinte acontece no uso real; falhas observadas
 orientam as correções, preservando a memória e as versões existentes.
 Arquivos produzidos na conversa podem ser preservados no AraHub; publicações e entregas acadêmicas

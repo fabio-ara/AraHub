@@ -4,33 +4,6 @@ import { chromium } from "../.private/qa/node_modules/playwright/index.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
-// Optional real PDF remains private; default is a one-page synthetic PDF.
-function fixturePdf() {
-  const stream = "BT /F1 12 Tf 20 100 Td (AraHub worker fixture) Tj ET";
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-  ];
-  let text = "%PDF-1.7\n";
-  const offsets = [0];
-  objects.forEach((obj, i) => {
-    offsets.push(Buffer.byteLength(text));
-    text += `${i + 1} 0 obj\n${obj}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(text);
-  text += "xref\n0 6\n0000000000 65535 f \n" +
-    offsets.slice(1).map((o) => `${String(o).padStart(10, "0")} 00000 n \n`)
-      .join("");
-  text += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(text);
-}
-const pdf = process.argv[2] ? await readFile(process.argv[2]) : fixturePdf();
-const pdfHash = createHash("sha256").update(pdf).digest("hex");
-const pdfId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const site = "https://ui.fixture.invalid/AraHub/";
 const origin = new URL(site).origin;
 const backend = "https://api.fixture.invalid/functions/v1/arahub";
@@ -92,8 +65,7 @@ try {
       approved = 0,
       unavailable = false,
       moodleRequests = 0,
-      pdfCommits = 0;
-    let pdfBusy = false, pdfTampered = false;
+      libraryPages = 0;
     const connections = [];
     const context = await browser.newContext({ viewport });
     await context.addInitScript(() =>
@@ -141,12 +113,6 @@ try {
         let path = url.pathname.slice("/AraHub/".length);
         if (!path || path.endsWith("/")) path += "index.html";
         if (!files.has(path)) return route.abort();
-        if (path === "ui/pdf-parser.worker.js" && pdfBusy) {
-          return route.fulfill({
-            contentType: "text/javascript",
-            body: "self.onmessage=()=>{while(true){}};",
-          });
-        }
         return route.fulfill({
           status: 200,
           contentType: path.endsWith(".js")
@@ -166,59 +132,33 @@ try {
           publishableKey: "public-synthetic-key",
           canApproveActions: false,
           canConnectMoodle: true,
-          canExtractPdf: true,
+          canBrowseMaterials: true,
           synthetic: false,
         });
       }
       if (request.url() === backend + "/api/context") {
         return reply({ contexts: [], deltas: [], connections });
       }
-      if (request.url() === backend + "/api/pdf/list") {
+      if (request.url() === backend + "/api/library/list") {
         assert.ok(request.headers().authorization?.startsWith("Bearer "));
+        libraryPages++;
+        const after = request.postDataJSON().after;
         return reply({
-          files: [{
-            id: pdfId,
-            name: "PDF de prova",
-            sha256: pdfHash,
-            bytes: pdf.length,
-            coverage: "unavailable",
-          }],
-          next_id: null,
+          files: Array.from({ length: after ? 5 : 20 }, (_, i) => ({
+            id: `fixture-${after ? 20 + i : i}`,
+            name: `Material ${after ? 20 + i : i}.pdf`,
+            mime_type: "application/pdf",
+            sha256: "a".repeat(64),
+            bytes: 200000,
+            source: "Moodle de teste",
+            source_title: "Curso de teste",
+            available: true,
+          })),
+          next_id: after ? null : "cursor-fixture",
         });
       }
-      if (request.url() === backend + "/api/pdf/bytes") {
-        assert.deepEqual(request.postDataJSON(), {
-          file_id: pdfId,
-          sha256: pdfHash,
-        });
-        assert.ok(request.headers().authorization?.startsWith("Bearer "));
-        const body = Buffer.from(pdf);
-        if (pdfTampered) body[body.length - 1] ^= 1;
-        return route.fulfill({
-          status: 200,
-          contentType: "application/pdf",
-          headers,
-          body,
-        });
-      }
-      if (request.url() === backend + "/api/pdf/commit") {
-        const data = request.postDataJSON();
-        assert.equal(data.sha256, pdfHash);
-        assert.equal(data.file_id, pdfId);
-        assert.equal(data.extraction.execution, "isolated_worker");
-        assert.equal(data.extraction.hard_timeout, true);
-        assert.equal(data.extraction.ocr, "not_performed");
-        assert.ok(data.extraction.pages.length > 0);
-        assert.match(
-          data.extraction.pages[0].text,
-          process.argv[2] ? /Attention/ : /AraHub worker fixture/,
-        );
-        await writeFile(
-          new URL(`pdf-result-${randomUUID()}.json`, folder),
-          JSON.stringify({ sha256: pdfHash, extraction: data.extraction }),
-        );
-        pdfCommits++;
-        return reply({ memory: { complete: true } });
+      if (request.url().includes("/api/pdf/") || request.url().includes("/api/library/part")) {
+        throw new Error("QA da UI não inicia processamento nem transferência de arquivos.");
       }
       if (request.url() === backend + "/api/connections/moodle") {
         assert.equal(request.method(), "POST");
@@ -376,50 +316,39 @@ try {
     ).waitFor();
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
     assert.equal(moodleRequests, 2);
-    await page.getByRole("button", { name: "PDFs", exact: true }).click();
-    await page.getByRole("button", { name: "Extrair texto", exact: true })
-      .click();
-    await page.getByText("PDF pronto para consulta.", {
-      exact: true,
-    }).waitFor().catch(async () => {
-      throw new Error(
-        JSON.stringify({
-          message: await page.locator("#message").textContent(),
-          errors,
-          csp: await page.evaluate(() => window.__cspViolations ?? []),
-        }),
-      );
-    });
-    assert.equal(pdfCommits, 1);
-    pdfTampered = true;
-    // Após extração completa a UI desabilita o botão; recarregar a lista (o stub
-    // reporta cobertura incompleta) reabilita os próximos ensaios.
-    await page.getByRole("button", { name: "PDFs", exact: true }).click();
-    await page.getByRole("button", { name: "PDFs", exact: true }).click();
-    await page.waitForTimeout(150);
-    await page.getByRole("button", { name: "Extrair texto", exact: true }).click();
-    await page.getByText("O arquivo mudou. Atualize a lista.", { exact: true }).waitFor();
-    assert.equal(pdfCommits, 1);
-    pdfTampered = false;
-    pdfBusy = true;
-    await page.getByRole("button", { name: "Extrair texto", exact: true }).click();
-    await page.getByRole("button", { name: "Cancelar extração", exact: true }).waitFor();
-    await page.waitForTimeout(250); // Let the disposable Worker enter synchronous CPU.
-    await page.getByRole("button", { name: "Cancelar extração", exact: true }).click();
-    await page.getByText("Extração cancelada.", { exact: true }).waitFor();
-    assert.equal(pdfCommits, 1);
-    if (viewport.width === 390) {
-      await page.getByRole("button", { name: "Extrair texto", exact: true }).click();
-      await page.getByText("Tempo de extração excedido.", { exact: true }).waitFor({
-        timeout: 22000,
-      });
-      assert.equal(pdfCommits, 1);
-    }
-    pdfBusy = false;
-    await writeFile(
-      new URL(`pdf-${viewport.width}.png`, folder),
-      await page.screenshot({ fullPage: true, animations: "disabled" }),
+    await page.getByRole("button", { name: "Materiais", exact: true }).click();
+    await page.locator(".material-row").first().waitFor();
+    assert.equal(await page.locator(".material-row").count(), 20);
+    assert.equal(await page.getByRole("button", { name: "Extrair texto", exact: true }).count(), 0);
+    assert.equal(await page.locator("#pdf-more").count(), 0);
+    assert.equal(
+      await page.getByRole("button", { name: "Abrir Material 0.pdf", exact: true }).isEnabled(),
+      true,
     );
+    assert.equal(
+      await page.getByRole("button", { name: "Baixar Material 0.pdf", exact: true }).isEnabled(),
+      true,
+    );
+    const alignment = await page.locator(".material-row").first().evaluate((row) => {
+      const box = row.getBoundingClientRect();
+      const buttons = row.querySelector(".actions").getBoundingClientRect();
+      const last = row.querySelector(".actions button:last-child").getBoundingClientRect();
+      return { right: box.right - last.right, bottom: box.bottom - buttons.bottom };
+    });
+    assert.ok(Math.abs(alignment.right) <= 1 && alignment.bottom >= 14, JSON.stringify(alignment));
+    await writeFile(
+      new URL(`library-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true }),
+    );
+    // Scroll only; never click open/download or navigate to blob/data URLs.
+    await page.locator("#library-status").scrollIntoViewIfNeeded();
+    await page.getByRole("button", { name: "Baixar Material 24.pdf", exact: true }).waitFor();
+    assert.equal(await page.locator(".material-row").count(), 25);
+    assert.equal(libraryPages, 2);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.getByRole("button", { name: "Conexões", exact: true }).click();
+    await page.getByRole("button", { name: "Materiais", exact: true }).click();
+    assert.equal(await page.locator(".material-row").count(), 25);
     await page.goto(
       site + "oauth/consent/?authorization_id=fixture-authorization",
     );
@@ -459,12 +388,9 @@ try {
       shell_geometry_unchanged: true,
       password_hidden: true,
       moodle_https_connect_renew: moodleRequests === 2,
-      pdf_browser_worker: true,
-      pdf_changed_hash_denied: true,
-      pdf_cpu_cancel_termination: true,
-      pdf_cpu_timeout_termination: viewport.width === 390,
-      pdf_real_bytes: !!process.argv[2],
-      pdf_backend_commit: "provider_stub",
+      library_automatic_pagination: libraryPages === 2,
+      library_controls_right_aligned: true,
+      library_transfer_controls_not_activated: true,
       prefix: "/AraHub/",
     });
     await context.close();

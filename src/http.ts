@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { PersistentActionStore } from "./approval_store.ts";
 import { Materials } from "./materials.ts";
 import type { MaterialTransfers } from "./material_transfer.ts";
+import { Library, libraryPartSchema } from "./library.ts";
 
 interface HttpConfig {
   auth: Pick<AuthConfig, "resource" | "issuer">;
@@ -57,6 +58,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           canAuthorizeOwnStatus: !!config.connections?.ownStatusPolicies?.enabled &&
             !config.syntheticLogin,
           canExtractPdf: !config.syntheticLogin,
+          canBrowseMaterials: !config.syntheticLogin,
         });
       }
       if (u.pathname === "/api/synthetic-login" && req.method === "POST" && config.syntheticLogin) {
@@ -257,6 +259,21 @@ export function createHandler(hub: Hub, config: HttpConfig) {
       }
       if (u.pathname === "/api/export" && req.method === "GET") {
         return json(await hub.exportMemory(await config.verify(req, false)));
+      }
+      if (u.pathname === "/api/library/list" && req.method === "POST") {
+        const p = await config.verify(req, false);
+        const input = z.object({ after: z.string().uuid().optional() }).strict().parse(
+          JSON.parse(await boundedBody(req, 2048)),
+        );
+        return json(await new Library(hub.db).list(p, input.after));
+      }
+      if (u.pathname === "/api/library/part" && req.method === "POST") {
+        const p = await config.verify(req, false);
+        const input = libraryPartSchema.parse(JSON.parse(await boundedBody(req, 2048)));
+        const bytes = await new Library(hub.db).part(p, input);
+        return new Response(bytes, {
+          headers: { ...safeHeaders, "Content-Type": "application/octet-stream" },
+        });
       }
       if (u.pathname === "/api/pdf/list" && req.method === "POST") {
         const p = await config.verify(req, false);

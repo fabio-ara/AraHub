@@ -19,8 +19,8 @@ conectores nem recebe seus tokens OAuth.
 
 A disponibilidade depende das funções oferecidas pela instituição e dos gates registrados em
 `../STATUS.md`. A implementação local de uma ferramenta não prova que já foi instalada no cliente.
-Assignment permanece bloqueado em produção pela rota de status até revisão específica da política;
-não usar uma entrega real para preencher a matriz de testes.
+A consulta do próprio estado de entrega exige a autorização específica da política institucional.
+Não usar uma entrega real para preencher a matriz de testes.
 
 Para estudo, consulte materiais por entidade, versão/hash e localizador. A fila `hub_queue_document`
 aceita DOCX/HTML preservados; `hub_document_blocks` recupera parágrafos, tabelas e links extraídos.
@@ -39,7 +39,7 @@ atualizada no app existente. Verifique a versão ativa e teste uma conversa nova
 conexão para tentar instalar uma Skill, nem confunda preparação do ZIP com instalação.
 
 Não há acompanhamento recorrente ativo por padrão. Layout em viewport móvel e celular físico são
-provas diferentes. A interface concentra autenticação, conexões, preferências, saúde/exportação e
+provas diferentes. A interface concentra autenticação, conexões, biblioteca de materiais, exportação e
 aprovação; a rotina acadêmica ocorre no chat.
 
 ## Pedidos cotidianos
