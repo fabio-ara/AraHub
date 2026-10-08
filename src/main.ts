@@ -6,6 +6,7 @@ import { ConnectionService } from "./connections.ts";
 import { TokenVault } from "./adapters/token_vault.ts";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { PersistentActionStore } from "./approval_store.ts";
+import { OwnSubmissionStatusPolicies } from "./own_submission_status.ts";
 
 const mode = Deno.env.get("APP_MODE") ?? "configured";
 const synthetic = mode === "synthetic";
@@ -63,7 +64,18 @@ const handler = createHandler(hub, {
   supabaseUrl: Deno.env.get("SUPABASE_URL"),
   publishableKey: Deno.env.get("SUPABASE_PUBLISHABLE_KEY"),
   syntheticLogin,
-  connections: vault ? new ConnectionService(hub, vault) : undefined,
+  connections: vault
+    ? new ConnectionService(
+      hub,
+      vault,
+      undefined,
+      new OwnSubmissionStatusPolicies(
+        db,
+        auth.sessionActive,
+        Deno.env.get("ARAHUB_OWN_STATUS_POLICY_ENABLED") === "true",
+      ),
+    )
+    : undefined,
   actions: synthetic
     ? undefined
     : new PersistentActionStore(db, { sessionActive: auth.sessionActive }),

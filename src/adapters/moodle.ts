@@ -156,6 +156,11 @@ export interface MoodleConfig {
 }
 
 export interface MoodleDeps {
+  /** Backend-only guard, never a model or provider argument. Missing means blocked. */
+  readonly withOwnSubmissionStatus?: <T>(
+    identity: number,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
   /** Injecao de fetch para fixtures/testes. Quando presente, a checagem real de DNS e pulada. */
   readonly fetch?: FetchLike;
   /** Injecao do resolvedor de DNS. Usado para testar rejeicao de rede nao publica. */
@@ -1018,6 +1023,7 @@ export class MoodleAdapter {
   private readonly _resolver: HostResolver;
   private readonly _checkDns: boolean;
   private readonly _onRequest?: () => void;
+  private readonly _withOwnSubmissionStatus?: MoodleDeps["withOwnSubmissionStatus"];
 
   private identityPromise?: Promise<MoodleIdentity>;
   private identity?: MoodleIdentity;
@@ -1045,6 +1051,7 @@ export class MoodleAdapter {
     this._injectedFetch = deps.fetch;
     this._resolver = deps.resolveHost ?? defaultResolveHost;
     this._onRequest = deps.onRequest;
+    this._withOwnSubmissionStatus = deps.withOwnSubmissionStatus;
     // O DNS e validado no caminho real e sempre que um resolvedor e injetado
     // para teste. Sem resolvedor e com fetch injetado, e fixture pura.
     this._checkDns = deps.resolveHost !== undefined || deps.fetch === undefined;
@@ -1981,9 +1988,52 @@ export class MoodleAdapter {
     return this.blockedResult("gradereport_user_get_grade_items");
   }
 
-  /** Status de submissao: bloqueado por recalculo indireto. Nunca chama o Moodle. */
-  async getSubmissionStatus(_assignmentId?: number): Promise<MoodleResult<MoodleRecord>> {
-    return this.blockedResult("mod_assign_get_submission_status");
+  /** Narrow own/individual path. The general function allowlist stays blocked. */
+  async getSubmissionStatus(
+    assignmentId?: number,
+    courseId?: number,
+  ): Promise<MoodleResult<MoodleRecord>> {
+    if (!this._withOwnSubmissionStatus) {
+      return this.blockedResult("mod_assign_get_submission_status");
+    }
+    return await this.run(async () => {
+      const assignment = positiveId(assignmentId, "assignmentid"),
+        course = positiveId(courseId, "courseid");
+      const identity = await this.initialize();
+      const fn = "mod_assign_get_submission_status";
+      if (!this.offeredFunctions.has(fn)) {
+        throw new MoodleError("function_unavailable", "Consulta não oferecida a esta conta.");
+      }
+      return await this._withOwnSubmissionStatus!(identity.user_id, async () => {
+        const courses = await this.listCourses();
+        if (courses.coverage !== "complete" || !courses.data?.some((c) => c.id === course)) {
+          throw new MoodleError("security_error", "Curso não acessível a esta conta.");
+        }
+        const assignments = await this.getAssignments([course]);
+        const target = assignments.data?.find((a) => a.id === assignment && a.course_id === course);
+        if (
+          !target || assignments.warnings.length || assignments.error_code ||
+          ![false, 0].includes(target.teamsubmission as boolean | number)
+        ) {
+          throw new MoodleError(
+            "security_error",
+            "Somente entrega individual com configuração conferida.",
+          );
+        }
+        const { data, warnings } = this.splitWarnings(
+          await this.post(fn, { assignid: assignment, userid: 0, groupid: 0 }),
+        );
+        const normalized = asRecord(await this.normalizeValue(data));
+        if (!normalized) throw new MoodleError("parsing_error", "Status de entrega inválido.");
+        const last = asRecord(normalized.lastattempt), submission = asRecord(last?.submission);
+        if (submission?.userid !== undefined && Number(submission.userid) !== identity.user_id) {
+          throw new MoodleError("security_error", "Status retornado não pertence à conta.");
+        }
+        // Grading summaries are outside the own-student scope, even if a token
+        // happens to have extra capabilities. Return only the requested attempt.
+        return { data: { lastattempt: last ?? {} }, warnings };
+      });
+    });
   }
 
   // -- Arquivos ----------------------------------------------------------

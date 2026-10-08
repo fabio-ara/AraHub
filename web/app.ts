@@ -1,3 +1,4 @@
+import { ownStatusControl } from "./own_status.ts";
 import { createClient } from "@supabase/supabase-js";
 import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
@@ -576,6 +577,9 @@ async function render() {
           entry.append(renew);
         }
         if (cn.provider === "moodle" && cn.state === "connected") {
+          if (cfg.canAuthorizeOwnStatus) {
+            entry.append(ownStatusControl(cn.id, post, msg));
+          }
           const sync = document.createElement("button");
           sync.className = "secondary";
           setAction(sync, "rotate", "Atualizar cursos");

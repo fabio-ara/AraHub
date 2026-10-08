@@ -190,11 +190,11 @@ export class MoodleActions {
           "Salvar já finaliza esta entrega; a rota de assentimento precisa ser validada antes de escrever.",
         );
       }
-      const stateResult = await moodle.getSubmissionStatus(instance);
+      const stateResult = await moodle.getSubmissionStatus(instance, input.course_id);
       if (stateResult.error_code === "security_error") {
         deny(
           "status_policy_blocked",
-          "A rota de status permanece bloqueada por efeitos indiretos em notas. O laboratório deve concluir a auditoria antes de habilitar este perfil real.",
+          "A consulta de status próprio está bloqueada. Revise a permissão e seus efeitos técnicos na interface do AraHub, quando disponível.",
         );
       }
       const state = complete(stateResult, "o estado da entrega"),
@@ -479,7 +479,10 @@ export class MoodleActions {
             await moodle.submitAssignment(snapshot.target.instance_id, snapshot.statement.required);
           }
           const state = complete(
-            await moodle.getSubmissionStatus(snapshot.target.instance_id),
+            await moodle.getSubmissionStatus(
+              snapshot.target.instance_id,
+              snapshot.target.course_id,
+            ),
             "a confirmação da entrega",
           );
           const submission = record(record(state.lastattempt).submission);

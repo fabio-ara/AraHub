@@ -49,6 +49,8 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           synthetic: !!config.syntheticLogin,
           canConnectMoodle: !!config.connections && !config.syntheticLogin,
           canApproveActions: !!config.actions && !config.syntheticLogin,
+          canAuthorizeOwnStatus: !!config.connections?.ownStatusPolicies?.enabled &&
+            !config.syntheticLogin,
           canExtractPdf: !config.syntheticLogin,
         });
       }
@@ -165,6 +167,29 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           connection_id: z.string().uuid().optional(),
         }).strict().parse(JSON.parse(await boundedBody(req, 8192)));
         return json(await config.connections.addMoodle(p, input));
+      }
+      if (
+        ["/api/connections/own-status/review", "/api/connections/own-status/decide"].includes(
+          u.pathname,
+        ) &&
+        req.method === "POST" && config.connections?.ownStatusPolicies?.enabled &&
+        !config.syntheticLogin
+      ) {
+        const p = await config.verify(req, false);
+        const raw = JSON.parse(await boundedBody(req, 2048));
+        if (u.pathname.endsWith("/review")) {
+          const input = z.object({ connection_id: z.string().uuid() }).strict().parse(raw);
+          return json(await config.connections.ownStatusPolicies.review(p, input.connection_id));
+        }
+        const input = z.object({
+          connection_id: z.string().uuid(),
+          credential_epoch: z.number().int().nonnegative(),
+          last_receipt_id: z.string().uuid().nullable(),
+          policy_version: z.string().max(40),
+          allow: z.boolean(),
+          effects_accepted: z.boolean(),
+        }).strict().parse(raw);
+        return json(await config.connections.ownStatusPolicies.decide(p, input));
       }
       if (
         u.pathname === "/api/connections/disconnect" && req.method === "POST" && config.connections

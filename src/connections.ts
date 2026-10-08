@@ -3,6 +3,8 @@ import { Hub } from "./domain.ts";
 import { HubError, type Principal } from "./contracts.ts";
 import { MoodleAdapter, type MoodleDeps } from "./adapters/moodle.ts";
 import { type SealedSecret, TokenVault } from "./adapters/token_vault.ts";
+import { MoodleError } from "./adapters/moodle.ts";
+import type { OwnSubmissionStatusPolicies } from "./own_submission_status.ts";
 
 /** Privileged vault path. Principal comes from HTTP/JWT verifier, never tool arguments. */
 export class ConnectionService {
@@ -11,6 +13,7 @@ export class ConnectionService {
     private vault: TokenVault,
     private makeMoodle = (origin: string, token: string, deps?: MoodleDeps) =>
       new MoodleAdapter({ origin, token }, deps),
+    readonly ownStatusPolicies?: OwnSubmissionStatusPolicies,
   ) {}
   async parent(p: Principal, id: string) {
     return asOwner(this.hub.db, p, async (tx) => {
@@ -111,7 +114,30 @@ export class ConnectionService {
     }
     const sealed = rows[0].encrypted_payload.sealed as SealedSecret;
     const token = await this.vault.open(sealed, `${p.ownerId}:${id}:moodle`);
-    return this.makeMoodle(parent.origin, token, deps);
+    return this.makeMoodle(parent.origin, token, {
+      ...deps,
+      withOwnSubmissionStatus: this.ownStatusPolicies?.enabled
+        ? async (identity, operation) => {
+          try {
+            return await this.ownStatusPolicies!.run(
+              p,
+              id,
+              Number(parent.oauth_epoch),
+              identity,
+              operation,
+            );
+          } catch (error) {
+            if (error instanceof HubError) {
+              throw new MoodleError(
+                "security_error",
+                "Consentimento de status próprio ausente ou inválido.",
+              );
+            }
+            throw error;
+          }
+        }
+        : undefined,
+    });
   }
   async disconnect(p: Principal, id: string) {
     if (p.clientId) {

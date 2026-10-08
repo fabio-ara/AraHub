@@ -452,6 +452,28 @@ export async function handleMcp(
           )
         ),
     );
+    if (connections.ownStatusPolicies?.enabled) {
+      server.registerTool(
+        "hub_moodle_own_submission_status",
+        {
+          description:
+            "Consulta somente o status da própria entrega individual. Exige consentimento prévio na interface para efeitos técnicos incidentais (registro vazio, feedback visto e logs). Não envia arquivos nem finaliza entrega. Não aceita usuário ou grupo de terceiros.",
+          inputSchema: {
+            connection_id: z.string().uuid(),
+            course_id: z.number().int().positive(),
+            assignment_id: z.number().int().positive(),
+          },
+          annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        },
+        (a: { connection_id: string; course_id: number; assignment_id: number }) =>
+          response(async () =>
+            await (await connections.moodle(principal, a.connection_id)).getSubmissionStatus(
+              a.assignment_id,
+              a.course_id,
+            )
+          ),
+      );
+    }
     server.registerTool(
       "hub_moodle_courses",
       {

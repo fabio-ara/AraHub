@@ -368,3 +368,58 @@ pre {
 .file-list li {
   overflow-wrap: anywhere;
 }
+
+.own-status-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+.own-status-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+.own-status-dialog label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+.own-status-dialog input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.own-status-dialog p {
+  overflow-wrap: anywhere;
+}
+.own-status-button {
+  min-height: var(--tap);
+  padding: 10px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.own-status-button.primary {
+  background: var(--action-primary);
+  border-color: var(--action-primary);
+  color: white;
+}
+.own-status-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.own-status-dialog h2 {
+  font-size: 1.2rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
