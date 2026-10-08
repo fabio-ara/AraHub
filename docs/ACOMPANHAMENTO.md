@@ -1,4 +1,11 @@
-# Acompanhamento local finito
+# Acompanhamento finito
+
+A engenharia inclui o consumidor local e um executor para hospedagem, com autorização privada,
+janelas de horário, orçamento de escrita, saúde e pausa. **Código disponível não significa
+agendamento instalado ou ativo.** A ativação remota exige o lote específico do titular; nenhuma
+migration instala cron ou consulta a universidade.
+
+## Consumidor local
 
 O CLI `scripts/run_followup.ts` executa **uma tentativa por invocação**, no PostgreSQL exclusivo
 `127.0.0.1:55432/arahub` e em uma instância Moodle Lab de loopback cujo manifesto corresponda ao
@@ -60,8 +67,8 @@ entidades do mesmo owner continua podendo encontrar o registro interno.
 O prazo da política, limites e curso ficam no banco após criação; editar o JSON não altera
 silenciosamente esses valores. `resume` não renova expiração nem reabre um job terminal. A política
 usa `Sync`/`Jobs` por opção interna de runtime; os callers HTTP/MCP, defaults Moodle/Sync e jobs sem
-política mantêm o contrato anterior. O transporte opt-in atual recusa destinos externos e rotas de
-upload.
+política mantêm o contrato anterior. O transporte injetado do CLI de laboratório recusa destinos
+externos e rotas de upload. O transporte hospedado restrito está descrito abaixo.
 
 ## Evidência e limites
 
@@ -73,11 +80,74 @@ executada não significa conteúdo integralmente atualizado. Os recibos ficam pr
 IDs, lacunas e estado, sem corpos da fonte. Os bloqueios de ações host previamente provados não
 foram reabertos por esta mudança.
 
-Não implementado: despachante hospedado, cron, push, teto de **64 MiB de escrita lógica**, orçamento
-financeiro ou controle de egress físico. Não foi exercitado transporte externo nem
-credencial/autenticação de produção. Publicar esse código não exige redeploy do backend ou
-reempacotamento do plugin e não ativa recorrência.
+Essa prova histórica valida o consumidor local. O executor abaixo acrescenta engenharia para
+hospedagem; a prova local não demonstra CPU do Edge, relógio remoto ou transporte institucional.
 
 As transações seguem as garantias de
 [locks explícitos do PostgreSQL](https://www.postgresql.org/docs/current/explicit-locking.html). O
 encerramento usa [processos filhos do Deno](https://docs.deno.com/api/deno/~/Deno.ChildProcess).
+
+## Executor preparado para hospedagem
+
+`HostedFollowup` executa uma tentativa de curso por invocação. O registro de autorização fica em
+`arahub_private.followup_grants` (migration 16), sem privilégios de Data API, com RLS forçada.
+Conta, conexão, época da credencial, origem, cursos e cópia das políticas são vinculados pelo
+operador após aprovação. Não existe rota HTTP/MCP para criar ou ampliar essa autorização.
+
+O endpoint separado `arahub-acompanhamento` recebe somente `POST {}` e uma chave aleatória
+dedicada, ligada ao ID da autorização no ambiente protegido. Não usa cookie/JWT humano e não
+aceita proprietário, curso ou credencial na requisição. Renovar/revogar a conexão invalida o
+vínculo. O MCP acrescenta `hub_followup_status` e `hub_followup_pause`: consultam/pausam somente
+registros do titular, preservam a memória e não permitem ativação ou retomada.
+
+| Limite | Comportamento implementado |
+| --- | --- |
+| Vigência | Até sete dias, sem renovação automática nem compensação de horários perdidos. |
+| Janelas | 08:00 e 20:00 Europe/Lisbon, até 90 minutos; mudança sazonal de fuso considerada. |
+| Tentativas | Até dois cursos, duas tentativas/curso/janela e 28/curso/vigência. Serialização e alternância por conexão. Reserva incerta não é devolvida. |
+| Fonte | Até 18 chamadas e 32 MiB de resposta por tentativa; até 16 MiB por resposta e 45 segundos. Fórum limitado a duas chamadas. |
+| Persistência | Até 64 MiB compartilhados de admissão de payloads lógicos. Débito e escrita na mesma transação; prazo rechecado antes do commit. |
+| Retomada | Mesmo job/checkpoint parcial, respeitando o teto existente de cinco claims. Cobertura parcial por paginação/capacidade ausente permanece explícita e não conta como falha de transporte. |
+| Falhas | Parcial com progresso: ao menos 15 minutos. Falha: 30 minutos, duas e seis horas; três falhas pausam. Credencial inválida ou orçamento de escrita esgotado pausa o grupo. |
+| Pausa | Bloqueia novas chamadas e gravações da tentativa. Uma chamada já despachada pode terminar; sua resposta não autoriza escrita após a pausa. |
+
+O transporte hospedado usa o adaptador HTTPS normal, mantendo resolução validada, IP fixado e TLS.
+O gate de orçamento não injeta `fetch`. Upload, postagem, submissão, consulta de status individual
+e downloads de binários não entram na allowlist recorrente. O processamento pesado de novos
+vídeos continua sendo uma operação durante conversa no cliente capaz; este cron não executa ASR.
+
+O limite lógico é conservador: cada operação de conteúdo reserva `4096 + 4 × bytes UTF-8 do JSON`
+para projeção, observação, relações/checkpoint e recibo do job. Repetições e upserts também
+consomem essa admissão; transação recusada reverte o débito. Contadores de controle têm tamanho e
+quantidade limitados separadamente. Isso não mede disco, WAL, tráfego físico ou faturamento e não
+promete custo/recursos ilimitados. Sem guard, a sincronização interativa não calcula esse custo.
+
+## Preparação do relógio e critérios remotos
+
+`scripts/prepare_followup_cron.ts <grant UUID> <project HTTPS URL>` gera SQL revisável, sem conectar
+ao banco e sem incluir segredos. O SQL instala o job **inativo** numa transação. O comando roda a
+cada cinco minutos, mas só chama a função dentro das duas janelas e durante a vigência. Consulta
+a chave dedicada pelo nome no Vault, sem gravá-la no texto do job. Pausa ou expiração cancela o
+próprio job no próximo tick. Rollback pausa a autorização e cancela o job, preservando dados.
+
+A instalação usa [pg_cron, pg_net e Vault](https://supabase.com/docs/guides/functions/schedule-functions).
+Não há instalação automática das extensões, geração de segredo remoto, deploy ou ativação pelo
+script. Uma consulta de saúde que encontre `configured` comprova configuração, não cron ativo.
+Para declarar recorrência ativa, registrar instalação autorizada, chamada pelo relógio, recibo
+persistido e leitura independente. Conferir também CPU/memória reais: o Edge documenta 256 MB e
+dois segundos de CPU por requisição; o tempo de I/O do Lab não substitui essa medição.
+[Limites do runtime](https://supabase.com/docs/guides/functions/limits).
+
+## Validação reproduzível do novo executor
+
+```powershell
+deno test --allow-net=127.0.0.1:55432,127.0.0.1:8789 --allow-env --allow-read tests/hosted_followup_test.ts tests/followup_policy_test.ts tests/followup_schedule_test.ts tests/mcp_test.ts
+deno run --allow-net=127.0.0.1:55432,localhost:8480 --allow-env --allow-read --allow-write=.private scripts/lab/hosted_followup_prove.ts
+```
+
+O primeiro grupo usa SQL real, fonte sintética e cliente MCP SDK por HTTP local: autorização,
+isolamento, concorrência, mudança de época/política, prazo, rollback do orçamento, quotas,
+reconciliação de conclusão após crash e DST. O segundo consulta o Moodle Lab real como estudante,
+via transporte explicitamente remapeado para loopback. Usa relógio acelerado, registra duas
+tentativas/retomada, impede a terceira e termina pausado. Não prova DNS/TLS externo, CPU hospedada,
+espera real de 15 minutos ou agendamento remoto. Os recibos e IDs ficam fora do Git.

@@ -156,6 +156,14 @@ export interface MoodleConfig {
 }
 
 export interface MoodleDeps {
+  /** Internal finite-run gate; the normal pinned HTTPS transport remains in use. */
+  readonly requestBudget?: {
+    begin(request: { url: string; method: string; fn: string }): Promise<{
+      maxBytes: number;
+      timeoutMs: number;
+      finish(bytes: number | null): Promise<void>;
+    }>;
+  };
   /** Backend-only guard, never a model or provider argument. Missing means blocked. */
   readonly withOwnSubmissionStatus?: <T>(
     identity: number,
@@ -969,6 +977,7 @@ interface RegisteredFile {
 }
 
 interface SendOptions {
+  readonly timeoutMs?: number;
   readonly url: string;
   readonly method: "POST" | "GET";
   readonly headers: Record<string, string>;
@@ -1023,6 +1032,7 @@ export class MoodleAdapter {
   private readonly _resolver: HostResolver;
   private readonly _checkDns: boolean;
   private readonly _onRequest?: () => void;
+  private readonly _requestBudget?: MoodleDeps["requestBudget"];
   private readonly _withOwnSubmissionStatus?: MoodleDeps["withOwnSubmissionStatus"];
 
   private identityPromise?: Promise<MoodleIdentity>;
@@ -1051,6 +1061,7 @@ export class MoodleAdapter {
     this._injectedFetch = deps.fetch;
     this._resolver = deps.resolveHost ?? defaultResolveHost;
     this._onRequest = deps.onRequest;
+    this._requestBudget = deps.requestBudget;
     this._withOwnSubmissionStatus = deps.withOwnSubmissionStatus;
     // O DNS e validado no caminho real e sempre que um resolvedor e injetado
     // para teste. Sem resolvedor e com fetch injetado, e fixture pura.
@@ -1171,8 +1182,28 @@ export class MoodleAdapter {
    * Caminho de fixture: fetch injetado, sem rede real.
    */
   private async send(options: SendOptions): Promise<TransportReply> {
-    if (this._injectedFetch) return await this.sendViaFetch(options);
-    return await this.sendViaNode(options);
+    const budget = await this._requestBudget?.begin({
+      url: options.url,
+      method: options.method,
+      fn: options.fn,
+    });
+    const bounded = budget
+      ? {
+        ...options,
+        maxBytes: Math.min(options.maxBytes, budget.maxBytes),
+        timeoutMs: Math.min(this.timeoutMs, budget.timeoutMs),
+      }
+      : options;
+    try {
+      const reply = this._injectedFetch
+        ? await this.sendViaFetch(bounded)
+        : await this.sendViaNode(bounded);
+      await budget?.finish(reply.bytes.byteLength);
+      return reply;
+    } catch (error) {
+      await budget?.finish(null).catch(() => {});
+      throw error;
+    }
   }
 
   private async sendViaFetch(options: SendOptions): Promise<TransportReply> {
@@ -1186,7 +1217,7 @@ export class MoodleAdapter {
         redirect: "manual",
         headers: { ...options.headers },
         body: options.body instanceof Uint8Array ? options.body.slice().buffer : options.body,
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs),
       });
       const contentType = response.headers.get("content-type");
       if (response.status !== 200) {
@@ -1203,6 +1234,7 @@ export class MoodleAdapter {
   }
 
   private async sendViaNode(options: SendOptions): Promise<TransportReply> {
+    const deadline = Date.now() + (options.timeoutMs ?? this.timeoutMs);
     const target = new URL(options.url);
     if (target.protocol !== "https:") {
       // O transporte interno e HTTPS. Origem http de loopback existe apenas para
@@ -1227,6 +1259,7 @@ export class MoodleAdapter {
       path: target.pathname + target.search,
       method: options.method,
       headers: options.headers,
+      signal: AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs),
       lookup: (
         _hostname: string,
         lookupOptions: unknown,
@@ -1240,7 +1273,7 @@ export class MoodleAdapter {
         const status = response.statusCode ?? 0;
         const contentType = firstHeader(response.headers["content-type"]);
         if (status !== 200) {
-          response.resume();
+          response.destroy();
           resolve({ status, contentType, bytes: new Uint8Array(0) });
           return;
         }
@@ -1258,7 +1291,7 @@ export class MoodleAdapter {
         });
       });
       request.on("error", reject);
-      request.setTimeout(this.timeoutMs, () => {
+      request.setTimeout(options.timeoutMs ?? this.timeoutMs, () => {
         const timeoutError = new Error("Tempo da consulta Moodle excedido.");
         timeoutError.name = "TimeoutError";
         request.destroy(timeoutError);
@@ -1279,7 +1312,7 @@ export class MoodleAdapter {
             body: options.body,
             address,
             maxBytes: options.maxBytes,
-            timeoutMs: this.timeoutMs,
+            timeoutMs: Math.max(1, deadline - Date.now()),
           });
         } catch (fallbackError) {
           if (fallbackError instanceof PinnedHttpError) {

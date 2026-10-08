@@ -127,6 +127,10 @@ Deno.test("A01 A04 A10 A28: cliente MCP SDK real em HTTP local, OAuth sintético
       const content = r.content as { text: string }[];
       return JSON.parse(content[0].text);
     };
+    assert.equal(tools.tools.find((t: { name: string }) => t.name === "hub_followup_status")?.annotations?.readOnlyHint, true);
+    assert.equal(tools.tools.find((t: { name: string }) => t.name === "hub_followup_pause")?.annotations?.readOnlyHint, false);
+    assert.deepEqual(await call("hub_followup_status", {}), { scheduling_verified_by_this_read: false, grants: [] });
+    assert.equal((await call("hub_followup_pause", { grant_id: crypto.randomUUID() })).code, "not_found");
     const discussions = await call("hub_moodle_discussions", {
       connection_id: moodleConnectionId,
       forum_id: 5,

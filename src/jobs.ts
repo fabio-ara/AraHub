@@ -1,4 +1,4 @@
-import { asOwner, type Db } from "./db.ts";
+import { asOwner, type Db, logicalWriteBytes } from "./db.ts";
 import { type Coverage, HubError, type Principal } from "./contracts.ts";
 import type postgres from "postgres";
 
@@ -96,7 +96,7 @@ export class Jobs {
         throw new HubError("job_conflict", "O lote já mudou ou não está disponível.", 409);
       }
       return rows[0];
-    });
+    }, { logicalBytes: () => logicalWriteBytes({ coverage, cursor, details }) });
   }
   list(p: Principal) {
     return asOwner(

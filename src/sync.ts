@@ -1,5 +1,5 @@
 import { Hub } from "./domain.ts";
-import { asOwner, withJobLease } from "./db.ts";
+import { asOwner, logicalWriteBytes, type TransactionGuard, withJobLease } from "./db.ts";
 import { type JobClaimGate, Jobs } from "./jobs.ts";
 import { type Coverage, HubError, type Principal } from "./contracts.ts";
 import type { ConnectionService } from "./connections.ts";
@@ -108,9 +108,10 @@ export interface SyncRunResult {
 }
 
 export interface SyncOptions {
-  /** Local finite consumer only. Absent in existing HTTP/MCP paths. */
+  /** Internal finite consumer. Absent in interactive HTTP/MCP sync paths. */
   readonly execution?: {
     readonly claim: JobClaimGate;
+    readonly transactionGuard?: TransactionGuard;
     moodleDeps(metrics: JobMetrics): MoodleDeps;
   };
   /**
@@ -282,7 +283,7 @@ export class Sync {
     // Vincula as escritas ao lease ativo deste lote: um lease perdido nega a
     // escrita seguinte (job_conflict) em vez de gravar sob a posse de outro
     // processo que ja reivindicou o mesmo escopo.
-    p = withJobLease(p, job.id, job.attempts);
+    p = withJobLease(p, job.id, job.attempts, this.options.execution?.transactionGuard);
     try {
       if (job.kind === "moodle_courses") {
         return await this.runCoursesJob(p, job, directed, metrics);
@@ -350,7 +351,7 @@ export class Sync {
           tx.json(jsonable(state))
         }) on conflict(owner_id,connection_id,kind,external_id) do update set title=excluded.title,state=hub_entities.state || excluded.state returning id,state`;
       return rows[0] as Record<string, unknown>;
-    });
+    }, { logicalBytes: () => logicalWriteBytes({ kind, externalId, title, state }) });
   }
 
   /** Observacao independente, deduplicada por (owner, entity, content_hash). */
@@ -369,6 +370,9 @@ export class Sync {
       },${hash},${
         tx.json(jsonable(provenance))
       },${coverage},${observedAt}) on conflict(owner_id,entity_id,content_hash) do nothing`;
+    }, {
+      logicalBytes: () =>
+        logicalWriteBytes({ entityId, content, provenance, coverage, observedAt }),
     });
   }
 
@@ -383,7 +387,7 @@ export class Sync {
       await tx`insert into public.hub_relations(owner_id,from_id,to_id,kind,evidence) values(${p.ownerId},${fromId},${toId},${kind},${
         tx.json(jsonable(evidence))
       }) on conflict(owner_id,from_id,to_id,kind) do nothing`;
-    });
+    }, { logicalBytes: () => logicalWriteBytes({ fromId, toId, kind, evidence }) });
   }
 
   /** One current section per module. Old structural edges are explicitly
@@ -419,7 +423,7 @@ export class Sync {
           values(${p.ownerId},${sectionId},${moduleId},'has_module',${tx.json(jsonable(evidence))})
           on conflict(owner_id,from_id,to_id,kind) do update set evidence=excluded.evidence`;
       }
-    });
+    }, { logicalBytes: () => logicalWriteBytes({ connectionId, sectionId, moduleId, evidence }) });
   }
 
   // -- Checkpoint duravel da travessia de foruns --------------------------
@@ -481,7 +485,7 @@ export class Sync {
       },${"Checkpoint de sincronizacao do curso " + checkpoint.course_id},${
         tx.json(jsonable(checkpoint))
       }) on conflict(owner_id,connection_id,kind,external_id) do update set title=excluded.title,state=excluded.state`;
-    });
+    }, { logicalBytes: () => logicalWriteBytes({ connectionId, checkpoint }) });
   }
 
   /**
@@ -502,7 +506,7 @@ export class Sync {
       } where owner_id=${p.ownerId} and connection_id=${connectionId} and kind=${SYNC_CHECKPOINT_KIND} and external_id=${
         this.checkpointExternalId(courseId)
       }`;
-    });
+    }, { logicalBytes: () => logicalWriteBytes({ connectionId, courseId, completed: true }) });
   }
 
   // -- Lote de cursos (preservado) ----------------------------------------

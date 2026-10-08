@@ -4,6 +4,7 @@ import { z } from "zod";
 import { deltaSchema, Hub } from "./domain.ts";
 import { type Delta, HubError, type Principal } from "./contracts.ts";
 import { Jobs } from "./jobs.ts";
+import { HostedFollowup } from "./hosted_followup.ts";
 import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { Materials } from "./materials.ts";
@@ -31,7 +32,7 @@ export async function handleMcp(
   actions?: PersistentActionStore,
   materialTransfers?: MaterialTransfers,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.2.6" });
+  const server = new McpServer({ name: "arahub", version: "0.2.7" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {
@@ -344,6 +345,23 @@ export async function handleMcp(
     inputSchema: {},
     annotations: read,
   }, () => response(() => new Jobs(hub.db).list(principal)));
+  server.registerTool("hub_followup_status", {
+    description:
+      "Consulta horários, validade, pausas, últimas tentativas e limites do acompanhamento do titular. Uma política configurada não comprova cron ativo. Somente memória; não consulta Moodle.",
+    inputSchema: {},
+    annotations: read,
+  }, () => response(() => HostedFollowup.statusForOwner(hub.db, principal)));
+  server.registerTool(
+    "hub_followup_pause",
+    {
+      description:
+        "Pausa o acompanhamento do titular sem apagar memória ou revogar a conexão Moodle. Impede novas leituras e escritas da tentativa em execução; requisição já despachada pode terminar. Não permite ativar, ampliar ou renovar agendamento.",
+      inputSchema: { grant_id: z.string().uuid() },
+      annotations: write,
+    },
+    (a: { grant_id: string }) =>
+      response(() => HostedFollowup.pauseForOwner(hub.db, principal, a.grant_id)),
+  );
   server.registerTool("hub_usage", {
     description:
       "Mede contagens e bytes lógicos de arquivos preservados/texto do próprio usuário. Não informa tamanho físico/faturável do projeto ou saldo de cota. Somente leitura.",

@@ -5,7 +5,7 @@ import { asOwner, type Db } from "./db.ts";
 import { HubError, type Principal } from "./contracts.ts";
 import type { JobClaimGate } from "./jobs.ts";
 import type { SyncOptions } from "./sync.ts";
-import { type FetchLike, MoodleError } from "./adapters/moodle.ts";
+import { type FetchLike, type MoodleDeps, MoodleError } from "./adapters/moodle.ts";
 
 export const FOLLOWUP_KIND = "followup_policy";
 const amount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -165,10 +165,12 @@ export class FollowupPolicies {
       and attempts=${r.attempt} and state='running'`;
     s.recent = [...s.recent, { ...r, outcome, finished_at: t }].slice(-10);
     s.active = null;
-    s.failures = outcome === "complete" ? 0 : s.failures + 1;
+    s.failures = outcome === "complete" || outcome === "progress" ? 0 : s.failures + 1;
     s.next_at = t +
       (outcome === "complete"
         ? s.config.interval_ms
+        : outcome === "progress"
+        ? s.config.backoff_ms
         : Math.min(86400000, s.config.backoff_ms * 2 ** Math.min(s.failures - 1, 5)));
     if (outcome === "expired" || s.failures >= s.config.max_failures) {
       s.paused = true;
@@ -242,16 +244,19 @@ export class FollowupPolicies {
     p: Principal,
     id: string,
     origin: string,
-    transport: FetchLike,
+    transport?: FetchLike,
     runId: string = crypto.randomUUID(),
+    expectedInput?: FollowupInput,
   ): FollowupExecution {
     z.string().uuid().parse(runId);
+    const binding = expectedInput ? JSON.stringify(followupInput.parse(expectedInput)) : null;
     let active: Run | null = null;
     let limits: FollowupBudget | null = null;
     const claim: JobClaimGate = {
       policyId: id,
       reserve: async (tx, job) => {
         const s = await this.load(tx, p, id), t = await now(tx), c = s.config;
+        if (binding && JSON.stringify(followupInput.parse(c)) !== binding) fail("policy_binding");
         const [parent] =
           await tx`select origin,state from public.hub_connections where owner_id=${p.ownerId} and id=${c.connection_id}`;
         if (
@@ -360,6 +365,7 @@ export class FollowupPolicies {
 /** Guarded local transport. Byte limit means decoded response bytes admitted, not wire/IP bytes. */
 export class FollowupExecution {
   #bytes = 0;
+  #calls = 0;
   #busy = false;
   #stopped = false;
   constructor(
@@ -369,7 +375,7 @@ export class FollowupExecution {
     private saveBytes: (count: number) => Promise<void>,
     readonly finish: (outcome: string) => Promise<void>,
     private origin: string,
-    private transport: FetchLike,
+    private transport?: FetchLike,
   ) {}
   get run() {
     return this.snapshot().active;
@@ -378,8 +384,88 @@ export class FollowupExecution {
     return {
       claim: this.claim,
       moodleDeps: (metrics) => ({
-        fetch: (input, init) => this.fetch(input, init, () => metrics.recordCall()),
+        ...(this.transport
+          ? {
+            fetch: (input: string | URL | Request, init?: RequestInit) =>
+              this.fetch(input, init, () => metrics.recordCall()),
+          }
+          : {
+            requestBudget: this.requestBudget,
+            onRequest: () => metrics.recordCall(),
+          }),
       }),
+    };
+  }
+  /** Never injects fetch: DNS validation, address pinning and TLS stay mandatory. */
+  get requestBudget(): NonNullable<MoodleDeps["requestBudget"]> {
+    return {
+      begin: async ({ url, method, fn }) => {
+        const target = new URL(url), expected = new URL(this.origin);
+        const allowed = new Set([
+          "core_webservice_get_site_info",
+          "core_enrol_get_users_courses",
+          "core_course_get_contents",
+          "mod_page_get_pages_by_courses",
+          "mod_book_get_books_by_courses",
+          "mod_resource_get_resources_by_courses",
+          "mod_url_get_urls_by_courses",
+          "mod_forum_get_forums_by_courses",
+          "mod_forum_get_forum_discussions",
+          "mod_forum_get_discussion_posts",
+          "mod_feedback_get_feedbacks_by_courses",
+          "mod_feedback_get_items",
+          "mod_assign_get_assignments",
+          "core_completion_get_course_completion_status",
+          "core_completion_get_activities_completion_status",
+        ]);
+        if (
+          expected.protocol !== "https:" || target.origin !== expected.origin ||
+          target.pathname !==
+            expected.pathname.replace(/\/$/, "") + "/webservice/rest/server.php" ||
+          target.search || target.hash || target.username || target.password || method !== "POST" ||
+          !allowed.has(fn)
+        ) fail("followup_transport");
+        if (this.#busy || this.#stopped) {
+          throw new MoodleError(
+            "limit_exceeded",
+            "Orçamento desta execução esgotado.",
+          );
+        }
+        const { active, limits } = this.snapshot();
+        if (!active || !limits) fail("policy_unclaimed");
+        if (this.#calls >= limits.calls) fail("followup_budget");
+        this.#busy = true;
+        try {
+          await this.dispatch();
+          this.#calls++;
+          const timeoutMs = active.deadline - Date.now();
+          if (timeoutMs <= 0) fail("followup_budget");
+          let settled = false;
+          return {
+            maxBytes: Math.min(16 * 1024 * 1024, limits.response_bytes - this.#bytes),
+            timeoutMs,
+            finish: async (count: number | null) => {
+              if (settled) return;
+              settled = true;
+              if (count === null) this.#stopped = true; // unknown partial body never permits another call
+              else this.#bytes += count;
+              try {
+                await this.saveBytes(this.#bytes);
+              } finally {
+                this.#busy = false;
+              }
+              if (Date.now() >= active.deadline) {
+                this.#stopped = true;
+                fail("followup_budget");
+              }
+            },
+          };
+        } catch (error) {
+          this.#busy = false;
+          this.#stopped = true;
+          throw error;
+        }
+      },
     };
   }
   async fetch(
@@ -415,6 +501,7 @@ export class FollowupExecution {
         ? AbortSignal.any([init.signal, controller.signal])
         : controller.signal;
       onDispatch?.();
+      if (!this.transport) fail("followup_local_transport");
       const response = await this.transport(input, { ...init, redirect: "error", signal });
       reader = response.body?.getReader();
       const remaining = Math.min(16 * 1024 * 1024, limits.response_bytes - this.#bytes);

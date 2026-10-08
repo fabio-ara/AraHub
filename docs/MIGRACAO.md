@@ -155,6 +155,20 @@ Flags: `--source`, `--to`/`--dest`, `--in`, `--out`, `--label`.
 
 `deno task backup:local` restaura o dump em banco exclusivo novo e compara tabelas do domínio/cofre, binários, políticas RLS e grants. A prova original comparou 11 tabelas e 855.797 bytes; há também prova posterior com 14 tabelas em `STATUS.md`. Destinos/manifests ficam em `.private/backups/`. Executar com escritas locais pausadas; o restore não sobrescreve outro banco.
 
+Se o CLI Docker estiver indisponível mas o PostgreSQL local responder, usar
+`deno task backup:local --postgres-program`. Essa opção explícita usa os mesmos
+`pg_dump`/`pg_restore` já instalados no servidor local exclusivo, por `COPY TO PROGRAM`,
+com os privilégios existentes do operador. Não concede permissões, reinicia serviços
+ou aceita banco/comando externo. O dump é transferido em partes pelo SQL, sem navegador.
+As operações têm prazo de dois minutos; destinos parciais ficam preservados para diagnóstico.
+[Mecanismo PostgreSQL](https://www.postgresql.org/docs/17/sql-copy.html).
+
+O manifesto v2 compara hashes por linha, incluindo SHA-256 calculado dos bytes de cada
+binário, evitando agregar o banco inteiro num único JSONB. A prova corrente restaurou
+17 tabelas, inclusive a autorização privada de acompanhamento, a partir de 108.933.198
+bytes; dados, RLS e grants coincidiram. Isso prova o banco local, não o Auth gerenciado
+nem as chaves externas do cofre.
+
 ## Importação e recuperação hospedadas
 
 Lote privado aprovado separadamente e executado em 2026-10-06; consultar

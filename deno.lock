@@ -677,6 +677,13 @@
           "npm:zod@3.25.76"
         ]
       },
+      "supabase/functions/arahub-acompanhamento": {
+        "dependencies": [
+          "npm:jose@6.2.12",
+          "npm:postgres@3.4.9",
+          "npm:zod@3.25.76"
+        ]
+      },
       "web": {
         "dependencies": [
           "npm:@supabase/supabase-js@2.117.2"

@@ -1,5 +1,5 @@
 {
-  "workspace": ["web", "supabase/functions/arahub"],
+  "workspace": ["web", "supabase/functions/arahub", "supabase/functions/arahub-acompanhamento"],
   "lock": { "path": "./deno.lock", "frozen": true },
   "imports": {
     "postgres": "npm:postgres@3.4.9",

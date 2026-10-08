@@ -2,6 +2,10 @@
 
 Atualizado em 2026-10-08. **R1 ainda não concluída.** Backend 0.2.6 e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
 
+Engenharia do acompanhamento hospedado acrescentada para a versão 0.2.7, ainda sem deploy: autorização privada, janelas com fuso, limites por curso/tentativa, admissão de escrita, transporte HTTPS com IP fixado, saúde e pausa no MCP. Migration 16 aplicada somente no banco local. SQL de cron é gerado inativo e sem segredos; nenhuma recorrência real foi ativada. Provas dirigidas, cliente MCP local e duas tentativas com o Moodle Lab real demonstram retomada, orçamento e pausa. A implantação e a primeira execução pelo relógio dependem do lote específico; não estão implicitamente cobertas pelas leituras pontuais autorizadas.
+
+Nesta frente passaram 30 testes dirigidos e a regressão de 60 testes (há sobreposição), tipos e advisors locais. Backup/restore local com 17 tabelas, inclusive a nova autorização, comparou dados, hashes reais dos binários, RLS e grants. O verificador foi corrigido para volumes maiores e o dump foi transferido diretamente pelo PostgreSQL enquanto o CLI Docker estava indisponível; nenhum serviço precisou ser reiniciado. Isso não substitui a prova hospedada após implantação.
+
 Os três lotes autorizados estão executados: homologação nativa no Moodle Lab, importação privada dos materiais atuais e transição do METD para o AraHub como memória cotidiana principal. Git permanece como história e recuperação. Nenhum teste mutável foi feito na universidade.
 
 A ponte ChatGPT/Google → AraHub → Moodle Lab passou com arquivos reais, bytes, nomes e hashes, OAuth real e estudante sintético. Fórum com anexo, resposta ao post escolhido e entrega final tiveram recibos, conferência independente e inspeção visual no Chrome normal. Aprovação vencida é recusada; revisão autenticada pode autorizar novamente uma versão ainda válida. Resultados incertos e aprovações consumidas impedem reenvio automático. Recursos temporários da homologação foram encerrados.
