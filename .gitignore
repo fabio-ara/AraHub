@@ -36,6 +36,7 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+/web/theme.js
 /web/app.js
 /web/pdf-parser.worker.js
 

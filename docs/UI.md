@@ -5,22 +5,25 @@ por escopo legíveis, exportação privada e uma tela focada de aprovação acad
 cotidiano continua no chat; a interface não é um painel de operações técnicas.
 
 Arquivos: `web/index.html`, `web/app.ts`, `web/action_preview.ts`, `web/style.css`,
-`web/privacy.html` e `web/icons.ts`. O bundle `web/app.js` é gerado e ignorado pelo Git
-(`deno task web:app`).
+`web/privacy.html`, `web/theme.ts` e `web/icons.ts`. O bundle `web/app.js` é gerado e ignorado pelo Git
+(`deno task web:build`).
 
 ## Superfícies
 
 - **Conta (acesso):** entrada por senha local ou link por e-mail em HTTPS; sessão
   sintética quando o ambiente é sintético.
-- **Conexões e acesso (saúde):** lista as conexões do dono com o estado observado
-  (Conectada, Aguardando autorização, Desconectada, Acesso expirado, Acesso recusado,
-  Atualização indisponível) e uma linha de saúde derivada. Renovar, atualizar cursos e
+- **Conexões:** lista as conexões Moodle do dono. O estado normal fica em ícone com
+  nome acessível e dica; falhas de acesso continuam visíveis quando exigem atenção. Renovar, atualizar cursos e
   desconectar agem sobre a origem Moodle; nenhum estado prova frescor da fonte.
 - **Preferências:** lê `GET /api/preferences?scope={}` e apresenta o que está vigente,
   os conflitos e o que exige revisão humana, com escopo, vigência e situação em português.
 - **Exportação privada:** `GET /api/export` mostra o JSON do dono; credenciais têm
   recuperação separada e nunca entram na exportação.
-- **Ações acadêmicas:** tela focada de aprovação descrita abaixo.
+- **PDFs:** tela própria, acessível pelo ícone de documento quando disponível.
+- **Novo acesso Moodle:** formulário próprio pelo ícone de adicionar, sem cartão
+  expansível na tela de conexões. A orientação de entrada fica na ajuda contextual.
+- **Ações acadêmicas:** tela focada de aprovação descrita abaixo. Intenções pendentes
+  abrem essa tela na entrada; sem ações, não há aviso vazio na tela inicial.
 
 ## Remoção da operação Google própria
 
@@ -28,8 +31,8 @@ A interface não conecta, renova, amplia permissões nem sincroniza contas Googl
 formulário `google-connect`, o callback OAuth próprio, o `action_preview` de
 Docs/Sheets/Slides e os testes correspondentes foram retirados. `web/privacy.html` foi
 ajustado: o material Google já preservado permanece como registro histórico, sem exigir
-revogação nem apagar a memória. Uma conexão Google histórica ainda aparece na lista
-apenas como estado, sem operação própria.
+revogação nem apagar a memória. Fontes importadas históricas permanecem na memória, consultáveis pelo assistente;
+não ocupam a configuração das conexões ativas.
 
 ## Contrato de dados consumido
 
@@ -93,34 +96,37 @@ servidor, que também impõe a declaração quando a operação é `moodle.*` e
 
 ## Layout e legibilidade
 
-Coluna única de até 460 px, tema claro/escuro/sistema e área de conteúdo rolável. As abas
-Conexões e Preferências têm rótulo visível; as ações de decisão (autorizar/recusar) são
-botões com texto. Botões somente de ícone mantêm `aria-label`/título e alvo mínimo de
-44 px. O QA verifica ausência de overflow em 390×844 e 1280×900.
+A instrução visual corrente do titular exige botões exclusivamente de ícone,
+sem cartões HTML de configuração e sem textos de bastidor. Esta definição substitui
+os rótulos visíveis e cartões que a versão anterior introduziu.
 
-## Limitações conhecidas
+Todas as telas usam a mesma coluna de até 460 px e altura de 100dvh, com cabeçalho
+fixo, margens alinhadas, rodapé reservado e conteúdo rolável sem encolher controles.
+As listas são linhas simples. Botões medem 44 × 44 px, com `aria-label`, título,
+foco visível e estados habilitado/selecionado. Permissões e declaração de autoria
+continuam explícitas na revisão da ação, sem mudar os controles de autorização.
 
-- **Assentimento na HTTP:** `src/http.ts` ainda valida `/api/actions/approve|deny` com
-  schema estrito de `action_id` e `content_hash` e não repassa `statement_accepted` ao
-  armazenamento. Enquanto essa ligação não existir, as decisões da UI falham na HTTP; é
-  uma dependência fora da interface.
-- **Endpoint de preferências:** `GET /api/preferences` é fornecido pelo backend. Se
-  ainda não estiver disponível, a tela mostra "Preferências indisponíveis no momento" em
-  vez de um resultado vazio enganoso.
-- **Conexões Google históricas:** aparecem apenas como estado; sem renovação, ampliação
-  ou verificação de leitura.
+O tema claro/escuro/sistema é inicializado antes do CSS pelo bundle compartilhado
+`theme.js`; Privacidade, entrada e callbacks usam a mesma preferência. Privacidade
+resume os efeitos que interessam ao titular, sem arquitetura, migrações ou histórico
+de desenvolvimento. Ajuda operacional aparece quando solicitada.
+
+O QA mede dimensões, alinhamento e interseções de controles considerando a área
+rolável. Cobre desktop 1280×900 e viewport móvel 390×844, troca de telas, diálogo de
+permissão e ida/volta/reload de Privacidade em tema escuro. Viewport móvel não é
+prova em aparelho físico.
 
 ## Construir e verificar
 
 ```
 deno task web:check
-deno task web:app
+deno task web:build
 deno test --allow-read tests/action_preview_test.ts
 node scripts/qa_ui.mjs
 ```
 
 `scripts/qa_ui.mjs` sobe um navegador isolado com fixtures sintéticos (nenhuma conta
-real) e cobre login, saúde/conexões, preferências com escopo/conflito/revisão via
+real) e cobre login, conexões, preferências com escopo/conflito/revisão via
 `/api/preferences`, renovação Moodle pelo link móvel, aprovação das três ações
 acadêmicas com `statement_accepted` correto, operação retirada como registro histórico
 com botões indisponíveis, texto hostil não executado, ausência de Google e de JSON cru,

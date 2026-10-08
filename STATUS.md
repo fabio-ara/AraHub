@@ -2,6 +2,8 @@
 
 Atualizado em 2026-10-08. **Versão 0.2.7 liberada para uso pessoal cotidiano.** Backend e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
 
+Correção visual solicitada pelo titular: removidos cartões de configuração e textos de bastidor; botões só com ícones e nomes acessíveis; telas próprias para Moodle/PDFs; geometria comum e tema persistente também em Privacidade. Validação local: 11 testes dirigidos e os dois roteiros de navegador em desktop/viewport móvel, incluindo aprovações, PDF, consentimento, retorno e recarga em tema escuro. Publicação da interface em andamento; backend/dados inalterados.
+
 O titular definiu o uso real em produção como a próxima etapa de validação. Não há impedimento conhecido nem nova instalação, aprovação geral ou rodada de simulação necessária para começar a usar a versão publicada. A leitura autenticada da memória foi reconfirmada pelo conector pessoal, recuperando as quatro versões esperadas. As provas existentes de laboratório, ChatGPT, interface e recuperação permanecem válidas; falhas concretas no uso orientarão as correções. Aprovações de publicações e entregas acadêmicas continuam específicas à ação. Acompanhamento e processamento automático de novos vídeos fora da conversa permanecem inativos; a R1 integral continua aberta, sem bloquear esta versão cotidiana.
 
 Após o pedido de publicação imediata, backend 0.2.7 e migration 16 foram implantados na instância existente, sem alterar plano, conta, conexão ou interface. Função principal ativa, saúde HTTP 200, MCP sem autenticação recusado com 401 e conector pessoal real recuperando as quatro versões de um material. As 12 tabelas do titular permaneceram iguais durante a implantação. A entrega utilizável não depende do cron.

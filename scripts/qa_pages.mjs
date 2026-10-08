@@ -54,6 +54,7 @@ for (
   const path of [
     "index.html",
     "privacy.html",
+    "ui/theme.js",
     "ui/app.js",
     "ui/pdf-parser.worker.js",
     "ui/style.css",
@@ -307,14 +308,28 @@ try {
     await page.goto(site);
     await page.getByRole("button", { name: "Receber link de acesso" })
       .waitFor();
+    await page.getByRole("button", { name: "Mudar tema: sistema", exact: true }).click();
+    await page.getByRole("button", { name: "Mudar tema: claro", exact: true }).click();
+    const shellBox = await page.locator(".app-shell").boundingBox();
     await page.getByRole("link", { name: "Privacidade", exact: true }).click();
-    await page.getByRole("heading", { name: "Seus dados", exact: true }).waitFor();
-    assert.equal(await page.locator("script").count(), 0);
+    await page.getByRole("heading", { name: "Sua memória", exact: true }).waitFor();
+    assert.equal(await page.locator("script").count(), 1);
+    assert.equal(await page.locator("html").getAttribute("data-color-mode"), "dark");
+    assert.deepEqual(await page.locator(".app-shell").boundingBox(), shellBox);
+    assert.ok(
+      !(await page.locator("body").textContent()).match(/Supabase|GitHub|backend|OAuth|MIT/),
+    );
+    await page.reload();
+    assert.equal(await page.locator("html").getAttribute("data-color-mode"), "dark");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    await writeFile(new URL(`privacy-${viewport.width}.png`, folder),
-      await page.screenshot({ fullPage: true, animations: "disabled" }));
+    await writeFile(
+      new URL(`privacy-${viewport.width}.png`, folder),
+      await page.screenshot({ fullPage: true, animations: "disabled" }),
+    );
     await page.getByRole("link", { name: "Voltar ao AraHub", exact: true }).click();
     await page.getByRole("button", { name: "Receber link de acesso" }).waitFor();
+    assert.equal(await page.locator("html").getAttribute("data-color-mode"), "dark");
+    assert.deepEqual(await page.locator(".app-shell").boundingBox(), shellBox);
     assert.equal(await page.locator("#password").isVisible(), false);
     await page.locator("#email").fill(user.email);
     await page.getByRole("button", { name: "Receber link de acesso" }).click();
@@ -331,7 +346,7 @@ try {
     assert.equal(exchange, 1);
     assert.equal(new URL(page.url()).searchParams.has("code"), false);
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
-    await page.locator("#moodle-setup > summary").click();
+    await page.getByRole("button", { name: "Adicionar Moodle", exact: true }).click();
     assert.equal(await page.locator("#moodle-token").isVisible(), true);
     await page.locator("#moodle-label").fill("Moodle de teste");
     // A UI mantém o endereço somente-leitura até um gesto (evita autofill);
@@ -354,17 +369,17 @@ try {
     await page.getByRole("button", { name: "Renovar Moodle", exact: true })
       .click();
     await page.getByText(
-      "Acesso Moodle renovado. A identidade e o histórico foram preservados.",
+      "Acesso renovado.",
       {
         exact: true,
       },
     ).waitFor();
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
     assert.equal(moodleRequests, 2);
-    await page.locator("#pdf-setup > summary").click();
+    await page.getByRole("button", { name: "PDFs", exact: true }).click();
     await page.getByRole("button", { name: "Extrair texto", exact: true })
       .click();
-    await page.getByText("Texto preservado por página, sem OCR.", {
+    await page.getByText("PDF pronto para consulta.", {
       exact: true,
     }).waitFor().catch(async () => {
       throw new Error(
@@ -379,8 +394,8 @@ try {
     pdfTampered = true;
     // Após extração completa a UI desabilita o botão; recarregar a lista (o stub
     // reporta cobertura incompleta) reabilita os próximos ensaios.
-    await page.locator("#pdf-setup > summary").click();
-    await page.locator("#pdf-setup > summary").click();
+    await page.getByRole("button", { name: "PDFs", exact: true }).click();
+    await page.getByRole("button", { name: "PDFs", exact: true }).click();
     await page.waitForTimeout(150);
     await page.getByRole("button", { name: "Extrair texto", exact: true }).click();
     await page.getByText("O arquivo mudou. Atualize a lista.", { exact: true }).waitFor();
@@ -440,6 +455,8 @@ try {
       consent: "provider_stub",
       physical_callbacks: true,
       privacy_link_and_return: true,
+      dark_theme_roundtrip_reload: true,
+      shell_geometry_unchanged: true,
       password_hidden: true,
       moodle_https_connect_renew: moodleRequests === 2,
       pdf_browser_worker: true,

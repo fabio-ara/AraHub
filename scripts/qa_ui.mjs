@@ -34,6 +34,8 @@ const errors = [], receipts = [];
 const staticFiles = new Map(
   await Promise.all([
     ["/", "index.html", "text/html"],
+    ["/ui/theme.js", "theme.js", "application/javascript"],
+    ["/privacy.html", "privacy.html", "text/html"],
     ["/ui/app.js", "app.js", "application/javascript"],
     ["/ui/style.css", "style.css", "text/css"],
   ].map(async (
@@ -257,6 +259,7 @@ try {
           canConnectMoodle: true,
           canApproveActions: true,
           canExtractPdf: false,
+          canAuthorizeOwnStatus: true,
           supabaseUrl: base + "/identity-fixture",
           publishableKey: "public-synthetic-key",
         });
@@ -275,6 +278,15 @@ try {
           return route.fulfill({ status: 204, body: "" });
         }
         return reply(user);
+      }
+      if (url.pathname === "/api/connections/own-status/review") {
+        return reply({
+          label: "Moodle de teste",
+          origin: "https://moodle.fixture.invalid",
+          account: "Aluno sintético",
+          explanation: "Esta consulta pode atualizar registros técnicos de acesso.",
+          allowed: true,
+        });
       }
       if (url.pathname === "/api/context") {
         return reply({
@@ -419,11 +431,12 @@ try {
       ]
     ) assert.ok(!bodyText.includes(forbidden), forbidden);
 
-    // Access health and the Moodle connection.
-    assert.match(await page.locator("#connection-health").textContent(), /^Acesso: /);
-    assert.equal(await page.locator("#connection-health").textContent(), "Acesso: 1 Conectada.");
-    assert.equal(await page.locator("#preserved-sources").getAttribute("open"), null);
-    assert.equal(await page.locator("#preserved-sources button").count(), 0);
+    // Quiet connection view: state is accessible without redundant text/cards.
+    await page.getByRole("button", { name: "Conexões", exact: true }).click();
+    assert.equal(await page.locator("#connection-health").count(), 0);
+    assert.equal(await page.getByRole("img", { name: "Conectada", exact: true }).count(), 1);
+    assert.equal(await page.locator("#moodle-setup, #pdf-setup").count(), 0);
+    assert.equal(await page.locator("#actions-panel").isVisible(), false);
     assert.ok(
       (await page.locator("#connection-list").textContent()).includes("Moodle de teste"),
     );
@@ -432,9 +445,65 @@ try {
       await page.screenshot({ fullPage: true, animations: "disabled" }),
     );
 
+    const shellBox = await page.locator(".app-shell").boundingBox();
+    const checkGeometry = async (name) => {
+      assert.deepEqual(await page.locator(".app-shell").boundingBox(), shellBox, name);
+      const problems = await page.locator("button:visible, a.icon-ghost:visible").evaluateAll(
+        (nodes) => {
+          const boxes = nodes.map((node) => {
+            const raw = node.getBoundingClientRect();
+            const box = { left: raw.left, right: raw.right, top: raw.top, bottom: raw.bottom };
+            for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+              const css = getComputedStyle(parent), rect = parent.getBoundingClientRect();
+              if (/auto|scroll|hidden|clip/.test(css.overflowX)) {
+                box.left = Math.max(box.left, rect.left);
+                box.right = Math.min(box.right, rect.right);
+              }
+              if (/auto|scroll|hidden|clip/.test(css.overflowY)) {
+                box.top = Math.max(box.top, rect.top);
+                box.bottom = Math.min(box.bottom, rect.bottom);
+              }
+            }
+            return { node, raw, box };
+          }).filter(({ box }) => box.left < box.right && box.top < box.bottom);
+          return boxes.flatMap(({ node, raw, box }, index) => {
+            const label = node.getAttribute("aria-label");
+            const problems = [];
+            if (!label || node.textContent.trim() || raw.width !== 44 || raw.height !== 44) {
+              problems.push(label || node.id);
+            }
+            for (const other of boxes.slice(index + 1)) {
+              if (
+                box.left < other.box.right && box.right > other.box.left &&
+                box.top < other.box.bottom && box.bottom > other.box.top
+              ) problems.push("overlap:" + label);
+            }
+            return problems;
+          });
+        },
+      );
+      assert.deepEqual(problems, [], name);
+    };
+    await checkGeometry("connections");
+    assert.equal(
+      (await page.locator("#theme").boundingBox()).x,
+      (await page.locator("#connections-tab").boundingBox()).x,
+    );
+    assert.equal(
+      (await page.locator("#privacy").boundingBox()).x,
+      (await page.locator("#connections-tab").boundingBox()).x,
+    );
+    await page.getByRole("button", { name: "Status das minhas entregas", exact: true }).click();
+    await page.getByRole("dialog").waitFor();
+    const modalBox = await page.getByRole("dialog").boundingBox();
+    assert.equal(modalBox.width, shellBox.width);
+    assert.equal(modalBox.height, shellBox.height);
+    await writeFile(new URL(`own-status-${viewport.width}.png`, folder), await page.screenshot());
+    await page.getByRole("button", { name: "Cancelar", exact: true }).click();
     // Preferences come from the scoped endpoint: valid scopes, conflicts, review.
     await page.getByRole("button", { name: "Preferências", exact: true }).click();
     await page.locator("#preferences-view").waitFor({ state: "visible" });
+    await checkGeometry("preferences");
     const preferenceSummary = await page.locator("#preference-summary").textContent();
     assert.match(
       preferenceSummary,
@@ -464,11 +533,11 @@ try {
     await page.getByRole("button", { name: "Conexões", exact: true }).click();
 
     // Moodle renewal through the official mobile link.
-    await page.locator("#moodle-setup > summary").click();
+    await page.getByRole("button", { name: "Adicionar Moodle", exact: true }).click();
     await page.locator("#moodle-origin").click();
     await page.locator("#moodle-origin").fill("fixture@example.invalid");
     assert.equal(await page.locator("#moodle-origin").inputValue(), "");
-    await page.locator("#moodle-setup > summary").click();
+    await page.getByRole("button", { name: "Voltar às conexões", exact: true }).click();
     await page.getByRole("button", { name: "Renovar acesso", exact: true }).first()
       .click();
     assert.equal(
@@ -494,19 +563,17 @@ try {
     await page.getByRole("button", { name: "Renovar Moodle", exact: true })
       .click();
     await page.getByText(
-      "Acesso Moodle renovado. A identidade e o histórico foram preservados.",
+      "Acesso renovado.",
       { exact: true },
     ).waitFor();
     assert.equal(renewed, true);
     assert.equal(await page.locator("#moodle-token").inputValue(), "");
-    await page.locator("#moodle-origin").click();
-    assert.equal(
-      await page.locator("#moodle-origin").evaluate((el) => el.readOnly),
-      false,
-    );
+    assert.equal(await page.locator("#moodle-view").isVisible(), false);
+    await page.getByRole("button", { name: "Ações acadêmicas", exact: true }).click();
 
+    await checkGeometry("academic review");
     // Focused academic approval surface.
-    const cards = page.locator("#action-list > .panel");
+    const cards = page.locator("#action-list > .item-row");
     assert.equal(await cards.count(), 3);
     const forum = cards.nth(0);
     const forumText = await forum.textContent();
@@ -553,7 +620,7 @@ try {
         "Arquivos por entrega: até 3",
         "Tamanho máximo por arquivo: 5.0 MiB",
         "Estado atual: Rascunho salvo",
-        "Pode enviar: Sim",
+        "Pode finalizar no estado atual: Sim",
       ]
     ) assert.ok(filesText.includes(material), material);
     const filesApprove = filesCard.getByRole("button", {
@@ -648,7 +715,7 @@ try {
           const label = (b.getAttribute("aria-label") ?? "").trim() ||
             (b.textContent ?? "").trim();
           const box = b.getBoundingClientRect();
-          return !label || box.width < 44 || box.height < 44;
+          return !label || (b.textContent ?? "").trim() || box.width !== 44 || box.height !== 44;
         }).map((b) => b.id || (b.textContent ?? "").trim())
       ),
       [],

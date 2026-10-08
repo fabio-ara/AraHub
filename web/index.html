@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#f7f8fa">
     <meta name="arahub-api-base" content="">
     <title>AraHub</title>
+    <script src="/ui/theme.js"></script>
     <link rel="stylesheet" href="/ui/style.css">
     <script type="module" src="/ui/app.js"></script>
   </head>
@@ -37,10 +38,14 @@
             </section>
             <section id="workspace" hidden>
               <nav class="toolbar" aria-label="Configuração">
-                <button id="connections-tab" class="tab-button active" aria-label="Conexões"
+                <button id="connections-tab" class="icon-ghost active" aria-label="Conexões"
                   title="Conexões" aria-pressed="true"></button>
-                <button id="preferences-tab" class="tab-button" aria-label="Preferências"
+                <button id="preferences-tab" class="icon-ghost" aria-label="Preferências"
                   title="Preferências" aria-pressed="false"></button>
+                <button id="pdf-tab" class="icon-ghost" aria-label="PDFs" title="PDFs"
+                  aria-pressed="false" hidden></button>
+                <button id="actions-tab" class="icon-ghost" aria-label="Ações acadêmicas"
+                  title="Ações acadêmicas" aria-pressed="false" hidden></button>
                 <span class="toolbar-space"></span>
                 <button id="refresh" class="icon-ghost" aria-label="Atualizar visão"
                   title="Atualizar visão"></button>
@@ -49,41 +54,49 @@
               </nav>
               <p id="mode-label" class="note"></p>
               <div id="connections-view">
-                <h2>Conexões e acesso</h2>
-                <p id="connection-health" class="note"></p>
+                <div
+                  class="view-heading"><h2>Conexões</h2><button id="moodle-add" class="icon-ghost" aria-label="Adicionar Moodle" title="Adicionar Moodle"></button></div>
+
                 <div id="connection-list" class="grid"></div>
-                <details class="panel" id="pdf-setup" hidden>
-                  <summary>PDFs</summary>
-                  <p
-                    class="note">Texto por página, sem OCR. A extração acontece neste dispositivo.</p>
-                  <div id="pdf-list" class="grid"></div>
-                  <div
-                    class="actions"><button id="pdf-more" class="icon-ghost" aria-label="Mais PDFs" title="Mais PDFs" hidden></button></div>
-                </details>
-                <details class="panel" id="moodle-setup">
-                  <summary>Conectar o Moodle</summary>
-                    <form id="moodle-connect-form" autocomplete="off" hidden>
-                      <label>Nome<input id="moodle-label" autocomplete="off" required maxlength="100" placeholder="Meu Moodle"></label>
-                      <label>Endereço<input id="moodle-origin" type="url" autocomplete="off" readonly required placeholder="https://moodle.exemplo.edu"></label>
-                    <p class="note">Abra a página oficial, entre na sua conta e copie o endereço do link “Abrir o aplicativo” (clique direito ou toque longo).</p>
-                    <div class="actions"><button type="button" id="moodle-mobile-open" class="icon-ghost" aria-label="Abrir entrada oficial do Moodle" title="Abrir entrada oficial do Moodle"></button></div>
-                      <label>Chave ou link móvel<input id="moodle-token" type="password" autocomplete="new-password" required minlength="8"></label>
-                    <p class="note">A chave móvel pode ter permissões amplas. O AraHub limita as consultas e exige sua autorização para cada ação acadêmica.</p>
-                    <div
-                      class="actions"><button type="submit" id="moodle-submit" class="icon-ghost primary" aria-label="Conectar Moodle" title="Conectar Moodle"></button><button type="button" id="moodle-cancel-renewal" class="icon-ghost" aria-label="Cancelar renovação" title="Cancelar renovação" hidden></button></div>
-                  </form>
-                  <p id="moodle-protected-note" class="note"
-                    hidden>Abra a interface por HTTPS para cadastrar ou renovar o acesso.</p>
-                </details>
               </div>
+              <section id="pdf-view" hidden>
+                <h2>PDFs</h2>
+                <div id="pdf-list" class="grid"></div>
+                <div
+                  class="actions"><button id="pdf-more" class="icon-ghost" aria-label="Mais PDFs" title="Mais PDFs" hidden></button></div>
+              </section>
+              <section id="moodle-view" hidden>
+                <div
+                  class="view-heading"><h2>Moodle</h2><button id="moodle-back" class="icon-ghost" aria-label="Voltar às conexões" title="Voltar às conexões"></button></div>
+                <form id="moodle-connect-form" autocomplete="off" hidden>
+                  <label>Nome<input id="moodle-label" autocomplete="off" required maxlength="100" placeholder="Meu Moodle"></label>
+                  <label>Endereço<input id="moodle-origin" type="url" autocomplete="off" readonly required placeholder="https://moodle.exemplo.edu"></label>
+                  <div id="moodle-help" class="note"
+                    hidden>Entre no Moodle pelo botão ao lado. Copie o link “Abrir o aplicativo” e cole no campo de acesso.</div>
+                  <div
+                    class="actions"><button type="button" id="moodle-help-toggle" class="icon-ghost" aria-label="Ajuda para conectar" title="Ajuda para conectar" aria-expanded="false" aria-controls="moodle-help"></button><button type="button" id="moodle-mobile-open" class="icon-ghost" aria-label="Abrir entrada oficial do Moodle" title="Abrir entrada oficial do Moodle"></button></div>
+                  <label>Chave ou link móvel<input id="moodle-token" type="password" autocomplete="new-password" required minlength="8"></label>
+
+                  <div
+                    class="actions"><button type="submit" id="moodle-submit" class="icon-ghost primary" aria-label="Conectar Moodle" title="Conectar Moodle"></button><button type="button" id="moodle-cancel-renewal" class="icon-ghost" aria-label="Cancelar renovação" title="Cancelar renovação" hidden></button></div>
+                </form>
+                <p id="moodle-protected-note" class="note"
+                  hidden>Abra a interface por HTTPS para cadastrar ou renovar o acesso.</p>
+              </section>
               <div id="preferences-view" hidden>
                 <h2>Preferências</h2>
-                <p
-                  class="note">Preferências contextuais registradas pelo assistente: o que está vigente, conflitos e o que exige revisão. O histórico completo permanece na memória do backend.</p>
+
                 <p id="preference-summary" class="note"></p>
                 <div id="preference-list" class="grid"></div>
               </div>
-              <pre id="export-content" hidden></pre>
+              <section id="export-view" hidden>
+                <h2>Exportação</h2>
+                <pre id="export-content"></pre>
+              </section>
+              <section id="actions-panel" hidden>
+                <h2>Ações acadêmicas</h2>
+                <div id="action-list" class="grid"></div>
+              </section>
             </section>
             <section id="consent" class="panel" hidden>
               <h2>Acesso do assistente</h2>
@@ -93,15 +106,12 @@
               <div
                 class="actions"><button id="approve" class="icon-ghost primary" aria-label="Permitir" title="Permitir"></button><button id="deny" class="icon-ghost" aria-label="Recusar" title="Recusar"></button></div>
             </section>
-            <section id="actions-panel" hidden>
-              <h2>Ações acadêmicas</h2>
-              <p
-                class="note">Revise a ação completa abaixo. Publicar, responder ou entregar no Moodle só ocorre após sua autorização nesta sessão.</p>
-              <div id="action-list" class="grid"></div>
-            </section>
             <p id="message" class="note" role="status" aria-live="polite"></p>
-            <a id="privacy" class="icon-ghost" href="/privacy.html" aria-label="Privacidade" title="Privacidade"></a>
           </main>
+          <footer class="screen-footer">
+            <a id="privacy" class="icon-ghost" href="/privacy.html" aria-label="Privacidade"
+              title="Privacidade"></a>
+          </footer>
         </div>
       </div>
     </div>

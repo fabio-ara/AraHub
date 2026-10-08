@@ -35,7 +35,7 @@ do Moodle são feitas quando solicitadas; o acompanhamento automático fora da c
 está ativo na instância inicial. Para começar, peça: “Consulte o Moodle agora, retome meus materiais
 e mostre o que preciso fazer na disciplina atual, com as fontes e os links”.
 
-Para ligar o Moodle sem terminal ou Codex, entre na interface e abra Conexões → Moodle. Informe o
+Para ligar o Moodle sem terminal ou Codex, entre na interface e use o ícone Adicionar Moodle em Conexões. Informe o
 endereço HTTPS da instalação e use o ícone de entrada: ele abre o fluxo móvel oficial do Moodle.
 Após entrar pela conta da instituição, copie o **endereço do link** “Abrir o aplicativo” (clique
 direito ou toque longo), cole-o em “Chave ou link móvel” no AraHub e confirme a conexão. O fluxo do
@@ -82,7 +82,7 @@ concluiu entrada e consentimento no cliente pessoal ChatGPT.
 
 ## Documentação por etapa
 
-PDFs preservados podem ser extraídos em Conexões → PDFs, no worker terminável do navegador, sem OCR.
+PDFs preservados podem ser extraídos na tela PDFs, no worker terminável do navegador, sem OCR.
 Texto e páginas ficam vinculados ao hash e podem ser recuperados pelo MCP. O backend Supabase recebe
 os resultados e conserva sua proveniência; o parser não executa na thread da Edge Function.
 

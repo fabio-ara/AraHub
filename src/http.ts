@@ -83,7 +83,11 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           },
         );
       }
-      if (["/ui/app.js", "/ui/style.css", "/ui/pdf-parser.worker.js"].includes(u.pathname)) {
+      if (
+        ["/ui/app.js", "/ui/theme.js", "/ui/style.css", "/ui/pdf-parser.worker.js"].includes(
+          u.pathname,
+        )
+      ) {
         const name = u.pathname.slice("/ui/".length);
         return new Response(await Deno.readFile(new URL(`../web/${name}`, import.meta.url)), {
           headers: {

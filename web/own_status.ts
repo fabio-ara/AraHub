@@ -1,9 +1,19 @@
+import { renderUiIcon } from "./icons.ts";
 type Post = (path: string, body: object) => Promise<any>;
 function labeledButton(label: string, variant: string) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `own-status-button ${variant}`;
-  button.textContent = label;
+  button.className = `icon-ghost ${variant}`;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  const icon = label === "Status das minhas entregas"
+    ? "progress"
+    : label === "Permitir consulta"
+    ? "ready-state"
+    : label === "Cancelar"
+    ? "arrow-left"
+    : "offline";
+  button.innerHTML = renderUiIcon(icon);
   return button;
 }
 export function ownStatusControl(connectionId: string, post: Post, msg: (message: string) => void) {
@@ -16,8 +26,11 @@ export function ownStatusControl(connectionId: string, post: Post, msg: (message
       });
       const dialog = document.createElement("dialog");
       dialog.className = "own-status-dialog";
-      const title = document.createElement("h2");
-      title.textContent = "Consulta de status próprio";
+      dialog.setAttribute("aria-labelledby", "own-status-title");
+      const title = document.createElement("h1");
+      title.className = "topbar-title";
+      title.id = "own-status-title";
+      title.textContent = "Minhas entregas";
       const target = document.createElement("p");
       target.textContent = `${review.label} · ${review.origin} · Conta Moodle ${review.account}`;
       const explanation = document.createElement("p");
@@ -74,8 +87,19 @@ export function ownStatusControl(connectionId: string, post: Post, msg: (message
       revoke.addEventListener("click", () => decide(false));
       const buttons = document.createElement("div");
       buttons.className = "actions";
-      buttons.append(allow, revoke, cancel);
-      dialog.append(title, target, explanation, state, label, error, buttons);
+      buttons.append(allow, revoke);
+      const screen = document.createElement("div");
+      screen.className = "screen";
+      const header = document.createElement("header");
+      header.className = "topbar";
+      header.append(cancel, title, document.createElement("span"));
+      const content = document.createElement("div");
+      content.className = "screen-content";
+      content.append(target, explanation, state, label, error, buttons);
+      const footer = document.createElement("footer");
+      footer.className = "screen-footer";
+      screen.append(header, content, footer);
+      dialog.append(screen);
       dialog.addEventListener("close", () => dialog.remove(), { once: true });
       document.body.append(dialog);
       dialog.showModal();

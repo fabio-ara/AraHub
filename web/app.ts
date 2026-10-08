@@ -31,23 +31,20 @@ function setAction(button: HTMLElement, icon: string, label: string) {
   button.classList.add("icon-ghost");
   button.innerHTML = renderUiIcon(icon); // fixed icon names/markup only, never source content
 }
-function setTab(button: HTMLElement, icon: string, label: string) {
-  button.setAttribute("aria-label", label);
-  button.setAttribute("title", label);
-  button.innerHTML = renderUiIcon(icon); // fixed icon names/markup only, never source content
-  const text = document.createElement("span");
-  text.textContent = label;
-  button.append(text);
-}
 function labeledButton(label: string, variant: string) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = variant;
-  button.textContent = label;
+  button.className = variant.includes("primary") ? "icon-ghost primary" : "icon-ghost";
+  setAction(button, variant.includes("primary") ? "ready-state" : "remove-state", label);
   return button;
 }
 for (
   const [id, icon, label] of [
+    ["pdf-tab", "book-text", "PDFs"],
+    ["actions-tab", "ready-state", "Ações acadêmicas"],
+    ["moodle-add", "account-add", "Adicionar Moodle"],
+    ["moodle-back", "arrow-left", "Voltar às conexões"],
+    ["moodle-help-toggle", "info", "Ajuda para conectar"],
     ["logout", "sign-out", "Sair"],
     ["signin", "sign-in", "Entrar"],
     ["synthetic-login", "experiment", "Explorar ambiente sintético local"],
@@ -62,45 +59,8 @@ for (
     ["privacy", "info", "Privacidade"],
   ]
 ) setAction(el(id), icon, label);
-setTab(el("connections-tab"), "account", "Conexões");
-setTab(el("preferences-tab"), "tags", "Preferências");
-const mediaTheme = matchMedia("(prefers-color-scheme: dark)");
-let themePreference = "system";
-try {
-  const savedTheme = localStorage.getItem("arahub.ui.theme");
-  if (savedTheme && ["system", "light", "dark"].includes(savedTheme)) {
-    themePreference = savedTheme;
-  }
-} catch { /* A blocked storage must not prevent configuration. */ }
-function applyTheme() {
-  const dark = themePreference === "dark" ||
-    themePreference === "system" && mediaTheme.matches;
-  document.documentElement.dataset.colorMode = dark ? "dark" : "light";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute(
-    "content",
-    dark ? "#111418" : "#f7f8fa",
-  );
-  setAction(
-    el("theme"),
-    `theme-${themePreference}`,
-    `Mudar tema: ${
-      themePreference === "system" ? "sistema" : themePreference === "dark" ? "escuro" : "claro"
-    }`,
-  );
-}
-applyTheme();
-mediaTheme.addEventListener("change", applyTheme);
-el("theme").addEventListener("click", () => {
-  themePreference = themePreference === "system"
-    ? "light"
-    : themePreference === "light"
-    ? "dark"
-    : "system";
-  try {
-    localStorage.setItem("arahub.ui.theme", themePreference);
-  } catch { /* Session-only theme. */ }
-  applyTheme();
-});
+setAction(el("connections-tab"), "account", "Conexões");
+setAction(el("preferences-tab"), "tags", "Preferências");
 const msg = (s: string) => {
   el("message").textContent = s;
 };
@@ -131,7 +91,31 @@ el("moodle-connect-form").hidden = !cfg.canConnectMoodle ||
   !moodleCredentialEntry;
 el("moodle-protected-note").hidden = moodleCredentialEntry ||
   !cfg.canConnectMoodle;
-el("pdf-setup").hidden = !cfg.canExtractPdf;
+el("pdf-tab").hidden = !cfg.canExtractPdf;
+el("moodle-add").hidden = !cfg.canConnectMoodle;
+let currentView = "connections";
+let initialView = true;
+const views: Record<string, string> = {
+  connections: "connections-view",
+  preferences: "preferences-view",
+  pdf: "pdf-view",
+  moodle: "moodle-view",
+  actions: "actions-panel",
+  export: "export-view",
+};
+function showView(which: string) {
+  currentView = which;
+  for (const [name, id] of Object.entries(views)) {
+    el(id).hidden = name !== which;
+    const tab = document.getElementById(name + "-tab");
+    tab?.classList.toggle("active", name === which);
+    tab?.setAttribute("aria-pressed", String(name === which));
+  }
+  document.querySelector(".screen-content")?.scrollTo(0, 0);
+  if (which === "pdf") void loadPdfs();
+  msg("");
+}
+
 if (!supabase) {
   el("login-form").hidden = true;
   el("setup-note").hidden = false;
@@ -195,7 +179,7 @@ async function loadPdfs(append = false) {
     for (const file of page.files) {
       const entry = card(
         file.name,
-        file.coverage === "complete" ? "Texto preservado" : "Texto incompleto",
+        file.coverage === "complete" ? "" : "Leitura parcial",
       );
       const actions = document.createElement("div");
       actions.className = "actions";
@@ -212,7 +196,7 @@ async function loadPdfs(append = false) {
         pdfJob = job;
         extract.disabled = true;
         cancel.hidden = false;
-        msg("Extraindo texto neste dispositivo…");
+        msg("Processando PDF…");
         try {
           const response = await fetch(endpoint("/api/pdf/bytes"), {
             method: "POST",
@@ -272,16 +256,14 @@ async function loadPdfs(append = false) {
           });
           msg(
             result.memory.complete
-              ? "Texto preservado por página, sem OCR."
+              ? "PDF pronto para consulta."
               : result.memory.pages > 0
-              ? "Texto parcial preservado; algumas páginas não puderam ser extraídas."
-              : "Nenhuma página pôde ser extraída. O PDF preservado continua disponível.",
+              ? "Algumas páginas não puderam ser lidas."
+              : "Não foi possível ler o texto deste PDF.",
           );
           if (result.memory.complete) extract.disabled = true;
           else extract.disabled = false;
-          entry.querySelector("p")!.textContent = result.memory.complete
-            ? "Texto preservado"
-            : "Texto incompleto";
+          entry.querySelector("p")!.textContent = result.memory.complete ? "" : "Leitura parcial";
           // A complete item needs no cursor refresh; keep later list pages visible.
           if (!result.memory.complete) await loadPdfs();
         } catch (e) {
@@ -298,20 +280,17 @@ async function loadPdfs(append = false) {
       entry.append(actions);
       list.append(entry);
     }
-    if (!list.childElementCount) list.textContent = "Nenhum PDF preservado.";
+    if (!list.childElementCount) list.textContent = "Nenhum PDF.";
   } catch (e) {
     msg(e instanceof Error ? e.message : "PDFs indisponíveis.");
   } finally {
     pdfLoading = false;
   }
 }
-el("pdf-setup").addEventListener("toggle", () => {
-  if ((el("pdf-setup") as HTMLDetailsElement).open) void loadPdfs();
-});
 el("pdf-more").addEventListener("click", () => void loadPdfs(true));
 function card(title: string, detail: string) {
   const card = document.createElement("article");
-  card.className = "panel";
+  card.className = "item-row";
   const h = document.createElement("h3");
   h.textContent = title;
   const p = document.createElement("p");
@@ -468,22 +447,6 @@ function renderPreferences(view: PreferencesView | null) {
   }
 }
 
-/** Saúde do acesso: estado observado de cada conexão, sem prometer frescor da fonte. */
-function renderConnectionHealth(connections: { state: string }[]) {
-  const target = el("connection-health");
-  if (!connections.length) {
-    target.textContent = "Nenhuma conexão registrada. Conecte o Moodle para começar.";
-    return;
-  }
-  const counts = new Map<string, number>();
-  for (const connection of connections) {
-    const label = connectionState[connection.state] ?? "Verificar acesso";
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  target.textContent = "Acesso: " +
-    [...counts].map(([label, count]) => `${count} ${label}`).join(" · ") + ".";
-}
-
 async function render() {
   if (!token) return;
   const sessionToken = token;
@@ -500,36 +463,25 @@ async function render() {
       ? "Ambiente sintético local. Esta visão não comprova conexão real ou implantação."
       : "";
     renderPreferences(preferences);
-    renderConnectionHealth(
-      c.connections.filter((cn: { provider: string }) => cn.provider === "moodle"),
-    );
     const connections = el("connection-list");
     connections.replaceChildren();
-    const preservedSources = document.createElement("details");
-    preservedSources.id = "preserved-sources";
-    const preservedTitle = document.createElement("summary");
-    preservedSources.append(preservedTitle);
-    const preservedEntries = document.createElement("div");
-    preservedEntries.className = "grid";
-    preservedSources.append(preservedEntries);
-    let preservedCount = 0;
     for (const cn of c.connections) {
-      if (cn.provider !== "moodle") {
-        preservedEntries.append(
-          card(
-            cn.label,
-            cn.provider === "google"
-              ? "Materiais já importados. A autoria e o acesso atual ficam nas ferramentas do ChatGPT."
-              : "Histórico importado com proveniência.",
-          ),
-        );
-        preservedCount++;
-        continue;
-      }
+      if (cn.provider !== "moodle") continue;
       const entry = card(
         cn.label,
-        `Moodle · ${connectionState[cn.state] ?? "Verificar acesso"}`,
+        cn.state === "connected" ? "" : connectionState[cn.state] ?? "Verificar acesso",
       );
+      const heading = entry.querySelector("h3")!;
+      const state = document.createElement("span");
+      state.className = "connection-state";
+      state.setAttribute("role", "img");
+      state.setAttribute("aria-label", connectionState[cn.state] ?? "Verificar acesso");
+      state.title = connectionState[cn.state] ?? "Verificar acesso";
+      state.innerHTML = renderUiIcon(cn.state === "connected" ? "ready-state" : "offline");
+      const row = document.createElement("div");
+      row.className = "item-heading";
+      row.append(heading, state);
+      entry.prepend(row);
       if (!cfg.synthetic) {
         const disconnect = document.createElement("button");
         disconnect.className = "quiet";
@@ -566,12 +518,12 @@ async function render() {
             origin.readOnly = true;
             (el("moodle-token") as HTMLInputElement).value = "";
             setAction(el("moodle-submit"), "key", "Renovar Moodle");
-            (el("moodle-setup") as HTMLDetailsElement).open = true;
+            showView("moodle");
             el("moodle-cancel-renewal").hidden = false;
             el("moodle-connect-form").scrollIntoView({ block: "nearest" });
             el("moodle-token").focus();
             msg(
-              "Informe um novo token da mesma conta Moodle. O histórico será preservado.",
+              "Cole o novo acesso desta conta.",
             );
           });
           entry.append(renew);
@@ -613,10 +565,6 @@ async function render() {
       if (controls.childElementCount) entry.append(controls);
       connections.append(entry);
     }
-    if (preservedCount) {
-      preservedTitle.textContent = `Fontes preservadas (${preservedCount})`;
-      connections.append(preservedSources);
-    }
     await renderActions();
     msg("");
   } catch (e) {
@@ -657,7 +605,8 @@ let actionExpiryTimer: number | undefined;
 async function renderActions() {
   clearTimeout(actionExpiryTimer);
   const list = el("action-list");
-  el("actions-panel").hidden = !cfg.canApproveActions || !token;
+  el("actions-panel").hidden = currentView !== "actions" || !cfg.canApproveActions || !token;
+  el("actions-tab").hidden = !cfg.canApproveActions || !token;
   if (!cfg.canApproveActions || !token) {
     list.replaceChildren();
     return;
@@ -685,7 +634,7 @@ async function renderActions() {
     }
     const description = describeAction(action.operation, action.content);
     const entry = document.createElement("article");
-    entry.className = "panel action-card";
+    entry.className = "item-row action-card";
     const historical = description.retired ||
       ["succeeded", "failed", "denied", "expired"].includes(view.state);
     const targetList = historical ? historyEntries : list;
@@ -837,7 +786,12 @@ async function renderActions() {
     }
     targetList.append(entry);
   }
-  if (!activeCount) list.append(note("Nenhuma ação acadêmica aguardando sua autorização."));
+  el("actions-tab").hidden = !activeCount && !historyCount;
+  if (initialView) {
+    initialView = false;
+    if (activeCount) showView("actions");
+  }
+  if (!activeCount && !historyCount && currentView === "actions") showView("connections");
   if (historyCount) {
     historyTitle.textContent = `Histórico de ações (${historyCount})`;
     list.append(history);
@@ -909,23 +863,25 @@ el("logout").addEventListener("click", async () => {
   await supabase?.auth.signOut();
   location.href = route("/");
 });
-for (const which of ["connections", "preferences"]) {
-  el(which + "-tab").addEventListener("click", () => {
-    for (const id of ["connections", "preferences"]) {
-      el(id + "-view").hidden = id !== which;
-      el(id + "-tab").classList.toggle("active", id === which);
-      el(id + "-tab").setAttribute("aria-pressed", String(id === which));
-    }
-  });
+for (const which of ["connections", "preferences", "pdf", "actions"]) {
+  el(which + "-tab").addEventListener("click", () => showView(which));
 }
+el("moodle-add").addEventListener("click", () => {
+  resetMoodleForm();
+  showView("moodle");
+});
+el("moodle-back").addEventListener("click", () => showView("connections"));
+el("moodle-help-toggle").addEventListener("click", () => {
+  el("moodle-help").hidden = !el("moodle-help").hidden;
+  el("moodle-help-toggle").setAttribute("aria-expanded", String(!el("moodle-help").hidden));
+});
 el("export").addEventListener("click", async () => {
   const sessionToken = token;
   try {
     const exported = await api("/api/export");
     if (!sessionToken || token !== sessionToken) return;
     el("export-content").textContent = JSON.stringify(exported, null, 2);
-    el("export-content").hidden = false;
-    msg("Exportação privada preparada. Credenciais têm recuperação separada.");
+    showView("export");
   } catch {
     msg("Não foi possível preparar a exportação.");
   }
@@ -944,6 +900,7 @@ async function consent() {
     location.assign(data.redirect_url);
     return;
   }
+  el("workspace").hidden = true;
   el("consent").hidden = false;
   const scopeLabels: Record<string, string> = {
     openid: "identidade",
@@ -1003,7 +960,7 @@ if (supabase) {
       el("preference-summary").textContent = "";
       el("connection-list").replaceChildren();
       el("export-content").textContent = "";
-      el("export-content").hidden = true;
+      el("export-view").hidden = true;
       el("workspace").hidden = true;
       el("login").hidden = false;
       el("logout").hidden = true;
@@ -1028,12 +985,6 @@ for (const event of ["pointerdown", "focus"]) {
   });
 }
 moodleOrigin.addEventListener("input", clearMoodleOriginAutofill);
-(el("moodle-setup") as HTMLDetailsElement).addEventListener("toggle", () => {
-  if ((el("moodle-setup") as HTMLDetailsElement).open) {
-    requestAnimationFrame(clearMoodleOriginAutofill);
-  }
-});
-
 el("moodle-mobile-open").addEventListener("click", () => {
   try {
     const origin = (el("moodle-origin") as HTMLInputElement).value;
@@ -1086,10 +1037,9 @@ el("moodle-connect-form").addEventListener("submit", async (e) => {
     }
     await render();
     resetMoodleForm();
+    showView("connections");
     msg(
-      result.renewed
-        ? "Acesso Moodle renovado. A identidade e o histórico foram preservados."
-        : "Moodle conectado. As consultas preservam a cobertura e não alteram atividades acadêmicas.",
+      result.renewed ? "Acesso renovado." : "Moodle conectado.",
     );
   } catch (e) {
     secret.value = "";
@@ -1102,6 +1052,6 @@ el("moodle-connect-form").addEventListener("submit", async (e) => {
 el("moodle-cancel-renewal").addEventListener("click", () => {
   if (!moodleSubmitting) {
     resetMoodleForm();
-    msg("Renovação cancelada. A conexão não foi alterada.");
+    showView("connections");
   }
 });

@@ -19,6 +19,7 @@ const EXPECTED_FILES = [
   "ui/app.js",
   "ui/pdf-parser.worker.js",
   "ui/style.css",
+  "ui/theme.js",
 ];
 
 /** Hash independente do gerador, para conferir o manifesto contra o disco. */
@@ -155,7 +156,11 @@ Deno.test("pacote GitHub Pages serve subpath com rotas físicas, meta seguro e m
     assert.ok(index.includes('href="/AraHub/privacy.html"'));
     assert.ok(privacy.includes('href="/AraHub/ui/style.css"'));
     assert.ok(privacy.includes('name="referrer" content="no-referrer"'));
-    assert.doesNotMatch(privacy, /<script\b/);
+    assert.ok(privacy.includes('src="/AraHub/ui/theme.js"'));
+    assert.ok(privacy.includes("script-src 'self'"));
+    assert.ok(index.includes('src="/AraHub/ui/theme.js"'));
+    assert.ok(index.indexOf("/ui/theme.js") < index.indexOf("/ui/style.css"));
+    assert.doesNotMatch(privacy, /app\.js/);
     const copies = await Promise.all(
       [
         "oauth/consent/index.html",

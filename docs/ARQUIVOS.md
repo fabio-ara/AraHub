@@ -244,7 +244,7 @@ Rota suportada para PDF remoto:
    terminável, sobre os bytes preservados (RLS por dono), e grava a memória
    (ver "Integração com Materials/MCP"). É o caminho usado pelos testes de
    `materials`/MCP.
-2. **Cliente.** Em Conexões → PDFs, o botão de extração recebe os bytes
+2. **Cliente.** Na tela PDFs, o botão de extração recebe os bytes
    preservados do dono e confere o SHA-256 antes de iniciar um módulo Worker
    da mesma origem. `web/pdf_worker.ts` inclui o parser Mozilla fixado, sem
    CDN nem credenciais na thread. O parser interno roda dentro desse worker
