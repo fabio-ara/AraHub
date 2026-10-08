@@ -36,6 +36,24 @@ export interface ActionDescription {
   conditions: string[];
 }
 
+/** UI availability only; the server still revalidates every approval and execution. */
+export function actionReview(view: {
+  state: string;
+  action: { content: unknown };
+  approval?: { expiresAt: string | null; consumedAt: string | null } | null;
+}, now = Date.now()) {
+  const expires = asRecord(view.action.content).expires_at;
+  const preparedUntil = typeof expires === "string" ? Date.parse(expires) : NaN;
+  const approvedUntil = Date.parse(view.approval?.expiresAt ?? "");
+  const expired = view.state === "approved" && Number.isFinite(approvedUntil) &&
+    approvedUntil <= now && !view.approval?.consumedAt;
+  const stale = Number.isFinite(preparedUntil) && preparedUntil <= now;
+  const renewable = !stale && !view.approval?.consumedAt &&
+    (view.state === "prepared" || expired);
+  const nextChange = [preparedUntil, approvedUntil].filter((at) => at > now);
+  return { expired, stale, renewable, nextChange: Math.min(...nextChange) };
+}
+
 const OPERATION_TITLES: Record<string, string> = {
   "moodle.forum.discussion": "Publicar novo tópico no fórum",
   "moodle.forum.reply": "Responder no fórum",
@@ -230,7 +248,7 @@ function assignmentConditions(
   const attempt = asNumber(submission.attempt) ?? asNumber(expected.attempt);
   if (attempt !== null) lines.push(`Tentativa: ${attempt}`);
   pushFlag(lines, "Bloqueado", submission.locked);
-  pushFlag(lines, "Pode enviar", submission.cansubmit);
+  pushFlag(lines, "Pode finalizar no estado atual", submission.cansubmit);
   pushFlag(lines, "Pode editar", submission.canedit);
   return lines;
 }
@@ -307,25 +325,29 @@ export function describeAction(
     known,
     retired,
     operation,
-    connection: known ? present(
-      labeled("Conta", pickText(connectionSource, ["label", "name"])),
-      labeled("Usuário", pickText(connectionSource, ["username", "user"])),
-      labeled("Origem", pickText(connectionSource, ["origin", "host"])),
-    ) : [],
-    target: known ? present(
-      labeled(
-        "Curso",
-        pickText(targetSource, ["course_name", "course"]) ??
-          (courseId ? `#${courseId}` : null),
-      ),
-      labeled(
-        "Atividade",
-        pickText(targetSource, ["activity_name", "activity"]) ??
-          (cmid ? `cmid ${cmid}` : null),
-      ),
-      labeled("Discussão", pickText(targetSource, ["discussion_id"])),
-      labeled("Resposta ao post", pickText(targetSource, ["parent_id"])),
-    ) : [],
+    connection: known
+      ? present(
+        labeled("Conta", pickText(connectionSource, ["label", "name"])),
+        labeled("Usuário", pickText(connectionSource, ["username", "user"])),
+        labeled("Origem", pickText(connectionSource, ["origin", "host"])),
+      )
+      : [],
+    target: known
+      ? present(
+        labeled(
+          "Curso",
+          pickText(targetSource, ["course_name", "course"]) ??
+            (courseId ? `#${courseId}` : null),
+        ),
+        labeled(
+          "Atividade",
+          pickText(targetSource, ["activity_name", "activity"]) ??
+            (cmid ? `cmid ${cmid}` : null),
+        ),
+        labeled("Discussão", pickText(targetSource, ["discussion_id"])),
+        labeled("Resposta ao post", pickText(targetSource, ["parent_id"])),
+      )
+      : [],
     subject: known ? pickText(textSource, ["subject", "title"]) : null,
     body: known ? pickText(textSource, ["body", "html", "text"]) : null,
     files: known ? fileViews(root.files) : [],

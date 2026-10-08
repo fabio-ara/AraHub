@@ -16,6 +16,13 @@ export const hostFileSchema = z.object({
   file_name: z.string().max(500).optional(),
 }).strict();
 export const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
+// Exact origins observed in the native host file contract. Do not allow the
+// entire Azure storage suffix: unrelated accounts can use that same suffix.
+export const HOST_FILE_DOWNLOAD_HOSTS = [
+  "files.oaiusercontent.com",
+  "sdmntprbrazilsouth.oaiusercontent.com",
+  "oaisdmntprbrazilsouth.blob.core.windows.net",
+] as const;
 export interface ArtifactFile {
   id: string;
   name: string;
@@ -68,7 +75,7 @@ export async function artifactType(bytes: Uint8Array): Promise<{ mime: string; e
 export class Artifacts {
   constructor(
     private hub: Hub,
-    private transport: ArtifactTransport = { hosts: ["files.oaiusercontent.com", "sdmntprbrazilsouth.oaiusercontent.com"] },
+    private transport: ArtifactTransport = { hosts: HOST_FILE_DOWNLOAD_HOSTS },
   ) {}
 
   async importHost(p: Principal, connectionId: string, contextId: string, raw: unknown) {

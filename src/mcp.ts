@@ -29,7 +29,7 @@ export async function handleMcp(
   connections?: ConnectionService,
   actions?: PersistentActionStore,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.2.2" });
+  const server = new McpServer({ name: "arahub", version: "0.2.3" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {
@@ -93,7 +93,7 @@ export async function handleMcp(
     "hub_import_artifact",
     {
       description:
-        "Recebe um arquivo do cliente em bytes privados, confere tipo/tamanho/hash e vincula ao contexto e conexão Moodle. Não envia ao Moodle. Passe o objeto de arquivo do host, nunca base64, caminho local ou URL pública criada para contornar acesso. Limite desta cadeia: 16 MiB; DOCX, PPTX, PDF e texto UTF-8.",
+        "Importa um arquivo privado do cliente, confere tipo/tamanho/hash e vincula ao contexto e conexão Moodle. Não envia ao Moodle. Preencha file conforme a assinatura apresentada pelo cliente: quando pedir caminho absoluto, use o arquivo existente no ambiente do próprio cliente para o upload nativo. O host converte essa entrada no objeto de download recebido pelo servidor; não invente download_url nem substitua caminho por file_id/sediment. Não use base64 ou links públicos improvisados. Limite: 16 MiB; DOCX, PPTX, PDF e texto UTF-8.",
       inputSchema: {
         connection_id: z.string().uuid(),
         context_id: z.string().uuid(),

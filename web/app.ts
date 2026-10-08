@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { apiEndpoint, sitePath } from "./endpoint.ts";
 import { renderUiIcon } from "./icons.ts";
-import { describeAction } from "./action_preview.ts";
+import { actionReview, describeAction } from "./action_preview.ts";
 import { extractClientPdf, PDF_CLIENT_MAX_BYTES } from "./pdf_client.ts";
 import { moodleMobileLaunchUrl, parseMoodleMobileLink } from "./moodle_mobile.ts";
 const siteBase = new URL("../", import.meta.url).href;
@@ -649,7 +649,9 @@ function lineGroup(lines: string[]) {
 }
 
 /** Tela focada de aprovação: a ação acadêmica completa, sem hashes dominantes. */
+let actionExpiryTimer: number | undefined;
 async function renderActions() {
+  clearTimeout(actionExpiryTimer);
   const list = el("action-list");
   el("actions-panel").hidden = !cfg.canApproveActions || !token;
   if (!cfg.canApproveActions || !token) {
@@ -670,8 +672,13 @@ async function renderActions() {
   historyEntries.className = "grid";
   history.append(historyEntries);
   let activeCount = 0, historyCount = 0;
+  let nextChange = Infinity;
   for (const view of actions) {
     const action = view.action;
+    const review = actionReview(view);
+    if (["prepared", "approved"].includes(view.state)) {
+      nextChange = Math.min(nextChange, review.nextChange);
+    }
     const description = describeAction(action.operation, action.content);
     const entry = document.createElement("article");
     entry.className = "panel action-card";
@@ -749,7 +756,7 @@ async function renderActions() {
       statement.className = "statement";
       statement.textContent = description.statement.text;
       entry.append(statement);
-      if (description.statement.required && view.state === "prepared") {
+      if (description.statement.required && review.renewable) {
         assent = document.createElement("input");
         assent.type = "checkbox";
         const label = document.createElement("label");
@@ -763,10 +770,26 @@ async function renderActions() {
         entry.append(label);
       }
     }
-    entry.append(note(actionStateLabels[view.state] ?? "Verificar estado"));
-    if (view.state === "prepared") {
+    entry.append(note(
+      review.stale && ["prepared", "approved"].includes(view.state)
+        ? "Esta revisão expirou. Peça ao assistente para preparar uma nova versão com as condições atuais."
+        : review.expired
+        ? "A autorização expirou sem execução. Revise esta versão para autorizar novamente."
+        : actionStateLabels[view.state] ?? "Verificar estado",
+    ));
+    if (view.state === "approved" && !review.expired && view.approval?.expiresAt) {
+      entry.append(
+        note(
+          `Autorização válida até ${new Date(view.approval.expiresAt).toLocaleString("pt-BR")}.`,
+        ),
+      );
+    }
+    if (review.renewable) {
       const required = description.statement?.required === true;
-      const approve = labeledButton("Autorizar esta ação", "button primary");
+      const approve = labeledButton(
+        review.expired ? "Renovar autorização" : "Autorizar esta ação",
+        "button primary",
+      );
       approve.disabled = required;
       const deny = labeledButton("Recusar ação", "button quiet");
       assent?.addEventListener("change", () => {
@@ -814,6 +837,12 @@ async function renderActions() {
   if (historyCount) {
     historyTitle.textContent = `Histórico de ações (${historyCount})`;
     list.append(history);
+  }
+  if (Number.isFinite(nextChange)) {
+    actionExpiryTimer = setTimeout(() =>
+      void renderActions().catch(() => {
+        msg("Atualize a visão para conferir a validade das autorizações.");
+      }), Math.max(1, Math.min(nextChange - Date.now() + 50, 2_147_483_647)));
   }
 }
 el("login-form").addEventListener("submit", async (e) => {

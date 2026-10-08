@@ -3,6 +3,7 @@ import {
   Artifacts,
   artifactType,
   hostFileSchema,
+  HOST_FILE_DOWNLOAD_HOSTS,
   MAX_ARTIFACT_BYTES,
   safeArtifactName,
 } from "../src/artifacts.ts";
@@ -57,7 +58,7 @@ Deno.test("artifact private bytes port + host transport: isolation, idempotency,
     let requests = 0;
     const bytes = new TextEncoder().encode("Arquivo sintético, versão 1.");
     const receiver = new Artifacts(hub, {
-      hosts: ["files.oaiusercontent.com"],
+      hosts: HOST_FILE_DOWNLOAD_HOSTS,
       resolve: () => Promise.resolve(["104.18.1.1"]),
       send: async (options) => {
         requests++;
@@ -84,33 +85,46 @@ Deno.test("artifact private bytes port + host transport: isolation, idempotency,
     const before = requests;
     await assert.rejects(() => receiver.importHost(q, c.id, context.id, file));
     assert.equal(requests, before);
+    const nativeAzureUrl = "https://oaisdmntprbrazilsouth.blob.core.windows.net/private/file?sig=SYNTHETIC_SECRET";
+    const native = await receiver.importHost(p, c.id, context.id, {
+      ...file, download_url: nativeAzureUrl, file_id: "file_native_azure",
+    });
+    assert.deepEqual((await receiver.load(p, c.id, native.id)).content, bytes);
+    const afterNative = requests;
     for (
       const url of [
         "http://files.oaiusercontent.com/f",
         "https://evil.invalid/f",
         "https://files.oaiusercontent.com@127.0.0.1/f",
         "https://files.oaiusercontent.com:8443/f",
+        "https://anotheraccount.blob.core.windows.net/f",
+        "https://oaisdmntprbrazilsouth.blob.core.windows.net.evil.invalid/f",
+        "https://oaisdmntprbrazilsouth.blob.core.windows.net@127.0.0.1/f",
+        "https://oaisdmntprbrazilsouth.blob.core.windows.net:8443/f",
+        "sediment://file_synthetic",
       ]
     ) {
       await assert.rejects(() =>
         receiver.importHost(p, c.id, context.id, { ...file, download_url: url })
       );
     }
-    assert.equal(requests, before);
+    assert.equal(requests, afterNative);
     const local = new Artifacts(hub, {
-      hosts: ["files.oaiusercontent.com"],
+      hosts: HOST_FILE_DOWNLOAD_HOSTS,
       resolve: () => Promise.resolve(["127.0.0.1"]),
       send: async () => {
         throw Error("must not call");
       },
     });
     await assert.rejects(() => local.importHost(p, c.id, context.id, file), /não pública/);
+    await assert.rejects(() => local.importHost(p, c.id, context.id, { ...file, download_url: nativeAzureUrl }), /não pública/);
     const redirect = new Artifacts(hub, {
-      hosts: ["files.oaiusercontent.com"],
+      hosts: HOST_FILE_DOWNLOAD_HOSTS,
       resolve: () => Promise.resolve(["104.18.1.1"]),
       send: async () => ({ status: 302, bytes: new Uint8Array(), contentType: null }),
     });
     await assert.rejects(() => redirect.importHost(p, c.id, context.id, file), /expirado/);
+    await assert.rejects(() => redirect.importHost(p, c.id, context.id, { ...file, download_url: nativeAzureUrl }), /expirado/);
     await assert.rejects(
       () =>
         receiver.preserve(p, c.id, context.id, new Uint8Array(MAX_ARTIFACT_BYTES + 1), {

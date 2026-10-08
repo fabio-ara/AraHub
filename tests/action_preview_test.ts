@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describeAction, formatBytes } from "../web/action_preview.ts";
+import { actionReview, describeAction, formatBytes } from "../web/action_preview.ts";
 
 const FINGERPRINT = "f".repeat(64);
 const FILE_HASH = "d".repeat(64);
@@ -140,7 +140,7 @@ Deno.test("entrega lista arquivos e condições sem expor hashes técnicos", () 
       "Estado atual: Rascunho salvo",
       "Tentativa: 0",
       "Bloqueado: Não",
-      "Pode enviar: Sim",
+      "Pode finalizar no estado atual: Sim",
       "Pode editar: Sim",
     ]
   ) assert.ok(conditions.includes(expected), expected);
@@ -207,6 +207,25 @@ Deno.test("operação Moodle desconhecida não se confunde com legado retirado",
   assert.equal(description.known, false);
   assert.equal(description.retired, false);
   assert.equal(description.title, "Operação não reconhecida");
+});
+
+Deno.test("aprovação expirada pode ser revista, sem reabrir resultado consumido ou versão vencida", () => {
+  const now = Date.parse("2026-10-08T00:45:00Z");
+  const view = {
+    state: "approved",
+    action: { content: { expires_at: "2026-10-08T01:00:00Z" } },
+    approval: { expiresAt: "2026-10-08T00:45:00Z", consumedAt: null as string | null },
+  };
+  assert.equal(actionReview(view, now - 1).renewable, false);
+  assert.equal(actionReview(view, now).expired, true);
+  assert.equal(actionReview(view, now).renewable, true);
+  assert.equal(actionReview(view, now).nextChange, Date.parse("2026-10-08T01:00:00Z"));
+  assert.equal(actionReview(view, Date.parse("2026-10-08T01:00:00Z")).renewable, false);
+  for (const state of ["uncertain", "succeeded", "denied"]) {
+    assert.equal(actionReview({ ...view, state }, now).renewable, false);
+  }
+  view.approval.consumedAt = "2026-10-08T00:44:59Z";
+  assert.equal(actionReview(view, now).renewable, false);
 });
 
 Deno.test("tamanho de arquivo é legível e tolera bytes ausentes", () => {
