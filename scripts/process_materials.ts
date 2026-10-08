@@ -40,8 +40,6 @@ import { extractPdfText, pdfExtractionToText } from "../src/pdf_text.ts";
 const DOCUMENT_EXTENSIONS = new Set(["docx", "docm"]);
 /** Muda quando a extração muda de forma material; invalida a reutilização. */
 const EXTRACTOR_VERSION = "materials-2026-10-07.3";
-const DEFAULT_MODEL_PATH = ".private/entrega-1/models/ggml-base.bin";
-const MODEL_PIN_PATH = ".private/entrega-1/models/MODEL.json";
 const HTML_EXTENSIONS = new Set(["html", "htm", "xhtml"]);
 const PDF_EXTENSIONS = new Set(["pdf"]);
 const MEDIA_EXTENSIONS = new Set(["mp4", "m4v", "mov", "mkv", "webm", "avi", "mpg", "mpeg"]);
@@ -71,7 +69,7 @@ function parseArgs(argv: string[]): Options {
     audio: false,
     asr: false,
     transcribe: false,
-    modelPath: DEFAULT_MODEL_PATH,
+    modelPath: "",
     modelSha256: null,
     language: DEFAULT_ASR_LANGUAGE,
     frames: 0,
@@ -195,13 +193,6 @@ async function readJsonObject(path: string): Promise<Record<string, unknown> | n
   }
 }
 
-/** sha256 do modelo pinado em MODEL.json (fora do Git), quando declarado. */
-async function readModelPin(): Promise<string | null> {
-  const pin = await readJsonObject(MODEL_PIN_PATH);
-  const sha = pin?.sha256;
-  return typeof sha === "string" && sha.length === 64 ? sha : null;
-}
-
 /** Instantes (ms) para quadros: meio dos segmentos de fala quando existirem. */
 function frameInstants(
   transcript: Array<{ start_ms: number; end_ms: number }>,
@@ -232,7 +223,7 @@ async function main(): Promise<void> {
   if (options.check) {
     const tools = await mediaTools();
     const asr = await probeLocalAsr();
-    const modelPin = await readModelPin();
+    const modelPin = options.modelSha256;
     let modelBytes: number | null = null;
     try {
       modelBytes = (await Deno.stat(options.modelPath)).size;
@@ -263,6 +254,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (
+    options.transcribe && (!options.modelPath || !/^[a-f0-9]{64}$/.test(options.modelSha256 ?? ""))
+  ) {
+    throw new Error(
+      "Para transcrever, informe --model e --model-sha explícitos. Não há fallback para modelo leve. A qualidade PT-PT precisa de validação própria.",
+    );
+  }
   const files = await listFiles(options.inputDir);
   const selected = options.limit === null ? files : files.slice(0, Math.max(0, options.limit));
   const tools = await mediaTools();
@@ -398,7 +396,7 @@ async function main(): Promise<void> {
       probe = await probeMediaFile(path, { byteLength: bytes.byteLength });
       const audioPath = options.audio ? targetDir + "/audio-16k-mono.wav" : undefined;
       if (audioPath) await Deno.mkdir(targetDir, { recursive: true });
-      const modelSha256 = options.modelSha256 ?? await readModelPin();
+      const modelSha256 = options.modelSha256;
       const expectedStamp: TranscriptionCacheStamp = {
         engine_version: ASR_ENGINE_VERSION,
         model_sha256: modelSha256,

@@ -9,7 +9,7 @@ import { MaterialTransfers } from "../src/material_transfer.ts";
 import { sha256Hex } from "../src/migration.ts";
 import { createEdgeHandler, createSupabaseGatewayHandler } from "../src/edge.ts";
 
-async function fixture() {
+async function fixture(size = 2 * 1024 * 1024 + 23) {
   const db = createDb("postgres://arahub:synthetic-local-only@127.0.0.1:55432/arahub");
   const hub = new Hub(db),
     p = {
@@ -33,8 +33,9 @@ async function fixture() {
   await db`insert into auth.users(id) values(${p.ownerId}),(${other.ownerId})`;
   const con = await hub.connect(p, "migration", "Transferência sintética", null, "fixture");
   const entity = await hub.entity(p, con.id, "resource", "binary", "Material sintético");
-  const bytes = new Uint8Array(2 * 1024 * 1024 + 23).fill(71), hash = await sha256Hex(bytes);
-  bytes[0] = 71;
+  const bytes = new Uint8Array(size);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
+  const hash = await sha256Hex(bytes);
   const [file] =
     await db`insert into public.hub_files(owner_id,entity_id,name,mime_type,sha256,bytes,binary_content)
     values(${p.ownerId},${entity.id},${"../ação\r\n.mp4"},'video/mp4',${hash},${bytes.length},${
@@ -141,7 +142,9 @@ Deno.test("transferência: assinatura, tipo, audiência, sessão, cliente, expir
       const req of [
         new Request(cap.transfer.url),
         new Request(cap.transfer.url + "?token=anything", { headers: cap.transfer.headers }),
-        new Request(cap.transfer.url, { headers: { ...cap.transfer.headers, Range: "bytes=0-9" } }),
+        new Request(cap.transfer.url, {
+          headers: { ...cap.transfer.headers, Range: "bytes=0-9,20-29" },
+        }),
         new Request(cap.transfer.url, { method: "POST", headers: cap.transfer.headers }),
       ]
     ) await assert.rejects(f.transfers.download(req), /não autorizada/);
@@ -150,6 +153,61 @@ Deno.test("transferência: assinatura, tipo, audiência, sessão, cliente, expir
     f.access.allowedClientIds.push(f.p.clientId);
     f.clock(300);
     await assert.rejects(f.transfers.download(f.request(cap)), /não autorizada/);
+  } finally {
+    await f.db.end();
+  }
+});
+
+Deno.test("transferência: partes limitadas reconstituem hash completo sem intervalos inválidos", async () => {
+  const f = await fixture(9 * 1024 * 1024 + 31);
+  try {
+    const cap = await f.transfers.prepare(f.p, f.file.id, f.hash);
+    assert.equal(cap.transfer.parts.length, 3);
+    await assert.rejects(f.transfers.download(f.request(cap)), /até 4 MiB/);
+    const merged = new Uint8Array(f.bytes.length);
+    for (const part of cap.transfer.parts) {
+      const r = await f.transfers.download(
+        new Request(cap.transfer.url, {
+          headers: { ...cap.transfer.headers, Range: part.range },
+        }),
+      );
+      assert.equal(r.status, 206);
+      assert.equal(
+        r.headers.get("content-range"),
+        `bytes ${part.offset}-${part.offset + part.bytes - 1}/${f.bytes.length}`,
+      );
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      assert.equal(bytes.length, part.bytes);
+      assert.ok(bytes.length <= 4 * 1024 * 1024);
+      merged.set(bytes, part.offset);
+    }
+    assert.equal(await sha256Hex(merged), f.hash);
+    for (
+      const range of [
+        "bytes=-5",
+        "bytes=0-",
+        "bytes=01-3",
+        "bytes=3-2",
+        "bytes=0-99999999",
+        "bytes=0-4194304",
+        "bytes=9007199254740992-9007199254740993",
+      ]
+    ) {
+      await assert.rejects(f.transfers.download(
+        new Request(cap.transfer.url, {
+          headers: { ...cap.transfer.headers, Range: range },
+        }),
+      ));
+    }
+    f.revoke();
+    await assert.rejects(
+      f.transfers.download(
+        new Request(cap.transfer.url, {
+          headers: { ...cap.transfer.headers, Range: cap.transfer.parts[1].range },
+        }),
+      ),
+      /não autorizada/,
+    );
   } finally {
     await f.db.end();
   }

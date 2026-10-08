@@ -316,7 +316,7 @@ abaixo, que não depende de rota hospedada.
 deno run --allow-read --allow-write=.private --allow-run=ffmpeg,ffprobe \
   scripts/process_materials.ts --in .private/entrega-1/materials/source \
   --out .private/entrega-1/materials/extracted \
-  [--transcribe] [--model CAMINHO] [--language pt] [--frames N] \
+  [--transcribe --model CAMINHO --model-sha SHA256] [--language pt] [--frames N] \
   [--reprocess-media] [--audio] [--asr] [--force] [--limit N]
 
 deno run --allow-read --allow-write=.private --allow-run=ffmpeg,ffprobe \
@@ -336,8 +336,10 @@ Para mídia, o CLI acrescenta a transcrição e os quadros:
 
 - `--transcribe` liga o ASR local **só quando o arquivo não tem legenda** (a
   legenda da fonte tem precedência);
-- `--model` (padrão `.private/entrega-1/models/ggml-base.bin`) e o sha256 pinado
-  em `.private/entrega-1/models/MODEL.json` são conferidos antes de executar;
+- `--transcribe` exige `--model` e `--model-sha` explícitos; não escolhe `base`
+  nem reaproveita implicitamente o pin histórico. Modelos leves não satisfazem
+  o critério de qualidade PT-PT; uma execução ASR permanece não revisada até
+  conferência do áudio. Modelo e hash são conferidos antes de executar;
 - `--frames N` grava quadros PNG privados nos meios dos segmentos de fala (ou
   distribuídos pela duração quando não há transcrição), com `frames/frames.json`
   descrevendo instante, tamanho e sha256;

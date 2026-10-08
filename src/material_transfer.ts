@@ -5,6 +5,7 @@ import { HubError, type Principal } from "./contracts.ts";
 
 const TTL = 300;
 const CHUNK = 1024 * 1024;
+const PART_BYTES = 4 * CHUNK;
 const MAX_BYTES = 128 * 1024 * 1024;
 const TYPE = "arahub-material-transfer+jwt";
 const claimsSchema = z.object({
@@ -116,14 +117,19 @@ export class MaterialTransfers {
         method: "GET",
         url: this.base + "/api/material-transfer",
         headers: { Authorization: "Bearer " + transfer },
+        part_bytes: PART_BYTES,
+        parts: Array.from({ length: Math.ceil(bytes / PART_BYTES) }, (_, index) => {
+          const start = index * PART_BYTES, end = Math.min(bytes, start + PART_BYTES) - 1;
+          return { offset: start, bytes: end - start + 1, range: `bytes=${start}-${end}` };
+        }),
       },
       instructions:
-        "Transferência direta pelo ambiente do cliente, fora da interface. Não exibir nem registrar o cabeçalho temporário. Não seguir redirecionamentos. Conferir tamanho e SHA-256 antes de analisar. Não abrir URL no navegador nem acionar downloads/Salvar como. O acesso vale apenas para este arquivo por cinco minutos e depende da sessão continuar ativa. Obter bytes não comprova análise audiovisual; relatar separadamente quadros, fala, sons e lacunas.",
+        "Transferência direta pelo ambiente do cliente, fora da interface. Para cada item de transfer.parts, faça GET com Authorization e Range=item.range. Exija HTTP206, Content-Range e bytes exatos; concatene na ordem dos offsets. Não exibir nem registrar o cabeçalho temporário. Não seguir redirecionamentos. Conferir tamanho e SHA-256 do arquivo COMPLETO antes de analisar. Não abrir URL no navegador nem acionar downloads/Salvar como. O acesso vale apenas para este arquivo por cinco minutos e depende da sessão continuar ativa. Obter bytes não comprova análise audiovisual; relatar separadamente quadros, fala, sons e lacunas.",
     };
   }
 
   async download(req: Request) {
-    if (req.method !== "GET" || new URL(req.url).search || req.headers.has("range")) denied();
+    if (req.method !== "GET" || new URL(req.url).search) denied();
     const authorization = req.headers.get("authorization") ?? "";
     if (!authorization.startsWith("Bearer ") || authorization.length > 4096) denied();
     let claims: z.infer<typeof claimsSchema>;
@@ -147,6 +153,25 @@ export class MaterialTransfers {
       clientId: claims.client,
     };
     await this.active(p);
+    const range = req.headers.get("range");
+    let start = 0, end = claims.bytes - 1;
+    if (range) {
+      const match = /^bytes=(0|[1-9][0-9]*)-(0|[1-9][0-9]*)$/.exec(range);
+      if (!match) denied();
+      start = Number(match[1]);
+      end = Number(match[2]);
+      if (
+        !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end ||
+        end >= claims.bytes
+      ) denied();
+    }
+    if (end - start + 1 > PART_BYTES) {
+      throw new HubError(
+        "transfer_range_required",
+        "Use as partes de até 4 MiB fornecidas pela ferramenta.",
+        416,
+      );
+    }
     const [file] = await asOwner(
       this.db,
       p,
@@ -156,7 +181,7 @@ export class MaterialTransfers {
         and octet_length(binary_content)=${claims.bytes}`,
     );
     if (!file) denied();
-    let offset = 0, stopped = false;
+    let offset = start, stopped = false;
     const body = new ReadableStream<Uint8Array>({
       pull: async (controller) => {
         try {
@@ -164,7 +189,7 @@ export class MaterialTransfers {
           // Revocation or expiry interrupts later chunks; it cannot erase bytes already received.
           if (Math.floor(this.now().getTime() / 1000) >= claims.exp) denied();
           await this.active(p);
-          const length = Math.min(CHUNK, claims.bytes - offset);
+          const length = Math.min(CHUNK, end + 1 - offset);
           const [row] = await asOwner(
             this.db,
             p,
@@ -178,7 +203,7 @@ export class MaterialTransfers {
           if (stopped || req.signal.aborted) throw new Error("cancelled");
           controller.enqueue(new Uint8Array(row.chunk));
           offset += length;
-          if (offset === claims.bytes) controller.close();
+          if (offset === end + 1) controller.close();
         } catch {
           if (!stopped) {
             controller.error(new Error("Transferência interrompida; descarte bytes incompletos."));
@@ -191,9 +216,12 @@ export class MaterialTransfers {
       },
     }, { highWaterMark: 0 });
     return new Response(body, {
+      status: range ? 206 : 200,
       headers: {
         "Content-Type": "application/octet-stream",
-        "Content-Length": String(claims.bytes),
+        "Content-Length": String(end - start + 1),
+        "Accept-Ranges": "bytes",
+        ...(range ? { "Content-Range": `bytes ${start}-${end}/${claims.bytes}` } : {}),
         "Content-Disposition": "attachment; filename*=UTF-8''" +
           encodeURIComponent(safeName(file.name)).replace(
             /['()*]/g,

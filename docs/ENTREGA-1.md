@@ -56,6 +56,11 @@ quando este realmente oferecer execução. `hub_material_transfer` prepara a
 transferência privada de um binário íntegro próprio para esse ambiente, com ID,
 hash, até 128 MiB e validade de cinco minutos. A capacidade usa chave separada,
 cabeçalho (nunca query string), sessão/cliente ativos e RLS em cada chunk de 1 MiB.
+O cliente solicita as partes `Range` fornecidas pela ferramenta, de até 4 MiB;
+confere HTTP 206, Content-Range e comprimento de cada parte, concatena pelos
+offsets e só então valida o SHA-256 completo. Intervalos abertos, múltiplos ou
+fora do arquivo são recusados. O fracionamento evita cortes do transporte
+observados na transferência de um vídeo real pelo cliente hospedado.
 A revogação interrompe chunks posteriores; não apaga bytes já recebidos. O cliente
 não segue redirecionamentos, não registra o cabeçalho e confere tamanho/hash antes
 de analisar. Esta ferramenta exige `ARAHUB_MATERIAL_TRANSFER_KEY` protegida de
