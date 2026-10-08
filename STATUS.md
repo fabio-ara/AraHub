@@ -1,46 +1,21 @@
 # Estado do AraHub
 
-Atualizado em 2026-10-08. Primeira entrega em implementação na branch `entrega-1`.
-**R1 ainda não concluída.** Backend publicado 0.2.2 e plugin pessoal 1.1.1; correções 0.2.3
-validadas localmente, publicação em preparação. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
+Atualizado em 2026-10-08. **R1 ainda não concluída.** Backend 0.2.3 e plugin pessoal 1.1.2 publicados e instalados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
 
-A ponte nativa ChatGPT/Google → AraHub → Moodle Lab passou. Dois DOCX atravessaram
-os arquivos do host com nome, bytes e hash conferidos. Pela App ChatGPT e identidade
-OAuth reais, o estudante sintético publicou tópico/anexo, respondeu ao post correto e
-finalizou uma entrega. Os recibos e a interface normal do Moodle confirmaram os efeitos.
-Nenhum teste mutável foi feito na universidade.
+Os três lotes autorizados foram executados e verificados, na ordem prevista: homologação nativa no Moodle Lab, importação privada dos materiais atuais e transição do METD para o AraHub como memória cotidiana principal. Git permanece como história e recuperação. Nenhum teste mutável foi feito na universidade.
 
-Aprovação vencida foi recusada pelo servidor antes de qualquer etapa da entrega. A UI
-agora informa a expiração e permite nova revisão da mesma versão, exigindo novamente
-a declaração de autoria. Estados incertos e resultados consumidos continuam sem reenvio.
-Outro dono foi recusado no endpoint real de homologação; revogação foi testada com sessão
-nativa sintética e o verificador real. App/OAuth/callback/túnel temporários foram encerrados
-após a prova, preservando o Lab local, a conta e o plugin pessoais.
+A ponte ChatGPT/Google → AraHub → Moodle Lab passou com arquivos reais, bytes, nomes e hashes conferidos, identidade OAuth real e estudante sintético. Tópico com anexo, resposta ao post escolhido e entrega final tiveram recibos, conferência independente e inspeção na interface normal do Moodle. A aprovação vencida foi recusada pelo servidor antes de qualquer etapa; a interface permite revisar e autorizar novamente a mesma versão válida, incluindo a declaração de autoria. Resultados incertos e aprovações consumidas não permitem reenvio automático. App/OAuth/callback/túnel temporários foram encerrados; Lab e conta pessoal preservados.
 
-O DOCX gerado no ChatGPT foi enfileirado pelo cliente real, processado por CLI local
-separado e recuperado no cliente com tabela 2×2 e localizadores por célula. Isso não prova
-um executor autônomo hospedado. A Skill passou a orientar navegação por estrutura,
-seções, livros/páginas, fóruns e deeplinks, distinguindo acesso de visibilidade no menu.
-Uma rota institucional foi confirmada somente por leitura, inclusive o link dentro do livro.
+Os 19 materiais autorizados (18 binários) estão na conta privada com origem, versões, hashes e representações preservadas. O cliente ChatGPT pessoal recuperou duas fichas DOCX, estruturas HTML, localizadores e transcrição com tempos do vídeo institucional. Lacunas de imagens, caixas de texto e erros de ASR foram explicitadas. A tabela DOCX 2×2 foi comprovada separadamente com arquivo sintético; as fichas institucionais não têm tabelas estruturais. O processamento dessas representações foi local; a leitura hospedada não demonstra processamento remoto de novos arquivos.
 
-Validação: suíte geral com 230 aprovados, nenhuma falha e dois ignorados; tipos e Edge passaram.
-Após a correção de expiração, sete testes da prévia e 13 da autoridade passaram, além dos tipos
-web e da interação/inspeção visual da UI. As provas anteriores de duas versões Moodle,
-isolamento, negativos, recuperação e histórico permanecem válidas em seus escopos.
+Uma rota institucional até fórum foi confirmada somente por leitura: curso, seção, livro, capítulo e deeplink. O consumidor distingue acesso permitido de atividade oculta no menu e cmid de ID interno do fórum. As escritas Google próprias e seus controles foram retirados, preservando os snapshots históricos.
 
-Matriz: 63 cenários aprovados de 66; MAT-01, MAT-02 e OPS-04 ainda abertos. Homologação,
-importação privada dos 19 materiais e virada METD já têm autorização específica, nessa ordem.
-A homologação terminou. O preflight de materiais detectou novidades legítimas na conta
-hospedada e recusou o baseline antigo antes de escrever. Backup/reconciliação atuais estão
-em andamento, sem apagar nem sobrescrever essas novidades. Depois, aplicar e verificar
-materiais e reconciliar o delta da fonte antes de atualizar o Projeto METD.
+A reconciliação METD preservou 63 versões de 58 caminhos e 109 registros curados, incluindo novidades posteriores ao primeiro snapshot. Oito instruções da fonte foram atualizadas; instruções e apontador do Projeto ChatGPT foram salvos e verificados. O anexo antigo permanece como histórico explicitamente substituído. Uma conversa recuperou biografia, preferências, fontes e versões, registrou uma ocorrência técnica e repetiu a operação sem duplicação. Outra conversa recuperou esse único registro; um conector independente confirmou o mesmo resultado.
 
-AraHub será a memória cotidiana principal dos novos registros após a virada verificada;
-Git continuará como história e recuperação. Materiais/fontes, biografia, preferências,
-versões e recibos antigos permanecem preservados. As escritas Google próprias foram
-retiradas. Status de assignment na universidade continua bloqueado por efeitos indiretos;
-a homologação sintética não altera essa política. Recorrência e processamento hospedados
-têm escopos operacionais próprios. Restauração do Auth gerenciado não foi demonstrada.
+Validação reutilizada: 230 testes aprovados, nenhuma falha e dois ignorados; tipos geral/Edge aprovados. A correção de aprovação passou por sete testes de prévia, 13 da autoridade, tipos/build web e interação/inspeção visual. A reconciliação passou por aplicação, replay, leitura e rollback do SQL exato em clone local, seguida de preflight/aplicação/readback hospedados. O backup posterior à virada restaurou 117 binários, 12 tabelas, 14 migrations e o cofre em ambiente local, com hashes, estabilidade da origem e isolamento de dois donos verificados.
 
-Pacote privado, ZIP, evidências e credenciais ficam fora do Git. Checkpoint operacional:
-`.private/entrega-1/STATUS.md`; prova nativa: `.private/entrega-1/host-live/homologation.json`.
+Matriz: **66 cenários aprovados de 66 nos seus níveis declarados**. Isso não encerra os gates operacionais: consulta de status da própria entrega na universidade continua inibida por efeitos técnicos incidentais e depende de consentimento específico; processamento autônomo hospedado de novos materiais e recorrência não estão ativos. A submissão real pelo AraHub ainda depende dessa consulta de status. Restauração do Auth gerenciado e uso em aparelho móvel físico não foram demonstrados. Não apresentar prova sintética como validação institucional.
+
+A regra geral de ferramentas proíbe iniciar/repetir downloads pela interface e alterar preferências do navegador para contornar a proibição. Transferências usam conectores/APIs; capturas usam retorno nativo e gravação direta fora da interface.
+
+Pacote, ZIP, evidências e credenciais continuam fora do Git. Checkpoint privado: `.private/entrega-1/STATUS.md`. Próxima frente executável: preparar e validar a política desativada de consulta de status próprio, sem liberação institucional; definir executor, limites e consentimento antes de ativar operação recorrente.
