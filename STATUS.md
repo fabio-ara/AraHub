@@ -1,6 +1,8 @@
 # Estado do AraHub
 
-Atualizado em 2026-10-08. **Uso cotidiano em produção; R1 integral ainda não concluída.** Backend 0.2.7 e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
+Atualizado em 2026-10-08. **Versão 0.2.7 liberada para uso pessoal cotidiano.** Backend e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
+
+O titular definiu o uso real em produção como a próxima etapa de validação. Não há impedimento conhecido nem nova instalação, aprovação geral ou rodada de simulação necessária para começar a usar a versão publicada. A leitura autenticada da memória foi reconfirmada pelo conector pessoal, recuperando as quatro versões esperadas. As provas existentes de laboratório, ChatGPT, interface e recuperação permanecem válidas; falhas concretas no uso orientarão as correções. Aprovações de publicações e entregas acadêmicas continuam específicas à ação. Acompanhamento e processamento automático de novos vídeos fora da conversa permanecem inativos; a R1 integral continua aberta, sem bloquear esta versão cotidiana.
 
 Após o pedido de publicação imediata, backend 0.2.7 e migration 16 foram implantados na instância existente, sem alterar plano, conta, conexão ou interface. Função principal ativa, saúde HTTP 200, MCP sem autenticação recusado com 401 e conector pessoal real recuperando as quatro versões de um material. As 12 tabelas do titular permaneceram iguais durante a implantação. A entrega utilizável não depende do cron.
 
@@ -26,4 +28,4 @@ Validação anterior preservada: 230 testes aprovados, zero falhas e dois ignora
 
 Matriz: **66/66 nos níveis declarados**. Processamento hospedado durante conversa foi demonstrado com um vídeo real; recorrência não está ativa. Uso em aparelho móvel físico e restauração do Auth gerenciado não foram demonstrados. Execução em conversa não comprova agendamento, disponibilidade ilimitada ou comportamento após fechar o cliente. Nenhum recurso pago está autorizado.
 
-ZIP, pacote, credenciais e evidências continuam fora do Git. A regra geral proíbe downloads pela UI e alterações de preferências para contornar a restrição. Capturas usam retorno nativo; arquivos usam conectores/APIs. Checkpoint privado: `.private/entrega-1/STATUS.md`. Próxima frente não concluída: acompanhamento recorrente hospedado, com escopo finito e ativação especificamente autorizada; a prova local não substitui essa integração.
+ZIP, pacote, credenciais e evidências continuam fora do Git. A regra geral proíbe downloads pela UI e alterações de preferências para contornar a restrição. Capturas usam retorno nativo; arquivos usam conectores/APIs. Checkpoint privado: `.private/entrega-1/STATUS.md`. Próximo passo de produto: uso cotidiano no ChatGPT com consultas atuais quando solicitadas e correção de falhas observadas. O acompanhamento recorrente hospedado permanece frente separada, com escopo finito e ativação especificamente autorizada; a prova local não substitui essa integração.

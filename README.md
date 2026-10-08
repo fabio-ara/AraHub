@@ -26,10 +26,14 @@ hospedar outras instâncias, sem acesso aos dados desta.
 
 Para usar a conta já conectada, converse no ChatGPT com o plugin AraHub: “Retome meu contexto e os
 materiais desta atividade” ou “Encontre o fórum da disciplina e mostre o caminho e o link direto”.
+**A versão 0.2.7 está liberada para uso pessoal cotidiano, sem instalação ou nova homologação
+necessária na conta já conectada.** A validação seguinte acontece no uso real; falhas observadas
+orientam as correções, preservando a memória e as versões existentes.
 Arquivos produzidos na conversa podem ser preservados no AraHub; publicações e entregas acadêmicas
 passam pela revisão da ação na interface. A memória está disponível entre conversas. Atualizações
 do Moodle são feitas quando solicitadas; o acompanhamento automático fora da conversa ainda não
-está ativo na instância inicial.
+está ativo na instância inicial. Para começar, peça: “Consulte o Moodle agora, retome meus materiais
+e mostre o que preciso fazer na disciplina atual, com as fontes e os links”.
 
 Para ligar o Moodle sem terminal ou Codex, entre na interface e abra Conexões → Moodle. Informe o
 endereço HTTPS da instalação e use o ícone de entrada: ele abre o fluxo móvel oficial do Moodle.
