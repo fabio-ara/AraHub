@@ -500,10 +500,14 @@ try {
     assert.equal(modalBox.height, shellBox.height);
     await writeFile(new URL(`own-status-${viewport.width}.png`, folder), await page.screenshot());
     await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+    const connectionTitleBox = await page.locator("#connections-view h2").boundingBox();
     // Preferences come from the scoped endpoint: valid scopes, conflicts, review.
     await page.getByRole("button", { name: "Preferências", exact: true }).click();
     await page.locator("#preferences-view").waitFor({ state: "visible" });
     await checkGeometry("preferences");
+    const preferenceTitleBox = await page.locator("#preferences-view h2").boundingBox();
+    assert.equal(preferenceTitleBox.y, connectionTitleBox.y);
+    assert.equal(preferenceTitleBox.height, connectionTitleBox.height);
     const preferenceSummary = await page.locator("#preference-summary").textContent();
     assert.match(
       preferenceSummary,
