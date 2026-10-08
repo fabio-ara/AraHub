@@ -18,4 +18,6 @@ Matriz: **66 cenários aprovados de 66 nos seus níveis declarados**. Isso não 
 
 A regra geral de ferramentas proíbe iniciar/repetir downloads pela interface e alterar preferências do navegador para contornar a proibição. Transferências usam conectores/APIs; capturas usam retorno nativo e gravação direta fora da interface.
 
-Pacote, ZIP, evidências e credenciais continuam fora do Git. Checkpoint privado: `.private/entrega-1/STATUS.md`. Próxima frente executável: preparar e validar a política desativada de consulta de status próprio, sem liberação institucional; definir executor, limites e consentimento antes de ativar operação recorrente.
+Uma política de consulta de status próprio está implementada localmente e desativada por padrão. Oito testes específicos, incluindo cliente MCP, e 36 testes de regressão passaram; tipos, build e instalação SQL limpa com 15 migrations também passaram. Pela interface em Chrome normal, a identidade sintética autorizou uma consulta real do estudante no Moodle Lab e a revogação bloqueou a consulta seguinte. Essa mudança não foi publicada nem liberada na universidade; o backend hospedado continua em 14 migrations.
+
+Pacote, ZIP, evidências e credenciais continuam fora do Git. Checkpoint privado: `.private/entrega-1/STATUS.md`. Próxima frente executável: incluir os recibos da política no backup hospedado, preparar a publicação desativada e obter o consentimento específico antes de uma leitura institucional. Definir executor, limites e autorização antes de ativar processamento ou recorrência fora deste computador.
