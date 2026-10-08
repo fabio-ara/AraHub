@@ -2011,8 +2011,16 @@ export class MoodleAdapter {
         }
         const assignments = await this.getAssignments([course]);
         const target = assignments.data?.find((a) => a.id === assignment && a.course_id === course);
+        // A course can contain inaccessible activities while this exact assignment is
+        // visible. Only scoped module-access warnings about OTHER modules are benign.
+        const unrelatedWarnings = assignments.warnings.every((w) =>
+          w.item === "module" && w.warningcode === "1" &&
+          Number.isSafeInteger(w.itemid) && Number(w.itemid) > 0 &&
+          Number.isSafeInteger(target?.cmid) && Number(target?.cmid) > 0 &&
+          w.itemid !== target?.cmid
+        );
         if (
-          !target || assignments.warnings.length || assignments.error_code ||
+          !target || !unrelatedWarnings || assignments.error_code || assignments.truncated ||
           ![false, 0].includes(target.teamsubmission as boolean | number)
         ) {
           throw new MoodleError(
@@ -2031,7 +2039,18 @@ export class MoodleAdapter {
         }
         // Grading summaries are outside the own-student scope, even if a token
         // happens to have extra capabilities. Return only the requested attempt.
-        return { data: { lastattempt: last ?? {} }, warnings };
+        return {
+          data: {
+            lastattempt: last ?? {},
+            assignment_scope: {
+              course_id: course,
+              assignment_id: assignment,
+              cmid: target.cmid ?? null,
+              other_modules_warnings: assignments.warnings,
+            },
+          },
+          warnings,
+        };
       });
     });
   }

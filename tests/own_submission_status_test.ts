@@ -20,6 +20,7 @@ async function fixture() {
   const other = { ownerId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
   await db`insert into auth.users(id) values(${browser.ownerId}),(${other.ownerId})`;
   let active = true, group = false, own = true, enrolled = true, reads = 0;
+  let assignmentWarnings: Record<string, unknown>[] = [];
   const sessionActive = (o: string, s: string) =>
     Promise.resolve(active && o === browser.ownerId && s === browser.sessionId);
   const policies = new OwnSubmissionStatusPolicies(db, sessionActive, true);
@@ -52,7 +53,11 @@ async function fixture() {
             break;
           case "mod_assign_get_assignments":
             result = {
-              courses: [{ id: 12, assignments: [{ id: 34, teamsubmission: group ? 1 : 0 }] }],
+              courses: [{
+                id: 12,
+                assignments: [{ id: 34, cmid: 56, teamsubmission: group ? 1 : 0 }],
+              }],
+              warnings: assignmentWarnings,
             };
             break;
           case "mod_assign_get_submission_status":
@@ -99,6 +104,9 @@ async function fixture() {
     sessionActive,
     mcp: { ...browser, clientId: "synthetic-mcp" },
     reads: () => reads,
+    warnings: (v: Record<string, unknown>[]) => {
+      assignmentWarnings = v;
+    },
     group: (v: boolean) => {
       group = v;
     },
@@ -188,6 +196,37 @@ Deno.test("own status: only individual enrolled assignment and own return; revok
     assert.equal((await m.getSubmissionStatus(34, 12)).error_code, "security_error");
     assert.equal(f.reads(), 2);
     assert.equal((await m.getOwnGrades(12)).error_code, "security_error");
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("own status: unrelated hidden modules do not hide own status; target and unscoped warnings deny", async () => {
+  const f = await fixture();
+  try {
+    await f.decide(true);
+    const m = await f.connections.moodle(f.mcp, f.connection.id);
+    const warning = {
+      item: "module",
+      itemid: 57,
+      warningcode: "1",
+      message: "No access rights in module context",
+    };
+    f.warnings([warning]);
+    const result = await m.getSubmissionStatus(34, 12);
+    assert.equal(result.coverage, "complete");
+    assert.deepEqual((result.data?.assignment_scope as any).other_modules_warnings, [warning]);
+    assert.equal(f.reads(), 1);
+    for (
+      const denied of [{ ...warning, itemid: 56 }, { ...warning, item: "course" }, {
+        ...warning,
+        warningcode: "other",
+      }, { ...warning, itemid: undefined }]
+    ) {
+      f.warnings([denied]);
+      assert.equal((await m.getSubmissionStatus(34, 12)).error_code, "security_error");
+      assert.equal(f.reads(), 1);
+    }
   } finally {
     await f.close();
   }

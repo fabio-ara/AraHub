@@ -43,10 +43,11 @@ uma nova versão. Nenhuma dessas etapas renova a aprovação automaticamente.
 
 As operações implementadas são tópico, resposta ao post selecionado e entrega
 de arquivo individual. Configurações não demonstradas, inclusive assentimento
-de grupo, são recusadas explicitamente. A consulta Moodle de status de entrega
-continua bloqueada no adaptador de produção por seus efeitos indiretos em notas;
-o Lab tem um caminho exclusivo para auditar esse comportamento. Prova de Lab
-não autoriza remover o bloqueio institucional.
+de grupo, são recusadas explicitamente. A consulta Moodle do status individual
+exige a política específica descrita em [STATUS-PROPRIO.md](STATUS-PROPRIO.md),
+desativada por padrão e ligada à conta, conexão e época da credencial. Seus
+efeitos técnicos auditados precisam ser aceitos separadamente. A permissão de
+consulta não autoriza upload nem entrega. Prova de Lab não amplia consentimento.
 
 DOCX/HTML têm extração estruturada e fila durável. O executor local roda fora da
 requisição MCP, com timeout e preservação da melhor representação do mesmo hash.

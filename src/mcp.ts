@@ -29,7 +29,7 @@ export async function handleMcp(
   connections?: ConnectionService,
   actions?: PersistentActionStore,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.2.3" });
+  const server = new McpServer({ name: "arahub", version: "0.2.4" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {
@@ -109,7 +109,7 @@ export async function handleMcp(
     const academic = new MoodleActions(hub, connections, actions, artifacts);
     server.registerTool("hub_prepare_moodle_action", {
       description:
-        "Prepara uma intenção imutável de tópico/resposta de fórum ou entrega de arquivo. Confere conta, atividade, regras, versão e estado; nada é enviado ao Moodle. Aprovação humana será feita na interface autenticada, vinculada a esta versão. Consulta de status de assignment continua bloqueada em produção até revisão da política. Texto de fórum é texto simples preservado e escapado pelo servidor.",
+        "Prepara uma intenção imutável de tópico/resposta de fórum ou entrega de arquivo. Confere conta, atividade, regras, versão e estado; nada é enviado ao Moodle. Aprovação humana será feita na interface autenticada, vinculada a esta versão. Entrega individual exige permissão vigente para consultar o próprio status; essa permissão não autoriza a entrega. Texto de fórum é texto simples preservado e escapado pelo servidor.",
       inputSchema: moodleActionSchema.shape,
       annotations: { ...write, openWorldHint: true },
     }, (a: z.infer<typeof moodleActionSchema>) => response(() => academic.prepare(principal, a)));
