@@ -39,11 +39,50 @@ const REQUIREMENT_MAX_PER_SOURCE = 10;
 const ACTION_RECEIPT_LIMIT = 200;
 const DRAFT_LIMIT = 5;
 const MATERIAL_REFERENCE_LIMIT = 20;
+// Módulos de material/estrutura não são obrigações acionáveis; um módulo cujo
+// conteúdo concreto já é projetado por conta própria não vira obrigação
+// duplicada (module -> has_content, comparado por IDs).
+const NON_ACTIONABLE_MODNAMES: readonly string[] = [
+  "resource",
+  "url",
+  "page",
+  "book",
+  "folder",
+  "label",
+  "file",
+  "imscp",
+];
+const MODULE_CONCRETE_CHILD_KINDS: readonly string[] = [
+  "assignment",
+  "forum",
+  "feedback",
+  "resource",
+  "url",
+  "page",
+  "book",
+  "folder",
+  "label",
+];
+// Como a obrigação interpretada se cumpre. Ausente, deriva do tipo da fonte e da
+// quantidade: `colleagues_distinct` implica forum_reply.
+const FULFILLMENT_KINDS = [
+  "submission",
+  "forum_topic",
+  "forum_reply",
+  "completion",
+  "manual",
+] as const;
+const FORUM_RECEIPT_LIMIT = 20;
+// Statuses nativos que afirmam não haver entrega concluída; nunca apagam relato.
+const NATIVE_STATUS_NOT_SUBMITTED: readonly string[] = ["new", "draft", "reopened"];
 
 export const attentionFilterSchema = z.object({
   connection_id: z.string().uuid().optional(),
   context_id: z.string().uuid().optional(),
   offset: z.number().int().min(0).optional(),
+  // `summary` projeta resultado/exceção (pendente/concluído/incerto) sem
+  // inventário extenso; `audit` mantém a visão completa para uso interno.
+  view: z.enum(["summary", "audit"]).optional(),
 }).strict();
 
 export const markPresentedSchema = z.object({
@@ -71,6 +110,8 @@ export const recordRequirementSchema = z.object({
   content_hash: z.string().min(1).max(200),
   excerpt: z.string().min(1).max(2000),
   action: z.string().min(1).max(500),
+  // Como a obrigação se cumpre. Ausente: derivado do tipo da fonte e da quantidade.
+  fulfillment: z.enum(FULFILLMENT_KINDS).optional(),
   quantity: z.object({
     kind: z.literal("colleagues_distinct"),
     at_least: z.number().int().min(1).max(200),
@@ -99,6 +140,270 @@ interface Deadline {
   original: unknown;
   observation_id: string | null;
   time: DeadlineTime;
+}
+
+/** Relato do titular preservado como delta, vinculado a um alvo qualificado. */
+interface AcademicEvent {
+  delta_id: string;
+  context_id: string;
+  kind: string;
+  event_type: string | null;
+  requirement_key: string | null;
+  content: string;
+  recorded_at: unknown;
+  occurred_at: unknown;
+  original_date: unknown;
+  reported_distinct_colleagues: number | null;
+  entity_id: string | null;
+  binding: string;
+}
+
+interface ForumEvidence {
+  subject_userid: string;
+  distinct_colleagues: number;
+  colleagues_answered_by_owner: number;
+  observed_posts: number;
+  owner_posts: number;
+  publications: Json[];
+  replies: Json[];
+  publications_truncated: boolean;
+  replies_truncated: boolean;
+  basis: string;
+  note: string;
+}
+
+interface EntityAssessment {
+  status: "concluded" | "pending" | "uncertain";
+  reasons: string[];
+}
+
+function requirementFulfillment(kind: string, payload: Json): string {
+  const declared = typeof payload.fulfillment === "string" ? payload.fulfillment : null;
+  if (declared !== null && (FULFILLMENT_KINDS as readonly string[]).includes(declared)) {
+    return declared;
+  }
+  const quantity = payload.quantity === undefined ? null : object(payload.quantity);
+  if (quantity !== null && quantity.kind === "colleagues_distinct") return "forum_reply";
+  if (kind === "assignment") return "submission";
+  return "manual";
+}
+
+function receipt(basis: string, fields: Json): Json {
+  return { basis, ...fields };
+}
+
+interface AssessmentEvidence {
+  events: AcademicEvent[];
+  legacyUserReport: boolean;
+  receipts: Json[];
+  ownStatus: Json | null;
+  forum: ForumEvidence | null;
+  nativeCompletion: boolean;
+}
+
+/**
+ * Avalia cada obrigação interpretada contra as evidências preservadas.
+ * Relato e observação contraditória permanecem separados; cobertura parcial não
+ * apaga prova positiva; conclusão nativa nunca vira entrega.
+ */
+function assessRequirements(requirements: Json[], evidence: AssessmentEvidence): Json[] {
+  const familyCounts = new Map<string, number>();
+  for (const requirement of requirements) {
+    const fulfillment = String(requirement.fulfillment ?? "manual");
+    familyCounts.set(fulfillment, (familyCounts.get(fulfillment) ?? 0) + 1);
+  }
+  return requirements.map((requirement) => {
+    const key = String(requirement.requirement_key ?? "");
+    const fulfillment = String(requirement.fulfillment ?? "manual");
+    const quantity = requirement.quantity === null || requirement.quantity === undefined
+      ? null
+      : object(requirement.quantity);
+    // Relato sem chave só vale quando há uma única obrigação dessa família na
+    // atividade; caso contrário não se adivinha qual obrigação ele cumpre.
+    const ambiguousKeyless = (familyCounts.get(fulfillment) ?? 0) > 1;
+    const matches = (types: readonly string[]) =>
+      evidence.events.filter((event) =>
+        event.event_type !== null && types.includes(event.event_type) &&
+        (event.requirement_key === key ||
+          (event.requirement_key === null && !ambiguousKeyless))
+      );
+    const reportReceipts = (events: AcademicEvent[]) =>
+      events.map((event) =>
+        receipt("user_report_delta", {
+          delta_id: event.delta_id,
+          context_id: event.context_id,
+          event_type: event.event_type,
+          requirement_key: event.requirement_key ?? null,
+          binding: event.binding,
+          recorded_at: event.recorded_at ?? null,
+          occurred_at: event.occurred_at ?? null,
+          original_date: event.original_date ?? null,
+          reported_distinct_colleagues: event.reported_distinct_colleagues,
+        })
+      );
+    const partialProof = (items: Json[]) =>
+      items.some((item) =>
+          item.coverage !== undefined && item.coverage !== null &&
+          item.coverage !== "complete"
+        )
+        ? ["positive_proof_from_partial_coverage"]
+        : [];
+    const empty = (state: string, reasons: string[] = [], list: Json[] = []) => ({
+      requirement_key: key,
+      fulfillment,
+      state,
+      reasons: [...reasons, ...partialProof(list)],
+      evidence: list,
+    });
+
+    if (fulfillment === "submission") {
+      const reports = matches(["submission"]);
+      const list = [...reportReceipts(reports)];
+      const actions = evidence.receipts.filter((r) => r.operation === "moodle.assignment.submit");
+      const reported = reports.length > 0 || (evidence.legacyUserReport && !ambiguousKeyless);
+      if (evidence.legacyUserReport && !ambiguousKeyless && reports.length === 0) {
+        list.push(receipt("legacy_state_user_report", { reported: true }));
+      }
+      for (const action of actions) {
+        list.push(receipt("confirmed_academic_action", action));
+      }
+      const ownStatus = evidence.ownStatus;
+      const native = ownStatus !== null && ownStatus.qualified === true &&
+          typeof ownStatus.status === "string"
+        ? String(ownStatus.status)
+        : null;
+      if (
+        ownStatus !== null && ownStatus.observation !== null && ownStatus.observation !== undefined
+      ) {
+        list.push(receipt("own_submission_status", {
+          status_entity_id: ownStatus.status_entity_id,
+          qualified: ownStatus.qualified,
+          qualification_reasons: ownStatus.reasons ?? [],
+          status: ownStatus.status ?? null,
+          observation: ownStatus.observation,
+        }));
+      }
+      const nativeNegative = native !== null && NATIVE_STATUS_NOT_SUBMITTED.includes(native);
+      if ((reported || actions.length > 0) && nativeNegative) {
+        return {
+          ...empty("uncertain", [
+            reported
+              ? "user_report_contradicts_native_status"
+              : "receipt_contradicts_native_status",
+          ], list),
+          reconciliation: "keep_report_and_native_observation_separate",
+        };
+      }
+      if (ambiguousKeyless && !reported) {
+        return empty("uncertain", ["multiple_obligations_require_specific_evidence"], list);
+      }
+      if (reported || actions.length > 0 || native === "submitted") {
+        return empty("satisfied", [], list);
+      }
+      if (nativeNegative) {
+        return empty("pending", ["native_status_reports_not_submitted"], list);
+      }
+      return empty("pending", [], list);
+    }
+
+    if (fulfillment === "forum_topic") {
+      const reports = matches(["forum_topic"]);
+      const publications = [
+        ...evidence.forum?.publications ?? [],
+        ...evidence.receipts.filter((r) => r.operation === "moodle.forum.discussion"),
+      ];
+      const list = [...reportReceipts(reports), ...publications];
+      if (ambiguousKeyless && !reports.length) {
+        return empty("uncertain", ["multiple_obligations_require_specific_evidence"], list);
+      }
+      if (publications.length > 0 || reports.length > 0) return empty("satisfied", [], list);
+      if (evidence.forum === null) {
+        return empty("uncertain", ["connection_subject_unknown"], list);
+      }
+      return empty("pending", ["no_preserved_owner_publication"], list);
+    }
+
+    if (fulfillment === "forum_reply") {
+      const reports = matches(["forum_reply"]);
+      const replies = evidence.forum?.replies ?? [];
+      const list = [...reportReceipts(reports), ...replies];
+      const atLeast = quantity !== null && Number.isFinite(Number(quantity.at_least))
+        ? Number(quantity.at_least)
+        : 1;
+      const answered = evidence.forum?.colleagues_answered_by_owner ?? 0;
+      const reported = Math.max(0, ...reports.map((r) => r.reported_distinct_colleagues ?? 1));
+      if (ambiguousKeyless && reported < atLeast) {
+        return empty("uncertain", ["multiple_obligations_require_specific_evidence"], list);
+      }
+      if (answered >= atLeast || reported >= atLeast) return empty("satisfied", [], list);
+      if (evidence.forum === null) {
+        return empty("uncertain", ["connection_subject_unknown"], list);
+      }
+      return {
+        ...empty("pending", ["distinct_colleagues_below_required"], list),
+        required_at_least: atLeast,
+        observed_distinct_colleagues: answered,
+      };
+    }
+
+    if (fulfillment === "completion") {
+      const reports = matches(["completion"]);
+      const list = [...reportReceipts(reports)];
+      if (evidence.nativeCompletion) {
+        list.push(receipt("native_completion", { value: true }));
+      }
+      if (ambiguousKeyless && !reports.length) {
+        return empty("uncertain", ["multiple_obligations_require_specific_evidence"], list);
+      }
+      if (evidence.nativeCompletion || reports.length > 0) return empty("satisfied", [], list);
+      return empty("pending", [], list);
+    }
+
+    // manual: só um relato explícito da chave da obrigação confirma; não se infere.
+    const keyed = evidence.events.filter((event) =>
+      event.requirement_key === key && event.event_type === "completion"
+    );
+    const list = reportReceipts(keyed);
+    if (keyed.length > 0) return empty("satisfied", [], list);
+    return empty("pending", ["manual_confirmation_pending"], list);
+  });
+}
+
+/**
+ * Resultado da atividade: concluído quando todas as obrigações interpretadas
+ * estão satisfeitas; incerto quando alguma exceção impede afirmar; pendente
+ * quando falta cumprir. Fórum sem obrigação interpretada é incerto, não conclusão.
+ */
+function assessEntity(
+  kind: string,
+  assessments: Json[],
+  submissionEvidencePresent: boolean,
+  completionEvidencePresent: boolean,
+): EntityAssessment {
+  if (assessments.length === 0) {
+    if (FORUM_KINDS.includes(kind)) {
+      return { status: "uncertain", reasons: ["requirement_not_interpreted"] };
+    }
+    if (kind === "assignment") {
+      return submissionEvidencePresent
+        ? { status: "concluded", reasons: [] }
+        : { status: "pending", reasons: ["submission_evidence_missing"] };
+    }
+    return { status: completionEvidencePresent ? "concluded" : "pending", reasons: [] };
+  }
+  const reasons: string[] = [];
+  for (const assessment of assessments) {
+    if (assessment.state === "uncertain") {
+      for (const reason of (assessment.reasons as string[] | undefined) ?? []) reasons.push(reason);
+    }
+  }
+  if (assessments.some((assessment) => assessment.state === "uncertain")) {
+    return { status: "uncertain", reasons: [...new Set(reasons)] };
+  }
+  if (assessments.every((assessment) => assessment.state === "satisfied")) {
+    return { status: "concluded", reasons: [] };
+  }
+  return { status: "pending", reasons: [] };
 }
 
 function object(value: unknown): Json {
@@ -203,15 +508,17 @@ export class Attention {
   constructor(private hub: Hub) {}
 
   /**
-   * Colegas distintos em postagens preservadas, excluindo a conta vinculada.
-   * O segundo contador só considera respostas da conta a post de outro autor.
+   * Postagens preservadas de fórum/discussão. Uma publicação observada com
+   * autoria igual ao titular e relação canônica prova o tópico; respostas a
+   * colegas exigem o post do outro autor preservado. Cada recibo carrega
+   * ID/observação/hash/cobertura/data; não avalia qualidade acadêmica.
    */
-  private async colleagues(
+  private async forumEvidence(
     tx: postgres.TransactionSql,
     ownerId: string,
     entityId: string,
     subject: string | null,
-  ) {
+  ): Promise<ForumEvidence | null> {
     if (subject === null || subject === "") return null;
     const rows = await tx`
       with candidate_posts as (
@@ -227,43 +534,135 @@ export class Attention {
         join public.hub_entities p on p.owner_id=rp.owner_id and p.id=rp.to_id and p.kind='post'
         where rd.owner_id=${ownerId} and rd.from_id=${entityId} and rd.kind='has_discussion'
       ), target_posts as (
-        select p.id,p.connection_id,
+        select p.id as post_entity_id,p.connection_id,
+          o.id as observation_id,o.content_id,o.content_hash,o.coverage,o.observed_at,
           coalesce(o.content->>'id',o.content->>'post_id',o.provenance->>'post_id') as post_id,
           coalesce(o.content->>'discussionid',o.content->>'discussion_id',o.content->>'discussion',o.provenance->>'discussion_id') as discussion_id,
           coalesce(o.content->>'userid',o.content#>>'{author,userid}',o.content#>>'{author,id}',o.content->>'author_userid') as author_id,
-          coalesce(o.content->>'parentid',o.content->>'parent','0') as parent_id
+          coalesce(o.content->>'parentid',o.content->>'parent') as parent_id
         from candidate_posts p
         join public.hub_entities target on target.owner_id=${ownerId} and target.id=${entityId}
           and target.connection_id=p.connection_id
         join lateral (
-          select content,provenance,coverage from public.hub_observation_timeline
+          select id,content_id,content,content_hash,coverage,observed_at,provenance
+          from public.hub_observation_timeline
           where owner_id=${ownerId} and entity_id=p.id
           order by observed_at desc,id desc limit 1
         ) o on o.coverage in ('complete','partial')
           and o.provenance->>'system'='moodle'
           and o.provenance->>'connection_id'=p.connection_id::text
       )
-      select
-        (select count(distinct author_id) from target_posts
-          where author_id ~ '^[1-9][0-9]*$' and author_id <> ${subject})::int as distinct_colleagues,
-        (select count(*) from target_posts)::int as observed_posts,
-        (select count(*) from target_posts where author_id = ${subject})::int as owner_posts,
-        (select count(distinct q.author_id)
-          from target_posts o
-          join target_posts q on q.connection_id=o.connection_id and q.discussion_id=o.discussion_id
-            and q.post_id=o.parent_id
-          where o.author_id=${subject} and o.parent_id ~ '^[1-9][0-9]*$'
-            and q.author_id ~ '^[1-9][0-9]*$' and q.author_id<>${subject})::int as colleagues_answered`;
-    const row = rows[0];
+      select post_entity_id,connection_id,post_id,discussion_id,parent_id,author_id,
+        observation_id,content_id,content_hash,coverage,observed_at
+      from target_posts order by post_entity_id`;
+    // The discussions endpoint exposes the first post's author/id. It already
+    // proves a topic even when the posts window has not yet been requested.
+    const discussionRows = await tx`
+      select d.id as post_entity_id,d.connection_id,
+        coalesce(o.content->>'first_post_id',o.content->>'id') as post_id,
+        coalesce(o.content->>'discussion_id',o.content->>'discussion',o.provenance->>'discussion_id') as discussion_id,
+        '0'::text as parent_id,o.content->>'userid' as author_id,
+        o.id as observation_id,o.content_id,o.content_hash,o.coverage,o.observed_at
+      from public.hub_entities d
+      join public.hub_entities target on target.owner_id=d.owner_id and target.id=${entityId}
+        and target.connection_id=d.connection_id
+      join lateral (select * from public.hub_observation_timeline
+        where owner_id=d.owner_id and entity_id=d.id order by observed_at desc,id desc limit 1) o
+        on o.coverage in ('complete','partial') and o.provenance->>'system'='moodle'
+          and o.provenance->>'connection_id'=d.connection_id::text
+      where d.owner_id=${ownerId} and d.kind='discussion' and o.content->>'userid' ~ '^[1-9][0-9]*$'
+        and (d.id=${entityId} or exists (
+        select 1 from public.hub_relations r where r.owner_id=d.owner_id
+          and r.from_id=${entityId} and r.to_id=d.id and r.kind='has_discussion'))`;
+    const numericAuthor = (value: unknown): string | null =>
+      typeof value === "string" && /^[1-9][0-9]*$/.test(value) ? value : null;
+    const candidates = [...discussionRows, ...rows].map((row) => ({
+      post_entity_id: String(row.post_entity_id ?? ""),
+      connection_id: String(row.connection_id ?? ""),
+      post_id: row.post_id === null || row.post_id === undefined ? null : String(row.post_id),
+      discussion_id: row.discussion_id === null || row.discussion_id === undefined
+        ? null
+        : String(row.discussion_id),
+      parent_id: row.parent_id === null || row.parent_id === undefined
+        ? null
+        : String(row.parent_id),
+      author_id: numericAuthor(row.author_id),
+      observation_id: row.observation_id === null || row.observation_id === undefined
+        ? null
+        : String(row.observation_id),
+      content_id: row.content_id ?? null,
+      content_hash: row.content_hash ?? null,
+      coverage: row.coverage ?? null,
+      observed_at: row.observed_at ?? null,
+    }));
+    const posts = [...new Map(
+      candidates.filter((post) => post.post_id && post.discussion_id)
+        .map((post) => [`${post.connection_id}|${post.discussion_id}|${post.post_id}`, post]),
+    ).values()];
+    const colleagueIds = new Set<string>();
+    for (const post of posts) {
+      if (post.author_id !== null && post.author_id !== subject) colleagueIds.add(post.author_id);
+    }
+    // Índice por ID canônico para qualificar o parent da resposta; a mesma
+    // postagem alcançada por dois caminhos do grafo não conta duas vezes.
+    const byPost = new Map<string, (typeof posts)[number]>();
+    for (const post of posts) {
+      if (post.post_id === null) continue;
+      const key = `${post.connection_id}|${post.discussion_id}|${post.post_id}`;
+      if (!byPost.has(key)) byPost.set(key, post);
+    }
+    const answered = new Set<string>();
+    const publications: Json[] = [];
+    const replies: Json[] = [];
+    for (const post of posts) {
+      if (post.author_id !== subject) continue;
+      if (post.parent_id === "0") {
+        publications.push(receipt("preserved_owner_publication", {
+          post_entity_id: post.post_entity_id,
+          post_id: post.post_id,
+          discussion_id: post.discussion_id,
+          author_userid: subject,
+          observation_id: post.observation_id,
+          content_id: post.content_id,
+          content_hash: post.content_hash,
+          coverage: post.coverage,
+          observed_at: post.observed_at,
+        }));
+      }
+      if (post.parent_id === null || !/^[1-9][0-9]*$/.test(post.parent_id)) continue;
+      const parent = byPost.get(
+        `${post.connection_id}|${post.discussion_id}|${post.parent_id}`,
+      );
+      const parentAuthor = parent?.author_id ?? null;
+      if (parentAuthor === null || parentAuthor === subject) continue;
+      answered.add(parentAuthor);
+      replies.push(receipt("preserved_owner_reply", {
+        post_entity_id: post.post_entity_id,
+        post_id: post.post_id,
+        discussion_id: post.discussion_id,
+        parent_post_id: post.parent_id,
+        colleague_userid: parentAuthor,
+        author_userid: subject,
+        observation_id: post.observation_id,
+        content_id: post.content_id,
+        content_hash: post.content_hash,
+        coverage: post.coverage,
+        observed_at: post.observed_at,
+      }));
+    }
     return {
       subject_userid: subject,
-      distinct_colleagues: Number(row?.distinct_colleagues ?? 0),
-      colleagues_answered_by_owner: Number(row?.colleagues_answered ?? 0),
-      observed_posts: Number(row?.observed_posts ?? 0),
-      owner_posts: Number(row?.owner_posts ?? 0),
+      distinct_colleagues: colleagueIds.size,
+      colleagues_answered_by_owner: answered.size,
+      observed_posts: posts.length,
+      owner_posts: posts.filter((post) => post.author_id === subject).length,
+      publications: publications.slice(0, FORUM_RECEIPT_LIMIT),
+      replies: replies.slice(0, FORUM_RECEIPT_LIMIT),
+      publications_truncated: publications.length > FORUM_RECEIPT_LIMIT,
+      replies_truncated: replies.length > FORUM_RECEIPT_LIMIT,
       basis: "preserved_discussion_posts",
       note:
-        "Colegas presentes e colegas respondidos são contadores distintos. Respostas exigem post observado, autoria do titular e parent de outro autor na mesma discussão/conexão; não avalia qualidade acadêmica nem participação atual.",
+        "Colegas presentes e colegas respondidos são contadores distintos. Publicação exige post observado com autoria do titular e relação canônica; resposta exige parent de outro autor na mesma discussão/conexão. Não avalia qualidade acadêmica nem participação atual.",
     };
   }
 
@@ -378,11 +777,177 @@ export class Attention {
     };
   }
 
+  /**
+   * Relatos do titular preservados como deltas: `submission_report` legado e os
+   * eventos acadêmicos novos. Um relato vale apenas para o alvo explícito do
+   * escopo ou para um contexto inequivocamente vinculado a um único alvo ativo;
+   * o mesmo relato nunca é espalhado por vários alvos. Correção e retratação
+   * retiram somente a projeção da evidência anterior; o histórico permanece.
+   */
+  private async academicEvents(tx: postgres.TransactionSql, ownerId: string, entityIds: string[]) {
+    if (!entityIds.length) return [] as AcademicEvent[];
+    // Project one current assertion per target/type/requirement, AFTER excluding
+    // corrections. Unrelated newer events can never evict an old milestone.
+    const rows = await tx`
+      with bindings as (
+        select t.context_id, min(t.entity_id::text) as entity_id
+        from public.hub_context_targets t where t.owner_id=${ownerId} and t.active
+        group by t.context_id having count(distinct t.entity_id)=1
+      ), scoped as (
+        select d.*,coalesce(nullif(d.scope->>'entity_id',''),b.entity_id) as target_id,
+          coalesce(d.scope->>'academic_event','submission') as event_type
+        from public.hub_deltas d left join bindings b on b.context_id=d.context_id
+        where d.owner_id=${ownerId} and d.evidence_kind='user_report'
+          and (d.scope->>'academic_event' in ('submission','forum_topic','forum_reply','completion',
+            'deadline_change','requirements_change','feedback_received') or d.kind='submission_report')
+          and coalesce(d.scope->>'retracted','false')<>'true'
+          and not exists (select 1 from public.hub_deltas s where s.owner_id=d.owner_id
+            and s.evidence_kind='user_report' and s.scope->>'supersedes'=d.id::text)
+      )
+      select distinct on (target_id,event_type,coalesce(scope->>'requirement_key',''))
+        id,context_id,kind,content,scope,provenance,recorded_at,target_id,event_type
+      from scoped where target_id=any(${tx.array(entityIds)}::text[])
+      order by target_id,event_type,coalesce(scope->>'requirement_key',''),recorded_at desc,version desc,id desc`;
+    return rows.map((row): AcademicEvent => {
+      const scope = object(row.scope);
+      const provenance = Array.isArray(row.provenance) ? object(row.provenance[0]) : {};
+      return {
+        delta_id: String(row.id),
+        context_id: String(row.context_id),
+        kind: String(row.kind),
+        event_type: String(row.event_type),
+        requirement_key: typeof scope.requirement_key === "string" ? scope.requirement_key : null,
+        content: String(row.content),
+        recorded_at: row.recorded_at,
+        occurred_at: provenance.occurred_at ?? null,
+        original_date: provenance.original_date ?? null,
+        reported_distinct_colleagues: scope.reported_distinct_colleagues === undefined
+          ? null
+          : Number(scope.reported_distinct_colleagues),
+        entity_id: String(row.target_id),
+        binding: scope.entity_id ? "explicit_target" : "unique_context_target",
+      };
+    });
+  }
+
+  /**
+   * Estado nativo da própria entrega, relacionado à atividade por
+   * `has_own_submission_status`. Só qualifica com IDs e autoria corretos; nunca
+   * consulta o Moodle e nunca apaga relato do titular — contradição é exceção.
+   */
+  private async ownSubmissionStatusFor(
+    tx: postgres.TransactionSql,
+    ownerId: string,
+    connectionId: string,
+    entityId: string,
+    state: Json,
+    providerSubject: string | null,
+  ) {
+    const rows = await tx`
+      select s.id as status_entity_id,s.state as status_state,
+        o.observation_id,o.content_id,o.content,o.content_hash,o.coverage,o.observed_at,o.provenance
+      from public.hub_relations r
+      join public.hub_entities s on s.owner_id=r.owner_id and s.id=r.to_id
+        and s.kind='own_submission_status' and s.connection_id=${connectionId}
+      left join lateral (
+        select id as observation_id,content_id,content,content_hash,coverage,observed_at,provenance
+        from public.hub_observation_timeline
+        where owner_id=s.owner_id and entity_id=s.id
+        order by observed_at desc,id desc limit 1
+      ) o on true
+      where r.owner_id=${ownerId} and r.from_id=${entityId}
+        and r.kind='has_own_submission_status'
+      order by s.id limit 1`;
+    const row = rows[0];
+    if (!row) return null;
+    const statusState = object(row.status_state);
+    const content = object(row.content);
+    const provenance = object(row.provenance);
+    const data = object(content.data);
+    const nested = object(object(content.lastattempt).submission).status !== undefined
+      ? object(content.lastattempt)
+      : object(data.lastattempt);
+    const submission = object(nested.submission);
+    const reasons: string[] = [];
+    if (row.observation_id === null || row.observation_id === undefined) {
+      reasons.push("no_preserved_observation");
+    }
+    if (provenance.system !== "moodle") reasons.push("observation_not_from_moodle");
+    if (!["complete", "partial"].includes(String(row.coverage))) {
+      reasons.push("invalid_observation_coverage");
+    }
+    if (String(provenance.connection_id ?? "") !== connectionId) {
+      reasons.push("connection_mismatch");
+    }
+    const observedSubject = provenance.subject_userid === undefined ||
+        provenance.subject_userid === null
+      ? null
+      : String(provenance.subject_userid);
+    const submissionUser = numericOrNull(submission.userid);
+    if (submission.userid !== undefined && String(submission.userid) !== providerSubject) {
+      reasons.push("submission_author_mismatch");
+    }
+    let authorshipBasis: string | null = null;
+    if (providerSubject === null || providerSubject === "") {
+      reasons.push("connection_subject_unknown");
+    } else if (observedSubject !== null && observedSubject === providerSubject) {
+      authorshipBasis = "provenance_subject_userid";
+    } else if (
+      observedSubject === null && submissionUser !== null &&
+      String(submissionUser) === providerSubject
+    ) {
+      authorshipBasis = "submission_userid";
+    } else if (observedSubject !== null) {
+      reasons.push("observation_author_mismatch");
+    } else {
+      reasons.push("author_not_declared");
+    }
+    const assignmentCourse = numericOrNull(state.course_id);
+    const assignmentInstance = numericOrNull(state.instance_id);
+    const statusCourse = numericOrNull(statusState.course_id);
+    const statusInstance = numericOrNull(statusState.instance_id);
+    if (statusCourse === null || assignmentCourse === null || statusCourse !== assignmentCourse) {
+      reasons.push("course_id_mismatch");
+    }
+    if (
+      statusInstance === null || assignmentInstance === null ||
+      statusInstance !== assignmentInstance
+    ) {
+      reasons.push("instance_id_mismatch");
+    }
+    const rawStatus = submission.status;
+    return {
+      status_entity_id: String(row.status_entity_id),
+      qualified: reasons.length === 0,
+      reasons,
+      authorship_basis: authorshipBasis,
+      status: typeof rawStatus === "string" ? rawStatus.toLowerCase() : null,
+      submission_userid: submission.userid ?? null,
+      course_id: statusState.course_id ?? null,
+      instance_id: statusState.instance_id ?? null,
+      feedback: content.feedback ?? null,
+      observation: row.observation_id === null || row.observation_id === undefined ? null : {
+        observation_id: String(row.observation_id),
+        content_id: row.content_id ?? null,
+        content_hash: row.content_hash ?? null,
+        coverage: row.coverage ?? null,
+        observed_at: row.observed_at ?? null,
+        provenance_system: provenance.system ?? null,
+        provenance_connection_id: provenance.connection_id ?? null,
+        subject_userid: observedSubject,
+      },
+      basis: "own_submission_status_entity",
+      note:
+        "Estado da própria entrega preservado pela raiz; não é novo acesso ao Moodle, não marca leitura e não conclui atividade.",
+    };
+  }
+
   /** Obrigações explícitas interpretadas a partir da fonte, com trecho e versões. */
   private async requirementsFor(
     tx: postgres.TransactionSql,
     ownerId: string,
     sourceEntityId: string,
+    sourceKind: string,
   ) {
     const rows = await tx`
       select r.id,r.external_id,r.state,
@@ -413,6 +978,7 @@ export class Attention {
         requirement_entity_id: String(row.id),
         requirement_observation_id: row.observation_id ?? null,
         requirement_key: key,
+        fulfillment: requirementFulfillment(sourceKind, payload),
         action: typeof payload.action === "string" ? payload.action : null,
         quantity: quantity === null
           ? null
@@ -480,6 +1046,7 @@ export class Attention {
     options: { now?: string } = {},
   ) {
     const a = attentionFilterSchema.parse(input);
+    const view = a.view ?? "audit";
     const offset = a.offset ?? 0;
     const nowMs = options.now === undefined ? Date.now() : Date.parse(options.now);
     if (!Number.isFinite(nowMs)) {
@@ -490,7 +1057,8 @@ export class Attention {
       const rows = await tx`
         select e.id,e.kind,e.title,e.external_id,e.connection_id,e.state,
           c.provider,c.state as connection_state,c.provider_subject,
-          o.observation_id,o.content_hash,o.coverage,o.observed_at,o.content,o.provenance,o.matches_current
+          o.observation_id,o.content_id,o.content_hash,o.coverage,o.observed_at,o.content,o.provenance,o.matches_current,
+          previous.content as previous_content,previous.content_hash as previous_content_hash
         from public.hub_entities e
         join public.hub_connections c on c.owner_id=e.owner_id and c.id=e.connection_id
         left join lateral (
@@ -499,14 +1067,39 @@ export class Attention {
           from public.hub_observation_timeline
           where owner_id=e.owner_id and entity_id=e.id
           order by observed_at desc,id desc limit 1) o on true
+        left join lateral (
+          select content,content_hash from public.hub_observation_timeline
+          where owner_id=e.owner_id and entity_id=e.id and observed_at<o.observed_at
+            and content_hash<>o.content_hash
+          order by observed_at desc,id desc limit 1) previous on true
         where e.owner_id=${p.ownerId} and e.kind in ${tx(OBLIGATION_KINDS)}
+          -- Recursos de material não são obrigações acionáveis e um módulo cujo
+          -- conteúdo concreto já é projetado por conta própria não é duplicado
+          -- (module -> has_content, comparado por IDs).
+          and (e.kind <> 'module' or (
+            not exists (
+              select 1 from public.hub_relations rm
+              join public.hub_entities child on child.owner_id=rm.owner_id and child.id=rm.to_id
+              where rm.owner_id=e.owner_id and rm.from_id=e.id and rm.kind='has_content'
+                and child.kind in ${tx(MODULE_CONCRETE_CHILD_KINDS)}
+            )
+            and coalesce(e.state->'provider_record'->>'modname','')
+              <> all(${tx.array([...NON_ACTIONABLE_MODNAMES])}::text[])
+          ))
+          and (${view}='audit' or e.kind<>'discussion' or not exists (
+            select 1 from public.hub_relations r join public.hub_entities f
+              on f.owner_id=r.owner_id and f.id=r.from_id and f.kind='forum'
+            where r.owner_id=e.owner_id and r.to_id=e.id and r.kind='has_discussion'
+              and f.connection_id=e.connection_id))
           and (${a.connection_id ?? null}::uuid is null or e.connection_id=${
         a.connection_id ?? null
       }::uuid)
           and (${a.context_id ?? null}::uuid is null or exists (
             select 1 from public.hub_context_targets t
             where t.owner_id=e.owner_id and t.context_id=${a.context_id ?? null}::uuid
-              and t.entity_id=e.id and t.active))
+              and t.active and (t.entity_id=e.id or exists (
+                select 1 from public.hub_relations alias where alias.owner_id=t.owner_id
+                  and alias.from_id=t.entity_id and alias.to_id=e.id and alias.kind='has_content'))))
         order by e.title,e.id limit 21 offset ${offset}`;
       const page = rows.slice(0, 20);
       const obligations: unknown[] = [];
@@ -539,6 +1132,16 @@ export class Attention {
         const list = materialsByDraft.get(key) ?? [];
         list.push(row);
         materialsByDraft.set(key, list);
+      }
+      // Relatos do titular preservados como deltas, vinculados por alvo explícito
+      // ou contexto inequívoco; o índice por alvo evita espalhar o relato.
+      const academic = await this.academicEvents(tx, p.ownerId, page.map((row) => String(row.id)));
+      const eventsByEntity = new Map<string, AcademicEvent[]>();
+      for (const event of academic) {
+        if (event.entity_id === null) continue;
+        const list = eventsByEntity.get(event.entity_id) ?? [];
+        list.push(event);
+        eventsByEntity.set(event.entity_id, list);
       }
       for (const row of page) {
         const entityId = String(row.id);
@@ -574,15 +1177,20 @@ export class Attention {
         }
         const deadlines = deadlinesOf(kind, record, observationId);
         const subject = typeof row.provider_subject === "string" ? row.provider_subject : null;
-        const colleagues = FORUM_KINDS.includes(kind)
-          ? await this.colleagues(tx, p.ownerId, entityId, subject)
+        const forum = FORUM_KINDS.includes(kind)
+          ? await this.forumEvidence(tx, p.ownerId, entityId, subject)
           : null;
-        if (FORUM_KINDS.includes(kind) && colleagues === null) {
+        if (FORUM_KINDS.includes(kind) && forum === null) {
           gaps.push(
             "Conta vinculada sem identificador de usuário Moodle na conexão; a contagem de colegas não pode excluir as postagens do próprio titular.",
           );
         }
-        const requirements = await this.requirementsFor(tx, p.ownerId, entityId);
+        if (forum !== null && (forum.publications_truncated || forum.replies_truncated)) {
+          gaps.push(
+            `Recibos de fórum limitados a ${FORUM_RECEIPT_LIMIT} publicações e ${FORUM_RECEIPT_LIMIT} respostas; os contadores consideram todas as postagens preservadas.`,
+          );
+        }
+        const requirements = await this.requirementsFor(tx, p.ownerId, entityId, kind);
         if (!deadlines.length && !requirements.length) {
           gaps.push(
             "Nenhum prazo de campo preservado e nenhuma obrigação interpretada; prazo em prosa exige recordRequirement com trecho, não regex.",
@@ -666,20 +1274,82 @@ export class Attention {
           );
         }
         const tracker = await this.completionTracker(tx, p.ownerId, entityId);
-        const nativeCompletion = state.completion === undefined ? null : state.completion;
-        const academicActions = receipts.filter((receipt) =>
-          receiptMatchesEntity(receipt, connectionId, state)
+        const completionFlag = state.completion === undefined ? null : state.completion;
+        // Conclusão nativa e status de entrega são sinais distintos do relato.
+        const nativeCompletion = completionFlag === true || tracker?.state === 1 ||
+          tracker?.state === 2;
+        const academicActions = receipts.filter((candidate) =>
+          receiptMatchesEntity(candidate, connectionId, state)
         );
-        // Evidência de entrega: relato do titular ou recibo confirmado de ação
-        // acadêmica. Conclusão nativa do Moodle é sinal separado e não substitui.
+        const ownStatus = kind === "assignment" || kind === "module"
+          ? await this.ownSubmissionStatusFor(tx, p.ownerId, connectionId, entityId, state, subject)
+          : null;
+        const events = eventsByEntity.get(entityId) ?? [];
+        const suppressed = userReport?.delta_id
+          ? await tx`select id from public.hub_deltas
+          where owner_id=${p.ownerId} and evidence_kind='user_report'
+            and scope->>'supersedes'=${String(userReport.delta_id)} limit 1`
+          : [];
+        const legacyUserReport = userReport !== null && userReport.reported !== false &&
+          !suppressed.length;
+        const userReportPresent = legacyUserReport ||
+          events.some((event) => event.event_type === "submission");
+        const assessments = assessRequirements(
+          requirements.length
+            ? requirements
+            : kind === "assignment"
+            ? [{ requirement_key: "submission", fulfillment: "submission" }]
+            : [],
+          {
+            events,
+            legacyUserReport,
+            receipts: academicActions,
+            ownStatus,
+            forum,
+            nativeCompletion,
+          },
+        );
+        for (let index = 0; index < requirements.length; index++) {
+          if (contentHash && requirements[index].source.content_hash !== contentHash) {
+            assessments[index] = {
+              ...assessments[index],
+              state: "uncertain",
+              reasons: [
+                ...assessments[index].reasons as string[],
+                "requirement_source_changed_requires_review",
+              ],
+            };
+          }
+        }
+        const requirementView = requirements.map((requirement, index) => ({
+          ...requirement,
+          state: assessments[index].state,
+          state_reasons: assessments[index].reasons,
+          evidence: assessments[index].evidence,
+        }));
+        const nativeSubmitted = ownStatus !== null && ownStatus.qualified === true &&
+          ownStatus.status === "submitted";
+        // Evidência de entrega: relato do titular (delta ou estado legado) ou recibo
+        // confirmado. Conclusão nativa não substitui; status próprio "submitted" é
+        // prova nativa da entrega da própria conta, separada da conclusão.
         const submissionEvidence = {
-          user_report: userReport !== null,
+          user_report: userReportPresent,
           confirmed_academic_action: academicActions.length > 0,
-          native_completion: nativeCompletion === true || tracker?.state === 1 ||
-            tracker?.state === 2,
+          native_completion: nativeCompletion,
+          own_submission_status: ownStatus === null ? null : {
+            qualified: ownStatus.qualified,
+            status: ownStatus.status,
+            reasons: ownStatus.reasons,
+          },
         };
-        const submissionEvidencePresent = submissionEvidence.user_report ||
-          submissionEvidence.confirmed_academic_action;
+        const submissionEvidencePresent = userReportPresent ||
+          academicActions.length > 0 || nativeSubmitted;
+        const outcome = assessEntity(
+          kind,
+          assessments,
+          submissionEvidencePresent,
+          nativeCompletion || events.some((event) => event.event_type === "completion"),
+        );
         const item = (itemKind: string, detail: string) => {
           attention.push({
             entity_id: entityId,
@@ -690,12 +1360,63 @@ export class Attention {
             content_hash: contentHash,
           });
         };
-        if (presented === null) {
+        const previousRecord = object(row.previous_content);
+        if (row.previous_content_hash && presented?.content_hash !== contentHash) {
+          const changedDeadlines = DEADLINE_FIELDS.filter((field) =>
+            previousRecord[field] !== record?.[field]
+          );
+          if (changedDeadlines.length) {
+            item(
+              "deadline_changed",
+              "Campos de prazo mudaram: " + changedDeadlines.join(", ") + ".",
+            );
+          }
+          if (
+            ["intro", "description", "content"].some((field) =>
+              previousRecord[field] !== record?.[field]
+            )
+          ) {
+            item(
+              "instructions_changed",
+              "O conteúdo da atividade mudou; confira as orientações e obrigações afetadas.",
+            );
+          }
+        }
+        for (
+          const event of events.filter((event) =>
+            ["deadline_change", "requirements_change", "feedback_received"].includes(
+              event.event_type ?? "",
+            )
+          )
+        ) {
+          attention.push({
+            entity_id: entityId,
+            kind: event.event_type,
+            evidence_kind: "user_report",
+            delta_id: event.delta_id,
+            detail: event.content,
+            occurred_at: event.occurred_at,
+            original_date: event.original_date,
+          });
+        }
+        if (ownStatus?.qualified && object(ownStatus.feedback).available === true) {
+          attention.push({
+            entity_id: entityId,
+            kind: "feedback_available",
+            evidence_kind: "observed",
+            detail: "A consulta autorizada informou feedback disponível; o conteúdo não foi lido.",
+            observation: ownStatus.observation,
+            gradeddate: object(ownStatus.feedback).gradeddate,
+          });
+        }
+        if (presented === null && view === "audit") {
           item(
             "not_presented",
             "Fonte preservada ainda não registrada como apresentada ao titular.",
           );
-        } else if (contentHash !== null && presented.content_hash !== contentHash) {
+        } else if (
+          presented !== null && contentHash !== null && presented.content_hash !== contentHash
+        ) {
           item("changed_since_presented", "A fonte mudou depois de ter sido apresentada.");
         }
         if (read !== null && contentHash !== null && read.content_hash !== contentHash) {
@@ -710,7 +1431,7 @@ export class Attention {
         if (coverage !== null && coverage !== "complete") {
           item("incomplete_coverage", "A última observação não tem cobertura completa.");
         }
-        if (near !== null) {
+        if (near !== null && (view === "audit" || outcome.status !== "concluded")) {
           item(
             "deadline_near",
             "Há prazo preservado dentro da janela de atenção de " + DEFAULT_HORIZON_DAYS + " dias.",
@@ -728,6 +1449,34 @@ export class Attention {
             "Sem relato do titular nem recibo confirmado de ação acadêmica; evidência de entrega ainda ausente.",
           );
         }
+        if (outcome.status === "uncertain") {
+          item(
+            "academic_uncertain",
+            "Resultado incerto: " +
+              (outcome.reasons.length ? outcome.reasons.join(", ") : "evidência insuficiente") +
+              ".",
+          );
+        }
+        if (ownStatus !== null && ownStatus.qualified !== true) {
+          item(
+            "own_submission_status_unqualified",
+            "Há estado da própria entrega preservado, mas sem IDs/autoria que o qualifiquem; não foi usado como prova. " +
+              ownStatus.reasons.join(", "),
+          );
+        }
+        if (
+          assessments.some((assessment) =>
+            (assessment.reasons as string[]).some((reason) =>
+              ["user_report_contradicts_native_status", "receipt_contradicts_native_status"]
+                .includes(reason)
+            )
+          )
+        ) {
+          item(
+            "report_observation_contradiction",
+            "O relato ou recibo preservado diverge da observação nativa; as evidências permanecem separadas.",
+          );
+        }
         if (drift) {
           item(
             "unrecorded_reobservation",
@@ -743,34 +1492,80 @@ export class Attention {
               "O material preservado mudou em relação à versão vinculada ao rascunho. Revise a dependência; o hash diferente não comprova mudança semântica do requisito nem acesso atual à fonte.",
           });
         }
+        const entityView = {
+          id: entityId,
+          kind,
+          title: String(row.title ?? ""),
+          external_id: externalId,
+          provider: String(row.provider ?? ""),
+          connection_state: connectionState,
+        };
+        if (view === "summary") {
+          obligations.push({
+            entity: entityView,
+            outcome,
+            evidence: {
+              reported: events.map((event) => ({
+                event_type: event.event_type,
+                delta_id: event.delta_id,
+              })),
+              legacy_submission_report: legacyUserReport,
+              native_submission_status: ownStatus?.qualified ? ownStatus.status : null,
+              observed_topics: forum?.publications ?? [],
+              observed_distinct_colleagues: forum?.colleagues_answered_by_owner ?? null,
+              native_completion: nativeCompletion,
+            },
+            requirements: requirementView.map((requirement) => ({
+              requirement_key: requirement.requirement_key,
+              action: requirement.action,
+              fulfillment: requirement.fulfillment,
+              state: requirement.state,
+              state_reasons: requirement.state_reasons,
+              evidence: (requirement.evidence as Json[]).slice(0, 3),
+            })),
+            deadlines: { overdue, upcoming: upcoming.length, nearest, within_horizon: near },
+            provenance: {
+              observation_id: observationId,
+              content_id: contentId,
+              content_hash: contentHash,
+              coverage,
+              observed_at: row.observed_at ?? null,
+            },
+            // Sem inventário extenso: o necessário para agir e auditar por ID.
+            caveats: [...new Set([...gaps, ...outcome.reasons])].slice(0, 6),
+          });
+          continue;
+        }
         obligations.push({
-          entity: {
-            id: entityId,
-            kind,
-            title: String(row.title ?? ""),
-            external_id: externalId,
-            provider: String(row.provider ?? ""),
-            connection_state: connectionState,
-          },
+          entity: entityView,
+          outcome,
           requirement: requirementOf(kind, record, observationId),
           // Prazos da fonte e afirmações interpretadas ficam em coleções próprias:
           // uma coluna due_date não representa duas obrigações distintas.
           deadlines,
           requirement_deadlines: requirementDeadlines,
           deadline_summary: { overdue, upcoming: upcoming.length, nearest, within_horizon: near },
-          requirements,
-          colleagues,
-          colleague_requirements: requirements
+          requirements: requirementView,
+          colleagues: forum === null ? null : {
+            subject_userid: forum.subject_userid,
+            distinct_colleagues: forum.distinct_colleagues,
+            colleagues_answered_by_owner: forum.colleagues_answered_by_owner,
+            observed_posts: forum.observed_posts,
+            owner_posts: forum.owner_posts,
+            basis: forum.basis,
+            note: forum.note,
+          },
+          colleague_requirements: requirementView
             .filter((r) => r.quantity !== null && r.quantity.kind === "colleagues_distinct")
             .map((r) => ({
               requirement_key: r.requirement_key,
               required_at_least: r.quantity!.at_least,
-              observed_distinct_colleagues: colleagues?.colleagues_answered_by_owner ?? null,
+              observed_distinct_colleagues: forum?.colleagues_answered_by_owner ?? null,
               basis: "observed_owner_replies_to_distinct_colleagues",
               // Comparação numérica explícita; não declara qualidade acadêmica.
-              observed_meets_at_least: colleagues === null
+              observed_meets_at_least: forum === null
                 ? null
-                : Number(colleagues.colleagues_answered_by_owner) >= Number(r.quantity!.at_least),
+                : Number(forum.colleagues_answered_by_owner) >= Number(r.quantity!.at_least),
             })),
           provenance: {
             observation_id: observationId,
@@ -782,12 +1577,31 @@ export class Attention {
           },
           state: {
             native_platform: {
-              entity_completion: nativeCompletion,
+              entity_completion: completionFlag,
               tracker,
               note:
                 "Estado nativo do Moodle; não prova leitura humana e não é alterado por esta projeção.",
             },
             user_report: userReport,
+            legacy_user_report_active: legacyUserReport,
+            academic_events: events.map((event) => ({
+              delta_id: event.delta_id,
+              context_id: event.context_id,
+              kind: event.kind,
+              event_type: event.event_type,
+              requirement_key: event.requirement_key,
+              binding: event.binding,
+              recorded_at: event.recorded_at,
+              occurred_at: event.occurred_at ?? null,
+              original_date: event.original_date ?? null,
+            })),
+            own_submission_status: ownStatus,
+            forum_publications: forum === null ? null : {
+              publications: forum.publications,
+              replies: forum.replies,
+              publications_truncated: forum.publications_truncated,
+              replies_truncated: forum.replies_truncated,
+            },
             academic_actions: academicActions,
             submission_evidence: submissionEvidence,
             drafts,
@@ -803,6 +1617,7 @@ export class Attention {
         });
       }
       return {
+        view,
         scope: {
           connection_id: a.connection_id ?? null,
           context_id: a.context_id ?? null,
@@ -861,6 +1676,7 @@ export class Attention {
       }
       const payload = {
         action: a.action,
+        ...(a.fulfillment === undefined ? {} : { fulfillment: a.fulfillment }),
         ...(a.quantity === undefined ? {} : { quantity: a.quantity }),
         ...(a.deadline === undefined ? {} : { deadline: a.deadline }),
       };

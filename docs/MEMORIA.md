@@ -1,5 +1,11 @@
 # Memória, materiais e atenção
 
+O fluxo 0.2.9 de relatos, consultas que preservam evidências e atenção por
+resultados está em [acontecimentos acadêmicos](ACONTECIMENTOS-ACADEMICOS.md).
+`hub_record_event` grava relatos diretamente nos deltas existentes, sem nova
+autorização conversacional quando o alvo é inequívoco. O MCP usa resumo por
+padrão; `view="audit"` expõe as dimensões detalhadas descritas abaixo.
+
 Este documento descreve a projeção de atenção/obrigações, a persistência de
 ocorrências de observação (caso A→B→A) e o contrato MCP que a raiz integra. Nada
 aqui altera o Moodle: não há marca de leitura, conclusão ou escrita acadêmica.

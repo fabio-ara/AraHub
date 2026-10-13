@@ -2072,9 +2072,23 @@ export class MoodleAdapter {
         }
         // Grading summaries are outside the own-student scope, even if a token
         // happens to have extra capabilities. Return only the requested attempt.
+        const feedback = asRecord(normalized.feedback);
         return {
           data: {
             lastattempt: last ?? {},
+            // Only availability/date from this already authorized own-status
+            // response. Grades, reviewer identities and plugin bodies stay out.
+            ...(feedback
+              ? {
+                feedback: {
+                  available: true,
+                  gradeddate:
+                    Number.isSafeInteger(feedback.gradeddate) && Number(feedback.gradeddate) > 0
+                      ? feedback.gradeddate
+                      : null,
+                },
+              }
+              : {}),
             assignment_scope: {
               course_id: course,
               assignment_id: assignment,

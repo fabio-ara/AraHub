@@ -65,7 +65,15 @@ async function fixture() {
             assert.equal(p.get("groupid"), "0");
             assert.equal(p.get("assignid"), "34");
             reads++;
-            result = { lastattempt: { submission: { userid: own ? 7 : 8, status: "new" } } };
+            result = {
+              lastattempt: { submission: { userid: own ? 7 : 8, status: "new" } },
+              feedback: {
+                gradeddate: 1791892800,
+                grade: { grade: "17", grader: 42 },
+                gradefordisplay: "17",
+                plugins: [{ name: "Private fixture feedback" }],
+              },
+            };
             break;
           default:
             throw new Error("Unexpected provider function");
@@ -179,7 +187,12 @@ Deno.test("own status: only individual enrolled assignment and own return; revok
   try {
     await f.decide(true);
     const m = await f.connections.moodle(f.mcp, f.connection.id);
-    assert.equal((await m.getSubmissionStatus(34, 12)).coverage, "complete");
+    const observed = await m.getSubmissionStatus(34, 12);
+    assert.equal(observed.coverage, "complete");
+    assert.deepEqual(observed.data?.feedback, { available: true, gradeddate: 1791892800 });
+    assert.equal(JSON.stringify(observed.data).includes("Private fixture feedback"), false);
+    assert.equal(JSON.stringify(observed.data).includes('"grader"'), false);
+    assert.equal(JSON.stringify(observed.data).includes('"grade"'), false);
     assert.equal(f.reads(), 1);
     f.group(true);
     assert.equal((await m.getSubmissionStatus(34, 12)).error_code, "security_error");

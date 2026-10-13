@@ -931,6 +931,32 @@ Deno.test("atenção: obrigações interpretadas e recibo de ação acadêmica (
     );
     assert.ok(!kindsOf(afterReceipt, assignment.id).includes("submission_evidence_missing"));
 
+    // A later native reopening must not be hidden by the historical receipt.
+    const reopened = await hub.entity(
+      owner,
+      conn.id,
+      "own_submission_status",
+      "moodle:course/3/assignment/8/own-status",
+      "Estado próprio",
+      { course_id: 3, instance_id: 8 },
+    );
+    await observe(
+      db,
+      owner.ownerId,
+      reopened.id,
+      { lastattempt: { submission: { userid: 7, status: "reopened" } } },
+      "reopened-after-receipt",
+      "2030-01-02T00:00:00Z",
+    );
+    await relate(db, owner.ownerId, assignment.id, reopened.id, "has_own_submission_status");
+    const reopenedView = await attention.overview(owner, {}, { now: NOW });
+    assert.equal(
+      (findOf(reopenedView, assignment.id) as unknown as { outcome: { status: string } }).outcome
+        .status,
+      "uncertain",
+    );
+    assert.ok(kindsOf(reopenedView, assignment.id).includes("report_observation_contradiction"));
+
     // Recibo de outra atividade não conta para esta obrigação.
     const otherReceipt = await prepareReceipt("moodle.forum.reply", "3/99/77", "rev-2", {
       kind: "forum.reply",
