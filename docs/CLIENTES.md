@@ -27,8 +27,10 @@ aceita DOCX/HTML preservados; `hub_document_blocks` recupera parágrafos, tabela
 Job pendente requer executor; não indica que o conteúdo foi lido. Snapshots Google antigos
 permanecem consultáveis por `hub_read_material`, sem reativar conexão operacional Google.
 
-O MCP não captura o transcript completo. A Skill registra fatos e decisões pertinentes por
-`hub_record_delta`, preservando fonte, escopo, hipótese e revisão. História e biografia não se
+O MCP não captura o transcript completo. A Skill registra acontecimentos inequívocos por
+`hub_record_event` antes de investigar fontes, sem perguntar novamente se deve salvar. Decisões,
+preferências e outros fatos usam `hub_record_delta`, preservando fonte, escopo, hipótese e revisão.
+O contrato e os limites estão em [acontecimentos acadêmicos](ACONTECIMENTOS-ACADEMICOS.md). História e biografia não se
 reduzem à lista de tarefas. `hub_observations` e `hub_observation` permitem aprofundar versões; a
 prévia não é o histórico inteiro.
 
@@ -47,6 +49,7 @@ aprovação; a rotina acadêmica ocorre no chat.
 - “Retome meu contexto acadêmico, indicando as fontes e o que está desatualizado.”
 - “Leia o enunciado e compare as versões da ficha; justifique a escolha pelo conteúdo.”
 - “Mostre separadamente a postagem inicial e os comentários exigidos no fórum.”
+- “Entreguei a atividade.”
 - “Prepare o envio desta versão do arquivo e abra a revisão, sem executá-lo ainda.”
 - “Recupere o recibo da ação anterior e a versão exata do arquivo.”
 

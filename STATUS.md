@@ -1,5 +1,45 @@
 # Estado do AraHub
 
+## Correção de continuidade acadêmica — 2026-10-13
+
+Backend/plugin fonte 0.2.9 concluído e validado localmente na branch
+`fix/academic-memory-continuity`; **não implantado**. A versão pessoal publicada
+abaixo permanece inalterada. Contrato e diagnóstico:
+[acontecimentos acadêmicos](docs/ACONTECIMENTOS-ACADEMICOS.md).
+
+Implementados `hub_record_event` (relato imediato, resolução/vínculo/contexto,
+idempotência e correções transacionais), preservação das consultas Moodle no
+grafo existente, reconciliação de publicação/respostas/status individual e
+resumo de atenção por resultados. Skill prioriza gravar antes de consultar
+fontes. Sem captura passiva, migration, dependência nova, alteração de UI,
+escrita acadêmica externa ou Calendar. Consentimento de status próprio permanece
+obrigatório; recorrência e notificações continuam inativas.
+
+Validação: `deno task db:setup`, `deno task check` e `deno task edge:check` passaram.
+`deno task test` percorreu a regressão completa: 277 aprovados, uma fixture nova
+incoerente corrigida e dois testes opcionais de ASR ignorados como antes. A
+fixture usava o ID do titular numa discussão que pretendia representar outro
+aluno; o sistema reconheceu corretamente a publicação. A reexecução dirigida de
+`summary compacta` e `B/C/D/E` passou. `academic_mcp_test.ts` passou com três
+testes, incluindo o caso adicional de consultas A→B→A e mudanças de
+prazo/orientação/feedback. Resultado consolidado: **279 casos aprovados, nenhuma
+falha pendente e dois ignorados fora do escopo**; não se repetiu o gate caro após
+uma correção apenas de fixture. A revisão final acrescentou a divergência entre
+recibo histórico e status nativo `reopened`; os cinco testes de `attention_test.ts`
+passaram novamente, incluindo esse caso. Formatação e revisão de diff conferidas.
+O gate Git examinou 240 arquivos no índice sem achados de credenciais/caminhos
+privados; os acréscimos finais de teste usam somente valores sintéticos.
+
+As provas usam contas sintéticas, PostgreSQL local e cliente MCP SDK por HTTP,
+incluindo nova sessão de cliente. Fonte Moodle controlada não equivale à
+universidade nem à prova hospedada. Nenhum dado acadêmico real foi alterado; o
+Docker/banco local exclusivo foi iniciado para a validação. Não houve navegador.
+
+Próximo passo executável, após autorização de disponibilização: publicar a função
+principal, atualizar a descoberta do app existente e sua skill; não exige cron.
+
+## Instância pessoal publicada (histórico preservado)
+
 Atualizado em 2026-10-08. **Versão 0.2.8 liberada para uso pessoal cotidiano.** Backend e plugin pessoal 1.1.4 publicados. Contrato: [docs/ENTREGA-1.md](docs/ENTREGA-1.md).
 
 Biblioteca simples publicada com 52 originais acadêmicos na conta real: abrir formatos compatíveis, baixar, ações à direita e paginação automática. Retirados Preferências, controles de extração, botão “Mais PDFs” e histórico de operações aposentadas/terminais; memória, fontes e versões permanecem preservadas. Arquivos técnicos do antigo repositório e snapshots Google continuam na memória, fora da biblioteca. A revisão acadêmica aparece quando há intenção pendente ou resultado incerto.

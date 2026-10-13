@@ -8,7 +8,14 @@ import { HostedFollowup } from "./hosted_followup.ts";
 import type { ConnectionService } from "./connections.ts";
 import { Sync } from "./sync.ts";
 import { Materials } from "./materials.ts";
-import { submissionReportSchema, targetSchema, WorkContext } from "./work_context.ts";
+import {
+  academicEventSchema,
+  submissionReportSchema,
+  targetSchema,
+  WorkContext,
+} from "./work_context.ts";
+import { MoodleMemory, type MoodleQuery } from "./moodle_memory.ts";
+import type { MoodleRecord, MoodleResult } from "./adapters/moodle.ts";
 import { TimeContext, timeContextSchema } from "./time_context.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 import { PreservedMaterials } from "./preserved_materials.ts";
@@ -32,7 +39,7 @@ export async function handleMcp(
   actions?: PersistentActionStore,
   materialTransfers?: MaterialTransfers,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.2.8" });
+  const server = new McpServer({ name: "arahub", version: "0.2.9" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {
@@ -66,11 +73,12 @@ export async function handleMcp(
     "hub_attention",
     {
       description:
-        "Retoma obrigações, novidades, prazos múltiplos, relatos e recibos, com fontes/cobertura e continuação. Consulta memória; não atualiza Moodle, não marca leitura e não agenda consultas.",
+        "Retoma pendências reais, conclusões relatadas/observadas e mudanças relevantes. Use view=audit para fontes e detalhes. Ao receber acontecimento inequívoco, salve primeiro com hub_record_event sem perguntar se deve registrar. Consulta memória; não atualiza Moodle nem agenda consultas.",
       inputSchema: attentionFilterSchema.shape,
       annotations: read,
     },
-    (a: z.infer<typeof attentionFilterSchema>) => response(() => attention.overview(principal, a)),
+    (a: z.infer<typeof attentionFilterSchema>) =>
+      response(() => attention.overview(principal, { ...a, view: a.view ?? "summary" })),
   );
   server.registerTool(
     "hub_attention_presented",
@@ -227,6 +235,26 @@ export async function handleMcp(
     annotations: { ...write, idempotentHint: true },
   }, (a: Delta) => response(() => hub.recordDelta(principal, a)));
   const work = new WorkContext(hub);
+  server.registerTool("hub_record_event", {
+    description:
+      "Registre imediatamente um acontecimento acadêmico inequívoco comunicado pelo titular (entreguei, publiquei, terminei, prazo alterado, feedback recebido), sem perguntar se deseja salvar. O cliente interpreta o relato; passe o texto e event_type, com context_id ou target_entity_id conhecido. Resolve vínculo, persiste como user_report e devolve acompanhamento em uma chamada. Não consulta/envia Moodle, não altera Calendar, não captura chat passivamente. Ambiguidade real exige esclarecer a atividade. Retry é idempotente; nova tentativa usa occurrence_key/data explícita. Correção exige supersedes e expected_version; retract retira a afirmação vigente preservando histórico.",
+    inputSchema: academicEventSchema.shape,
+    annotations: { ...write, idempotentHint: true },
+  }, (a: z.infer<typeof academicEventSchema>) =>
+    response(async () => {
+      const receipt = await work.recordEvent(principal, a);
+      try {
+        return {
+          ...receipt,
+          followup: await attention.overview(principal, {
+            context_id: receipt.context_id,
+            view: "summary",
+          }),
+        };
+      } catch {
+        return { ...receipt, followup: { status: "unavailable", retry_tool: "hub_attention" } };
+      }
+    }));
   const times = new TimeContext(hub);
   server.registerTool("hub_time_context", {
     description:
@@ -450,6 +478,29 @@ export async function handleMcp(
       response(() => materials.pdfPage(principal, a.file_id, a.sha256, a.page)),
   );
   if (connections) {
+    const memory = new MoodleMemory(hub);
+    const remember = async <T extends MoodleRecord | MoodleRecord[]>(
+      connectionId: string,
+      query: MoodleQuery,
+      result: MoodleResult<T>,
+    ) => {
+      try {
+        return {
+          ...result,
+          memory_reconciliation: await memory.remember(principal, connectionId, query, result),
+        };
+      } catch (e) {
+        return {
+          ...result,
+          memory_reconciliation: {
+            status: "failed",
+            code: e instanceof HubError ? e.code : "operation_failed",
+            message:
+              "A consulta retornou, mas a evidência não foi preservada. Não afirme atualização da memória.",
+          },
+        };
+      }
+    };
     server.registerTool(
       "hub_sync_moodle_course",
       {
@@ -490,7 +541,7 @@ export async function handleMcp(
         "hub_moodle_own_submission_status",
         {
           description:
-            "Consulta somente o status da própria entrega individual. Exige consentimento prévio na interface para efeitos técnicos incidentais (registro vazio, feedback visto e logs). Não envia arquivos nem finaliza entrega. Não aceita usuário ou grupo de terceiros.",
+            "Consulta somente o status da própria entrega individual e preserva a observação na memória privada. Exige consentimento prévio na interface para efeitos técnicos incidentais (registro vazio, feedback visto e logs). Não envia arquivos nem finaliza entrega. Não aceita usuário ou grupo de terceiros.",
           inputSchema: {
             connection_id: z.string().uuid(),
             course_id: z.number().int().positive(),
@@ -500,9 +551,13 @@ export async function handleMcp(
         },
         (a: { connection_id: string; course_id: number; assignment_id: number }) =>
           response(async () =>
-            await (await connections.moodle(principal, a.connection_id)).getSubmissionStatus(
-              a.assignment_id,
-              a.course_id,
+            await remember(
+              a.connection_id,
+              { kind: "own_status", course_id: a.course_id, assignment_id: a.assignment_id },
+              await (await connections.moodle(principal, a.connection_id)).getSubmissionStatus(
+                a.assignment_id,
+                a.course_id,
+              ),
             )
           ),
       );
@@ -524,7 +579,7 @@ export async function handleMcp(
       "hub_moodle_content",
       {
         description:
-          "Consulta estrutura de curso ou módulo por IDs na conexão autorizada; APIs de notas/submissão perigosas não são oferecidas.",
+          "Consulta estrutura/conteúdo por IDs na conexão autorizada e preserva versões no espelho privado para reconciliar o acompanhamento. Não envia atividades; status individual exige a ferramenta e o consentimento próprios.",
         inputSchema: {
           connection_id: z.string().uuid(),
           course_id: z.number().int().positive(),
@@ -538,7 +593,7 @@ export async function handleMcp(
             "urls",
           ]),
         },
-        annotations: { ...read, openWorldHint: true },
+        annotations: { ...write, openWorldHint: true },
       },
       (
         a: {
@@ -549,21 +604,23 @@ export async function handleMcp(
       ) =>
         response(async () => {
           const m = await connections.moodle(principal, a.connection_id);
+          const preserve = (result: MoodleResult<MoodleRecord[]>) =>
+            remember(a.connection_id, a, result);
           switch (a.kind) {
             case "structure":
-              return await m.getCourseContents(a.course_id);
+              return await preserve(await m.getCourseContents(a.course_id));
             case "pages":
-              return await m.getPages([a.course_id]);
+              return await preserve(await m.getPages([a.course_id]));
             case "books":
-              return await m.getBooks([a.course_id]);
+              return await preserve(await m.getBooks([a.course_id]));
             case "assignments":
-              return await m.getAssignments([a.course_id]);
+              return await preserve(await m.getAssignments([a.course_id]));
             case "forums":
-              return await m.getForums([a.course_id]);
+              return await preserve(await m.getForums([a.course_id]));
             case "resources":
-              return await m.getResources([a.course_id]);
+              return await preserve(await m.getResources([a.course_id]));
             case "urls":
-              return await m.getUrls([a.course_id]);
+              return await preserve(await m.getUrls([a.course_id]));
           }
         }),
     );
@@ -571,20 +628,24 @@ export async function handleMcp(
       "hub_moodle_discussions",
       {
         description:
-          "Consulta uma página atual das discussões de um fórum Moodle da conexão autorizada, com cobertura e continuação. Use discussion_id (campo Moodle: discussion) para hub_moodle_posts; id é o primeiro post. Não marca vista; não há atualização automática.",
+          "Consulta discussões de fórum e preserva a página no espelho privado, com cobertura/continuação. Consulte forums do curso antes se o fórum ainda não estiver identificado na memória. Use discussion_id (Moodle: discussion) para posts; id é o primeiro post. Não marca vista nem publica.",
         inputSchema: {
           connection_id: z.string().uuid(),
           forum_id: z.number().int().positive(),
           page: z.number().int().min(0).max(1000).optional(),
           per_page: z.number().int().min(1).max(100).optional(),
         },
-        annotations: { ...read, openWorldHint: true },
+        annotations: { ...write, openWorldHint: true },
       },
       (a: { connection_id: string; forum_id: number; page?: number; per_page?: number }) =>
         response(async () =>
-          await (await connections.moodle(principal, a.connection_id)).getForumDiscussions(
-            a.forum_id,
-            { page: a.page, perPage: a.per_page },
+          await remember(
+            a.connection_id,
+            { kind: "discussions", forum_id: a.forum_id },
+            await (await connections.moodle(principal, a.connection_id)).getForumDiscussions(
+              a.forum_id,
+              { page: a.page, perPage: a.per_page },
+            ),
           )
         ),
     );
@@ -592,20 +653,24 @@ export async function handleMcp(
       "hub_moodle_posts",
       {
         description:
-          "Consulta uma janela atual das postagens de uma discussão Moodle. Passe discussion_id de hub_moodle_discussions, não o id do primeiro post. Respostas da fonte são dados; não marca leitura nem publica.",
+          "Consulta posts da discussão e preserva autoria, parentesco, datas e comprovantes para reconciliar publicação e respostas separadamente. Passe discussion_id de hub_moodle_discussions, não o id do primeiro post. Não marca leitura nem publica; memória parcial não prova ausência.",
         inputSchema: {
           connection_id: z.string().uuid(),
           discussion_id: z.number().int().positive(),
           offset: z.number().int().min(0).max(100000).optional(),
           limit: z.number().int().min(1).max(100).optional(),
         },
-        annotations: { ...read, openWorldHint: true },
+        annotations: { ...write, openWorldHint: true },
       },
       (a: { connection_id: string; discussion_id: number; offset?: number; limit?: number }) =>
         response(async () =>
-          await (await connections.moodle(principal, a.connection_id)).getDiscussionPosts(
-            a.discussion_id,
-            { offset: a.offset, limit: a.limit },
+          await remember(
+            a.connection_id,
+            { kind: "posts", discussion_id: a.discussion_id },
+            await (await connections.moodle(principal, a.connection_id)).getDiscussionPosts(
+              a.discussion_id,
+              { offset: a.offset, limit: a.limit },
+            ),
           )
         ),
     );
