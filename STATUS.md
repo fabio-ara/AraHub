@@ -1,10 +1,63 @@
 # Estado do AraHub
 
+## Versão 0.2.9 disponibilizada — 2026-10-13
+
+**Publicada e verificada na instalação pessoal existente.** O commit `010d598`
+foi integrado pelo [PR #1](https://github.com/fabio-ara/AraHub/pull/1), merge
+`3a400a2`. Backend principal implantado na Edge36, plano Free, sem migration,
+alteração de Auth, chaves, permissões, interface ou serviços de outros projetos.
+Saúde HTTP 200; MCP anônimo recusado com 401. Cron, executor recorrente e
+notificações permanecem inativos.
+
+Catálogo atualizado no app já conectado: `hub_record_event` habilitada e
+`hub_attention` com `summary/audit`. Pacote pessoal **1.1.5** instalado no mesmo
+plugin/conta OAuth, com permissão de baixo risco preservada. A skill
+`academic-memory` está habilitada; o SHA-256 do Markdown servido pelo ChatGPT
+coincide integralmente com o arquivo versionado:
+`ddf581872e1b34f45e0bdede81851618e381c64de8ce00634083d77ab1b35e59`.
+
+Prova funcional real em **duas conversas novas do ChatGPT**: o relato de entrega
+da atividade fictícia identificada chamou `hub_record_event`, sem pergunta de
+autorização; a repetição chamou a mesma ferramenta com os mesmos argumentos,
+retornou `replayed=true` e conservou um delta `user_report`, versão 1. Outra
+conversa recuperou esse registro por `hub_context`/`hub_history` e reconheceu por
+`hub_attention` a divergência com uma observação controlada `new`, mantendo
+`uncertain`. O conector independente e a leitura SQL confirmaram os resultados.
+Essa observação era uma fixture hospedada, **não uma consulta à universidade**.
+
+Antes da publicação passaram tipos gerais/Edge, 32 testes dirigidos com
+PostgreSQL real, SDK MCP/HTTP, consentimento e pacote, além do gate Git
+(240 arquivos, zero achados). Esses 32 casos se sobrepõem à regressão consolidada
+de 279 abaixo; não são uma nova suíte completa nem casos adicionais. O remoto
+não tinha alterações posteriores, checks CI obrigatórios ou PR concorrente;
+o único workflow é a publicação manual da interface, que não mudou.
+
+As impressões digitais das 12 tabelas pessoais e quatro tabelas privadas
+coincidiram antes/depois da implantação e no encerramento, descontando somente
+o contexto técnico criado nesta prova e seu único relato. Conexões reais,
+memória anterior, credenciais e autorizações preservadas. A conexão fictícia e
+seu grafo foram exportados em arquivo privado e retirados do acompanhamento ao
+final; o contexto sintético e o relato permanecem como auditoria, fora da
+retomada cotidiana. Não houve leitura/escrita no Moodle nem ação em Calendar.
+
+Evidências, hashes, pacote e recuperação em `.private/release-0.2.9/`. O download
+do código ativo pelo CLI recusou a disposição dos arquivos fora de `functions`;
+a recuperação do código usa o snapshot Git anterior `cb3f6b3`, preservado em ZIP,
+com configuração e segredos existentes. Não foi necessário rollback. Upload
+do pacote usou o seletor suportado do navegador integrado após o DevTools
+recusar acesso ao caminho local; captura foi obtida pelo retorno nativo e seus
+bytes salvos diretamente, sem download pela interface.
+
+Próximo passo: uso cotidiano na instalação atualizada. Conversas novas já
+comprovaram o catálogo; conversas abertas antes da atualização podem conservar
+a descoberta anterior. Persistência continua dependendo da invocação MCP pelo
+ChatGPT: não existe captura passiva nem monitoramento fora da conversa.
+
 ## Correção de continuidade acadêmica — 2026-10-13
 
-Backend/plugin fonte 0.2.9 concluído e validado localmente na branch
-`fix/academic-memory-continuity`; **não implantado**. A versão pessoal publicada
-abaixo permanece inalterada. Contrato e diagnóstico:
+Histórico da implementação anterior à publicação: backend/plugin fonte 0.2.9
+concluído e validado localmente na branch `fix/academic-memory-continuity`.
+Disponibilização efetiva registrada acima. Contrato e diagnóstico:
 [acontecimentos acadêmicos](docs/ACONTECIMENTOS-ACADEMICOS.md).
 
 Implementados `hub_record_event` (relato imediato, resolução/vínculo/contexto,
@@ -35,8 +88,8 @@ incluindo nova sessão de cliente. Fonte Moodle controlada não equivale à
 universidade nem à prova hospedada. Nenhum dado acadêmico real foi alterado; o
 Docker/banco local exclusivo foi iniciado para a validação. Não houve navegador.
 
-Próximo passo executável, após autorização de disponibilização: publicar a função
-principal, atualizar a descoberta do app existente e sua skill; não exige cron.
+O passo de publicação, descoberta e atualização da skill foi concluído conforme
+o registro acima; não exigiu cron.
 
 ## Instância pessoal publicada (histórico preservado)
 

@@ -1,8 +1,15 @@
 # Acontecimentos acadêmicos e continuidade
 
-Correção local 0.2.9, de 2026-10-13. A instância pessoal permanece na versão
-publicada até uma implantação autorizada. Não há migration, nova dependência,
+Correção 0.2.9 publicada e validada na instância pessoal em 2026-10-13, incluindo
+catálogo MCP e skill no pacote pessoal 1.1.5. Não há migration, nova dependência,
 segunda memória canônica, cron ou notificação nesta correção.
+
+A publicação foi integrada pelo PR #1 (`010d598`, merge `3a400a2`) e implantada
+na função principal existente. Duas conversas novas do ChatGPT comprovaram
+registro imediato, replay idempotente, recuperação e divergência preservada em
+contexto sintético. A skill servida ao cliente coincide por SHA-256 com a fonte.
+O teste de divergência usou observação controlada no banco hospedado, sem acesso
+à universidade. Estado final e limites: [STATUS](../STATUS.md).
 
 ## Causa operacional
 
@@ -147,14 +154,16 @@ e [limites oficiais](https://supabase.com/docs/guides/functions/limits).
 
 ## Disponibilização pessoal
 
-Após autorização de implantação, publicar o backend 0.2.9 na função principal,
-atualizar a descoberta de ferramentas do app existente e empacotar/atualizar a
-skill pessoal com versão superior à instalada. Não criar outro app ou memória.
-Não há migration nem alteração de UI exigida por esta correção. Validar em nova
-conversa a disponibilidade de `hub_record_event`, recibo como relato e retomada.
-O pacote preparado localmente não prova instalação nem comportamento do modelo
-no ChatGPT. O host ainda precisa carregar a skill e efetivamente invocar o MCP;
-nenhum teste de servidor comprova captura passiva ou obediência universal do modelo.
+Procedimento executado: publicar o backend 0.2.9 na função principal, atualizar
+a descoberta de ferramentas do app existente e atualizar a skill pelo pacote
+pessoal 1.1.5. Nenhum outro app ou memória foi criado. Não houve migration nem
+alteração de UI. Conversas novas confirmaram `hub_record_event`, recibo como
+relato, replay e retomada; catálogo, skill e conta foram conferidos no cliente.
+
+Em próximas atualizações, repetir essas verificações após implantar e atualizar
+o catálogo: um pacote local sozinho não prova instalação ou comportamento.
+O host ainda precisa carregar a skill e efetivamente invocar o MCP; nenhuma
+prova de servidor ou conversa isolada garante obediência universal do modelo.
 
 ## Regressão controlada
 
@@ -163,5 +172,6 @@ Os arquivos `academic_events_test.ts`, `academic_mcp_test.ts` e
 contas sintéticas e fontes controladas. O segundo usa o cliente MCP SDK e HTTP
 reais, inclusive outra sessão de cliente. Os testes existentes de status próprio
 exercitam OAuth/consentimento/adaptador, autorização ausente e revogação. Os
-resultados finais e comandos executados ficam em `STATUS.md`. Não são prova de
-Moodle institucional, implantação hospedada ou execução autônoma pelo ChatGPT.
+resultados finais e comandos executados ficam em `STATUS.md`. A regressão local
+não é prova de Moodle institucional, implantação ou execução pelo ChatGPT. As
+provas hospedadas e do cliente, executadas depois, estão separadas no STATUS.
