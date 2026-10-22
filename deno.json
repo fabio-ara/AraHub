@@ -9,6 +9,8 @@
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@1.31.0"
   },
   "tasks": {
+    "docs:check": "deno run --allow-read scripts/check_docs.ts",
+    "storage:compact": "deno run --allow-net=127.0.0.1:55432 --allow-env scripts/compact_storage.ts",
     "check": "deno check src/*.ts src/adapters/*.ts scripts/*.ts tests/*.ts",
     "test": "deno test --allow-net=127.0.0.1:55432,127.0.0.1:8787,127.0.0.1:8789,127.0.0.1:8790 --allow-env --allow-read --allow-write=.private tests/",
     "dev": "deno run --allow-net --allow-env --allow-read src/main.ts",

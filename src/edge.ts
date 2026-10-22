@@ -4,6 +4,7 @@ import { createHandler } from "./http.ts";
 import type { ConnectionService } from "./connections.ts";
 import type { PersistentActionStore } from "./approval_store.ts";
 import type { MaterialTransfers } from "./material_transfer.ts";
+import type { LoginConfig } from "./login_config.ts";
 
 /** Supabase terminates TLS and forwards /<function>/... over HTTP to the runtime. */
 export function createSupabaseGatewayHandler(
@@ -52,6 +53,7 @@ export function createEdgeHandler(
     origin: string;
     supabaseUrl?: string;
     publishableKey?: string;
+    login?: LoginConfig;
     actions?: PersistentActionStore;
     materialTransfers?: MaterialTransfers;
   },
@@ -75,6 +77,7 @@ export function createEdgeHandler(
     publicUrl: uiUrl.origin,
     supabaseUrl: ui?.supabaseUrl,
     publishableKey: ui?.publishableKey,
+    login: ui?.login,
     verify: createVerifier(auth),
     connections,
     actions: ui?.actions,

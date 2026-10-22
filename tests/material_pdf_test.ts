@@ -237,7 +237,7 @@ async function readStored(
   fileId: string,
 ): Promise<{ extraction: Record<string, unknown>; extracted_text: string | null; bytes: number }> {
   const [row] =
-    await db`select extraction,extracted_text,octet_length(binary_content)::integer as bytes from public.hub_files where id=${fileId}`;
+    await db`select extraction,extracted_text,octet_length(binary_content)::integer as bytes from public.hub_file_contents where id=${fileId}`;
   return row as {
     extraction: Record<string, unknown>;
     extracted_text: string | null;

@@ -23,18 +23,34 @@
           <main class="screen-content">
             <section id="login" class="panel">
               <h2>Conta</h2>
+              <p id="registration-note" class="note" hidden></p>
+              <div id="social-login" class="login-options" hidden></div>
               <form id="login-form">
+                <label id="login-method-label" hidden>Como deseja entrar?
+                  <select id="login-method"><option value="link">Link por e-mail</option><option value="password">Senha</option></select>
+                </label>
                 <label>E-mail<input id="email" type="email" autocomplete="username" required></label>
                 <label
                   id="password-label"
                   hidden>Senha<input id="password" type="password" autocomplete="current-password" required></label>
                 <div
-                  class="actions"><button type="submit" id="signin" class="icon-ghost primary" aria-label="Entrar" title="Entrar" disabled></button></div>
+                  class="actions"><button type="submit" id="signin" class="login-button primary" disabled>Entrar</button></div>
+                <button type="button" id="forgot-password" class="login-button"
+                  hidden>Esqueci minha senha</button>
+              </form>
+              <form id="recovery-form" hidden>
+                <h2>Definir nova senha</h2>
+                <label>Nova senha<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label>
+                <label>Repita a nova senha<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label>
+                <button id="save-password" class="login-button primary"
+                  type="submit">Salvar senha</button>
               </form>
               <button id="synthetic-login" class="icon-ghost"
                 aria-label="Explorar ambiente sintético local"
                 title="Explorar ambiente sintético local" hidden></button>
               <p id="setup-note" class="note" hidden>Configure o acesso para entrar.</p>
+              <button id="retry-config" type="button" class="login-button"
+                hidden>Tentar novamente</button>
             </section>
             <section id="workspace" hidden>
               <nav class="toolbar" aria-label="Configuração">
@@ -106,6 +122,9 @@
             <p id="message" class="note" role="status" aria-live="polite"></p>
           </main>
           <footer class="screen-footer">
+            <a class="documentation-link"
+              href="https://github.com/fabio-ara/AraHub/blob/main/docs/README.md" target="_blank"
+              rel="noopener noreferrer">Ajuda</a>
             <a id="privacy" class="icon-ghost" href="/privacy.html" aria-label="Privacidade"
               title="Privacidade"></a>
           </footer>

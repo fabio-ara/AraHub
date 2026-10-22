@@ -46,7 +46,6 @@ for (
     ["moodle-back", "arrow-left", "Voltar às conexões"],
     ["moodle-help-toggle", "info", "Ajuda para conectar"],
     ["logout", "sign-out", "Sair"],
-    ["signin", "sign-in", "Entrar"],
     ["synthetic-login", "experiment", "Explorar ambiente sintético local"],
     ["refresh", "rotate", "Atualizar visão"],
     ["export", "download", "Preparar exportação privada"],
@@ -62,15 +61,38 @@ setAction(el("connections-tab"), "account", "Conexões");
 const msg = (s: string) => {
   el("message").textContent = s;
 };
-const cfg = await fetch(endpoint("/api/config")).then((r) => {
-  if (!r.ok) throw new Error("Configuração de acesso indisponível.");
-  return r.json();
-}).catch(() => ({ unavailable: true }));
+const cfg = await fetch(endpoint("/api/config"), { signal: AbortSignal.timeout(15000) }).then(
+  (r) => {
+    if (!r.ok) throw new Error("Configuração de acesso indisponível.");
+    return r.json();
+  },
+).catch(() => ({ unavailable: true }));
 const supabase = cfg.supabaseUrl && cfg.publishableKey
   ? createClient(cfg.supabaseUrl, cfg.publishableKey, {
     auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true },
   })
   : null;
+const login = cfg.login ?? {
+  registration: "invite",
+  emailLink: !localCredentialEntry,
+  password: localCredentialEntry,
+  providers: [],
+};
+let loginMethod: "link" | "password" = login.emailLink ? "link" : "password";
+let recoveringPassword = false;
+const consentKey = "arahub-pending-consent";
+const requestedAuthorization = new URL(location.href).searchParams.get("authorization_id");
+if (requestedAuthorization && /^[a-zA-Z0-9_-]{1,200}$/.test(requestedAuthorization)) {
+  sessionStorage.setItem(consentKey, requestedAuthorization);
+}
+const authReturnUrl = () => {
+  const url = new URL(route("/oauth/callback"), location.origin);
+  const pending = sessionStorage.getItem(consentKey);
+  if (pending && /^[a-zA-Z0-9_-]{1,200}$/.test(pending)) {
+    url.searchParams.set("authorization_id", pending);
+  }
+  return url.href;
+};
 let token: string | null = cfg.synthetic ? sessionStorage.getItem("arahub-synthetic-token") : null;
 let renewingMoodle: string | null = null;
 let moodleSubmitting = false;
@@ -119,14 +141,69 @@ if (!supabase) {
   el("login-form").hidden = true;
   el("setup-note").hidden = false;
   if (cfg.unavailable) {
-    el("setup-note").textContent = "Acesso indisponível no momento. Tente novamente mais tarde.";
+    el("setup-note").textContent =
+      "Não foi possível acessar o serviço. Confira sua conexão e tente novamente. Se persistir, avise o administrador da instalação.";
+    el("retry-config").hidden = false;
   }
 }
-if (!localCredentialEntry) {
-  el("password-label").hidden = true;
-  (el("password") as HTMLInputElement).required = false;
-  setAction(el("signin"), "mail", "Receber link de acesso");
-} else el("password-label").hidden = false;
+el("retry-config").addEventListener("click", () => location.reload());
+function showLoginMethod() {
+  el("password-label").hidden = loginMethod !== "password";
+  (el("password") as HTMLInputElement).required = loginMethod === "password";
+  (el("password") as HTMLInputElement).value = "";
+  el("forgot-password").hidden = loginMethod !== "password";
+  el("signin").textContent = loginMethod === "link" ? "Receber link de acesso" : "Entrar";
+}
+el("login-method-label").hidden = !(login.emailLink && login.password);
+(el("login-method") as HTMLSelectElement).value = loginMethod;
+el("login-method").addEventListener("change", () => {
+  loginMethod = (el("login-method") as HTMLSelectElement).value === "password"
+    ? "password"
+    : "link";
+  showLoginMethod();
+});
+showLoginMethod();
+if (supabase) {
+  el("login-form").hidden = !login.emailLink && !login.password;
+  el("registration-note").hidden = false;
+  el("registration-note").textContent = login.registration === "open"
+    ? login.emailLink
+      ? "Entre na sua conta ou use o link por e-mail para criar uma."
+      : "Use uma das formas de entrada disponíveis nesta instalação."
+    : "Use uma conta cadastrada nesta instalação. Para obter acesso, procure o administrador.";
+  for (const provider of login.providers ?? []) {
+    if (!["google", "github", "azure"].includes(provider)) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "login-button";
+    button.textContent = `Continuar com ${
+      {
+        google: "Google",
+        github: "GitHub",
+        azure: "Microsoft",
+      }[provider as "google" | "github" | "azure"]
+    }`;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo: authReturnUrl(),
+            ...(provider === "azure" ? { scopes: "email" } : {}),
+          },
+        });
+        if (error) throw error;
+      } catch {
+        msg("Não foi possível iniciar a entrada. Tente novamente ou procure o administrador.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+    el("social-login").append(button);
+  }
+  el("social-login").hidden = !el("social-login").childElementCount;
+}
 const api = async (path: string) => {
   const r = await fetch(endpoint(path), {
     headers: { Authorization: `Bearer ${token}` },
@@ -292,7 +369,7 @@ const connectionState: Record<string, string> = {
 };
 
 async function render() {
-  if (!token) return;
+  if (!token || recoveringPassword) return;
   const sessionToken = token;
   try {
     const c = await api("/api/context");
@@ -631,46 +708,105 @@ el("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!supabase) return;
   el("signin").setAttribute("disabled", "");
-  if (!localCredentialEntry) {
-    const email = (el("email") as HTMLInputElement).value;
-    const emailRedirectTo = new URL(route("/oauth/callback"), location.origin).href;
-    let { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo,
-        shouldCreateUser: false,
-      },
-    });
-    // An administrator-provisioned account still needs email confirmation.
-    // Resend verifies that account through native PKCE; it never enables signups.
-    if (error?.code === "signup_disabled") {
-      ({ error } = await supabase.auth.resend({
-        type: "signup",
+  try {
+    if (loginMethod === "link") {
+      const email = (el("email") as HTMLInputElement).value;
+      const emailRedirectTo = authReturnUrl();
+      let { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo },
-      }));
+        options: {
+          emailRedirectTo,
+          shouldCreateUser: login.registration === "open",
+        },
+      });
+      // An administrator-provisioned account still needs email confirmation.
+      // Resend verifies that account through native PKCE; it never enables signups.
+      if (error?.code === "signup_disabled" && login.registration !== "open") {
+        ({ error } = await supabase.auth.resend({
+          type: "signup",
+          email,
+          options: { emailRedirectTo },
+        }));
+      }
+      el("signin").removeAttribute("disabled");
+      msg(
+        error
+          ? "Não foi possível solicitar o acesso. Confira o cadastro da sua conta e tente novamente."
+          : "Confira seu e-mail e abra o link neste navegador para entrar.",
+      );
+      return;
     }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: (el("email") as HTMLInputElement).value,
+      password: (el("password") as HTMLInputElement).value,
+    });
+    (el("password") as HTMLInputElement).value = "";
     el("signin").removeAttribute("disabled");
+    if (error) {
+      msg("Não foi possível entrar. Verifique sua conta e tente novamente.");
+      return;
+    }
+    token = data.session?.access_token ?? null;
+    await render();
+    await consent();
+  } catch {
+    msg("Não foi possível acessar o serviço. Tente novamente em instantes.");
+  } finally {
+    el("signin").removeAttribute("disabled");
+  }
+});
+el("forgot-password").addEventListener("click", async () => {
+  if (!supabase || !login.password) return;
+  const email = el("email") as HTMLInputElement;
+  if (!email.reportValidity()) return;
+  const button = el("forgot-password") as HTMLButtonElement;
+  button.disabled = true;
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.value, {
+      redirectTo: authReturnUrl(),
+    });
     msg(
       error
-        ? "Não foi possível solicitar o acesso. Confira o cadastro da sua conta e tente novamente."
-        : "Confira seu e-mail e abra o link neste navegador para entrar.",
+        ? "Não foi possível solicitar a recuperação. Tente novamente mais tarde."
+        : "Se a conta puder receber a mensagem, enviaremos o link de recuperação. Abra-o neste navegador.",
     );
+  } catch {
+    msg("Não foi possível acessar o serviço. Tente novamente em instantes.");
+  } finally {
+    button.disabled = false;
+  }
+});
+el("recovery-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!supabase || !recoveringPassword || !token) return;
+  const password = el("new-password") as HTMLInputElement;
+  const confirmation = el("confirm-password") as HTMLInputElement;
+  if (password.value !== confirmation.value) {
+    msg("As senhas precisam ser iguais.");
     return;
   }
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: (el("email") as HTMLInputElement).value,
-    password: (el("password") as HTMLInputElement).value,
-  });
-  (el("password") as HTMLInputElement).value = "";
-  el("signin").removeAttribute("disabled");
-  if (error) {
-    msg("Não foi possível entrar. Verifique sua conta e tente novamente.");
-    return;
+  const button = el("save-password") as HTMLButtonElement;
+  button.disabled = true;
+  try {
+    const { error } = await supabase.auth.updateUser({ password: password.value });
+    if (error) {
+      msg(
+        "Não foi possível salvar. Use uma senha com pelo menos 12 caracteres e confira a validade do link.",
+      );
+      return;
+    }
+    password.value = confirmation.value = "";
+    recoveringPassword = false;
+    el("recovery-form").hidden = true;
+    el("login-form").hidden = !login.emailLink && !login.password;
+    msg("Senha atualizada.");
+    await render();
+    await consent();
+  } catch {
+    msg("Não foi possível salvar. Tente novamente em instantes.");
+  } finally {
+    button.disabled = false;
   }
-  token = data.session?.access_token ?? null;
-  await render();
-  await consent();
 });
 el("synthetic-login").addEventListener("click", async () => {
   const r = await fetch(endpoint("/api/synthetic-login"), { method: "POST" });
@@ -715,8 +851,9 @@ el("export").addEventListener("click", async () => {
 });
 let consentRequest: string | null = null;
 async function consent() {
-  const id = new URL(location.href).searchParams.get("authorization_id");
-  if (!id || !supabase || !token || consentRequest === id) return;
+  const id = new URL(location.href).searchParams.get("authorization_id") ??
+    sessionStorage.getItem(consentKey);
+  if (!id || !supabase || !token || recoveringPassword || consentRequest === id) return;
   consentRequest = id;
   const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(id);
   if (error || !data) {
@@ -760,15 +897,25 @@ async function consent() {
         msg("Não foi possível concluir a autorização.");
         return;
       }
+      sessionStorage.removeItem(consentKey);
       location.assign(result.redirect_url);
     });
   }
 }
 if (supabase) {
-  const { data } = await supabase.auth.getSession();
-  token = data.session?.access_token ?? null;
   supabase.auth.onAuthStateChange((event, session) => {
     token = session?.access_token ?? null;
+    if (token && event === "PASSWORD_RECOVERY") {
+      recoveringPassword = true;
+      el("workspace").hidden = true;
+      el("login").hidden = false;
+      el("login-form").hidden = true;
+      el("social-login").hidden = true;
+      el("registration-note").hidden = true;
+      el("recovery-form").hidden = false;
+      el("logout").hidden = false;
+      msg("Escolha uma nova senha para sua conta.");
+    }
     if (token && event === "SIGNED_IN") {
       // Leave the Auth callback before calling APIs that can reacquire its lock.
       setTimeout(() => {
@@ -779,6 +926,12 @@ if (supabase) {
       }, 0);
     }
     if (!token) {
+      recoveringPassword = false;
+      (el("recovery-form") as HTMLFormElement).reset();
+      el("recovery-form").hidden = true;
+      el("login-form").hidden = !login.emailLink && !login.password;
+      el("social-login").hidden = !el("social-login").childElementCount;
+      el("registration-note").hidden = false;
       fileJob?.abort();
       el("pdf-list").replaceChildren();
       pdfCursor = null;
@@ -795,6 +948,8 @@ if (supabase) {
       el("action-list").replaceChildren();
     }
   });
+  const { data } = await supabase.auth.getSession();
+  token = data.session?.access_token ?? null;
 }
 await render();
 await consent();

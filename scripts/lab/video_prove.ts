@@ -169,7 +169,7 @@ try {
   mark("existing_importer_preserves_hash_bytes_coverage_and_replay_identity");
   const stored = await asOwner(db, owner, async (tx) => {
     await tx`set local statement_timeout='30s'`;
-    return (await tx`select id,sha256,bytes,octet_length(binary_content) as stored_bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as stored_hash,extraction,extracted_text from public.hub_files where owner_id=${owner.ownerId} and id=${file.file_id_row}`)[
+    return (await tx`select id,sha256,bytes,octet_length(binary_content) as stored_bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as stored_hash,extraction,extracted_text from public.hub_file_contents where owner_id=${owner.ownerId} and id=${file.file_id_row}`)[
       0
     ];
   });

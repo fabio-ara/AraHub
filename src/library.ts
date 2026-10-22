@@ -27,7 +27,7 @@ export class Library {
         case when c.provider='migration' then '' else c.label end as source,
         (f.bytes between 1 and ${LIBRARY_MAX_BYTES}
           and octet_length(f.binary_content)=f.bytes) as available
-      from public.hub_files f
+      from public.hub_file_contents f
       join public.hub_entities e on e.owner_id=f.owner_id and e.id=f.entity_id
       join public.hub_connections c on c.owner_id=e.owner_id and c.id=e.connection_id
       where f.owner_id=${p.ownerId} and f.binary_content is not null
@@ -58,7 +58,7 @@ export class Library {
         bytes,octet_length(binary_content) as stored_bytes,
         case when ${offset}=0 then encode(extensions.digest(binary_content,'sha256'),'hex')
           else sha256 end as actual_hash
-      from public.hub_files where owner_id=${p.ownerId} and id=${file_id} and sha256=${sha256}`);
+      from public.hub_file_contents where owner_id=${p.ownerId} and id=${file_id} and sha256=${sha256}`);
     if (!row) {
       throw new HubError("not_found", "Material não encontrado. Atualize a biblioteca.", 404);
     }

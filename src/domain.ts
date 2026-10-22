@@ -64,13 +64,21 @@ export class Hub {
         coalesce(sum(bytes),0)::text as declared_file_bytes,
         coalesce(sum(octet_length(binary_content)),0)::text as preserved_binary_bytes,
         coalesce(sum(octet_length(extracted_text)),0)::text as extracted_text_utf8_bytes
-        from public.hub_files where owner_id=${p.ownerId}`;
+        from public.hub_file_contents where owner_id=${p.ownerId}`;
+      const [physical] = await tx`select
+        ((select coalesce(sum(octet_length(binary_content)),0) from public.hub_files where owner_id=${p.ownerId})+
+         (select coalesce(sum(bytes),0) from public.hub_file_blobs where owner_id=${p.ownerId}))::text as stored_binary_bytes,
+        (select count(*)::integer from public.hub_file_blobs where owner_id=${p.ownerId}) as unique_binary_objects`;
       return {
         observed_at: new Date().toISOString(),
         counts: { ...counts, files: files.files },
         storage: {
           declared_file_bytes: files.declared_file_bytes,
           preserved_binary_bytes: files.preserved_binary_bytes,
+          stored_binary_bytes: physical.stored_binary_bytes,
+          deduplicated_bytes: (BigInt(files.preserved_binary_bytes) > BigInt(physical.stored_binary_bytes)
+            ? BigInt(files.preserved_binary_bytes) - BigInt(physical.stored_binary_bytes) : 0n).toString(),
+          unique_binary_objects: physical.unique_binary_objects,
           extracted_text_utf8_bytes: files.extracted_text_utf8_bytes,
           measurement: "owner_logical_bytes",
           byte_values: "decimal_strings",
@@ -727,7 +735,8 @@ export class Hub {
       ] as const;
       const result: Record<string, unknown> = { format: "arahub-export-v1", owner_id: p.ownerId };
       for (const name of tables) {
-        result[name] = await tx`select * from ${tx("public." + name)} where owner_id=${p.ownerId}`;
+        const relation = name === "hub_files" ? "hub_file_contents" : name;
+        result[name] = await tx`select * from ${tx("public." + relation)} where owner_id=${p.ownerId}`;
       }
       return result; // private credentials are deliberately outside this export.
     });

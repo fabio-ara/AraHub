@@ -1,5 +1,9 @@
 # Entrada de outras pessoas no AraHub
 
+> Registro de 2026-10-06. Para a configuração atual de contas e cadastro, siga
+> [Acesso e identidade](acesso-e-identidade.md). O estado efetivo da instância
+> publicada está em [STATUS](../STATUS.md).
+
 Estado em 2026-10-06: o código MIT é público e a interface está hospedada, mas a
 instância Supabase do titular continua **fechada a inscrições públicas**. Esta
 nota separa a entrada no AraHub da conexão da conta Moodle.

@@ -396,3 +396,53 @@ pre {
 .screen-footer {
   justify-content: flex-end;
 }
+
+.login-options {
+  display: grid;
+  gap: 10px;
+  margin-block: 16px;
+}
+.login-button {
+  min-height: 44px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  font: inherit;
+  cursor: pointer;
+}
+.login-button.primary {
+  background: var(--action-primary);
+  color: var(--surface-canvas);
+  border-color: transparent;
+}
+.login-button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+.login-button:focus-visible,
+#login-method:focus-visible,
+.documentation-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+#login-method {
+  min-height: 44px;
+  width: 100%;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+}
+.documentation-link {
+  color: var(--text-secondary);
+  font-size: .875rem;
+  padding: 12px;
+}
+#forgot-password {
+  margin-top: 12px;
+}

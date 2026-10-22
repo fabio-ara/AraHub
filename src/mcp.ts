@@ -39,7 +39,7 @@ export async function handleMcp(
   actions?: PersistentActionStore,
   materialTransfers?: MaterialTransfers,
 ) {
-  const server = new McpServer({ name: "arahub", version: "0.2.9" });
+  const server = new McpServer({ name: "arahub", version: "0.3.0" });
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const response = async (fn: () => Promise<unknown>) => {

@@ -38,7 +38,7 @@ export class PreservedMaterials {
       this.hub.db,
       p,
       (tx) =>
-        tx`select name,sha256,binary_content,extraction from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`,
+        tx`select name,sha256,binary_content,extraction from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`,
     );
     if (!file) throw new HubError("not_found", "Material não encontrado.", 404);
     if (file.sha256 !== hash) {

@@ -483,6 +483,8 @@ export async function importProcessedMaterials(
             .id as string;
         }
 
+        await tx`select public.hub_compact_file(${fileRowId}::uuid)`;
+
         const content = {
           kind: "material_occurrence",
           external_id: externalId,
@@ -542,7 +544,7 @@ export async function importProcessedMaterials(
         const stored =
           await tx`select encode(extensions.digest(binary_content,'sha256'),'hex') as stored_sha,
           octet_length(binary_content) as stored_bytes
-          from public.hub_files where owner_id=${options.ownerId} and id=${fileRowId}`;
+          from public.hub_file_contents where owner_id=${options.ownerId} and id=${fileRowId}`;
         const binaryVerified = stored.length > 0 && stored[0].stored_sha === sha &&
           Number(stored[0].stored_bytes) === bytes.byteLength;
         return {

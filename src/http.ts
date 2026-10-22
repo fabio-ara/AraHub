@@ -10,6 +10,7 @@ import type { PersistentActionStore } from "./approval_store.ts";
 import { Materials } from "./materials.ts";
 import type { MaterialTransfers } from "./material_transfer.ts";
 import { Library, libraryPartSchema } from "./library.ts";
+import { DEFAULT_LOGIN, type LoginConfig } from "./login_config.ts";
 
 interface HttpConfig {
   auth: Pick<AuthConfig, "resource" | "issuer">;
@@ -17,6 +18,7 @@ interface HttpConfig {
   publicUrl: string;
   supabaseUrl?: string;
   publishableKey?: string;
+  login?: LoginConfig;
   syntheticLogin?: () => Promise<string>;
   connections?: ConnectionService;
   actions?: PersistentActionStore;
@@ -52,6 +54,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
         return json({
           supabaseUrl: config.supabaseUrl ?? null,
           publishableKey: config.publishableKey ?? null,
+          login: config.login ?? DEFAULT_LOGIN,
           synthetic: !!config.syntheticLogin,
           canConnectMoodle: !!config.connections && !config.syntheticLogin,
           canApproveActions: !!config.actions && !config.syntheticLogin,
@@ -72,7 +75,7 @@ export function createHandler(hub: Hub, config: HttpConfig) {
           },
         );
       }
-      if (u.pathname === "/" || u.pathname === "/oauth/consent") {
+      if (["/", "/oauth/consent", "/oauth/callback"].includes(u.pathname)) {
         return new Response(
           await Deno.readTextFile(new URL("../web/index.html", import.meta.url)),
           {

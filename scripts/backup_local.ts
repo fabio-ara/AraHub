@@ -41,7 +41,7 @@ const fingerprint = async (db: ReturnType<typeof createDb>) => {
     // The binary SHA is calculated from actual bytes, not trusted metadata.
     const relation = name === "public.hub_files"
       ? db`(select id,owner_id,entity_id,name,mime_type,sha256,bytes,extracted_text,extraction,
-          encode(sha256(binary_content),'hex') as actual_binary_sha256 from public.hub_files)`
+          encode(sha256(binary_content),'hex') as actual_binary_sha256 from public.hub_file_contents)`
       : db(name);
     const rows =
       await db`select count(*)::int as count,md5(coalesce(string_agg(row_hash,'' order by row_hash),'')) as hash

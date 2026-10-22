@@ -256,7 +256,7 @@ try {
       assert.equal(denied.code, "not_found");
       passed("MAT04_sdk_hash_and_owner_isolation");
       const [stored] =
-        await db`select encode(extensions.digest(binary_content,'sha256'),'hex') as hash from public.hub_files where id=${file.id}`;
+        await db`select encode(extensions.digest(binary_content,'sha256'),'hex') as hash from public.hub_file_contents where id=${file.id}`;
       assert.equal(stored.hash, hash);
       assert.equal(await sha256Hex(await Deno.readFile(pdfPath)), hash);
       passed("MAT04_source_bytes_unchanged_no_form_mutation");

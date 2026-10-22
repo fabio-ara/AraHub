@@ -215,7 +215,7 @@ Deno.test("raiz sem subpath mantém caminhos absolutos simples", async () => {
     );
     assert.match(index, /href="\/ui\/style\.css\?v=[a-f0-9]{64}"/);
     assert.match(index, /src="\/ui\/app\.js\?v=[a-f0-9]{64}"/);
-    assert.ok(!index.includes("/AraHub/"));
+    assert.ok(!index.includes('href="/AraHub/') && !index.includes('src="/AraHub/'));
   } finally {
     await cleanup();
   }

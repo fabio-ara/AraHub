@@ -72,6 +72,7 @@ export async function importStaging(hub: Hub, actor: Principal, path: string) {
           external_link_targets_read: false,
         })
       }) on conflict(owner_id,entity_id,sha256) do nothing`;
+      await tx`select public.hub_compact_file(id) from public.hub_files where owner_id=${actor.ownerId} and entity_id=${entity.id} and sha256=${expected}`;
     });
     files++;
   }

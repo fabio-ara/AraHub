@@ -379,12 +379,16 @@ try {
     unavailable = true;
     await page.goto(site);
     await page.getByText(
-      "Acesso indisponível no momento. Tente novamente mais tarde.",
+      "Não foi possível acessar o serviço. Confira sua conexão e tente novamente. Se persistir, avise o administrador da instalação.",
       {
         exact: true,
       },
     ).waitFor();
     assert.equal(await page.locator("#login-form").isVisible(), false);
+    assert.equal(await page.getByRole("button", { name: "Tentar novamente", exact: true }).isVisible(), true);
+    unavailable = false;
+    await page.getByRole("button", { name: "Tentar novamente", exact: true }).click();
+    await page.locator("#login-form").waitFor({ state: "visible" });
     receipts.push({
       viewport,
       pkce_magic_link: "provider_stub",

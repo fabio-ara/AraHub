@@ -1,5 +1,9 @@
 # Preparação de um serviço AraHub para outras pessoas
 
+> Documento histórico. O mandato de 22/10/2026 autoriza a evolução e publicação
+> do AraHub. Consulte [Acesso e identidade](acesso-e-identidade.md) e
+> [STATUS](../STATUS.md) para as condições atuais.
+
 Estado em 2026-10-06: **proposta para aprovação; inscrições e distribuição pública
 continuam desativadas**. O titular pediu preparar esta instância para uso público,
 sem autorizar ainda convidar terceiros, abrir o cadastro, criar provedores,

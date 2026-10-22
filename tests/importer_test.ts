@@ -53,7 +53,7 @@ Deno.test("administrative import retries without granting connection UPDATE or c
     assert.equal(replay.reused, 1);
     assert.equal((await hub.context(b)).contexts.length, 0);
     const [file] =
-      await db`select binary_content from public.hub_files where owner_id=${a.ownerId}`;
+      await db`select binary_content from public.hub_file_contents where owner_id=${a.ownerId}`;
     assert.deepEqual(new Uint8Array(file.binary_content), bytes);
     // Even a crafted global ID collision may not modify another owner's row.
     const collision = await stableUuid(`${b.ownerId}:migration:${source}`);

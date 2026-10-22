@@ -173,7 +173,7 @@ export class Artifacts {
           type.extension === "txt" ? new TextDecoder().decode(bytes) : null
         },${
           tx.json({ method: "none", content_is_untrusted_data: true, original_name: source.name })
-        }) on conflict(owner_id,entity_id,sha256) do update set name=excluded.name returning id,octet_length(binary_content)::integer as stored_bytes`)[
+        }) on conflict(owner_id,entity_id,sha256) do update set name=excluded.name returning id,coalesce(octet_length(binary_content),case when blob_sha256 is not null then bytes end)::integer as stored_bytes`)[
           0
         ];
       if (Number(stored.stored_bytes) === 0) {
@@ -184,12 +184,13 @@ export class Artifacts {
         }
       }
       const check =
-        (await tx`select encode(extensions.digest(binary_content,'sha256'),'hex') as hash from public.hub_files where owner_id=${p.ownerId} and id=${stored.id}`)[
+        (await tx`select encode(extensions.digest(binary_content,'sha256'),'hex') as hash from public.hub_file_contents where owner_id=${p.ownerId} and id=${stored.id}`)[
           0
         ];
       if (check.hash !== hash) {
         fail("artifact_corrupt", "Arquivo preservado diverge dos bytes recebidos.", 409);
       }
+      await tx`select public.hub_compact_file(${stored.id}::uuid)`;
       return {
         id: stored.id,
         name,
@@ -211,7 +212,7 @@ export class Artifacts {
   ): Promise<ArtifactFile & { content: Uint8Array }> {
     return await asOwner(this.hub.db, p, async (tx) => {
       const r =
-        (await tx`select f.id,f.name,f.mime_type,f.bytes,f.sha256,f.binary_content,e.state from public.hub_files f join public.hub_entities e on e.owner_id=f.owner_id and e.id=f.entity_id where f.owner_id=${p.ownerId} and f.id=${id} and e.connection_id=${connectionId} and e.kind='artifact'`)[
+        (await tx`select f.id,f.name,f.mime_type,f.bytes,f.sha256,f.binary_content,e.state from public.hub_file_contents f join public.hub_entities e on e.owner_id=f.owner_id and e.id=f.entity_id where f.owner_id=${p.ownerId} and f.id=${id} and e.connection_id=${connectionId} and e.kind='artifact'`)[
           0
         ];
       if (!r) fail("not_found", "Arquivo não encontrado nesta conexão.", 404);

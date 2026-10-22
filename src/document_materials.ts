@@ -117,7 +117,7 @@ export class DocumentMaterials {
         this.hub.db,
         actor,
         async (tx) =>
-          (await tx`select sha256,mime_type,binary_content from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`)[
+          (await tx`select sha256,mime_type,binary_content from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`)[
             0
           ],
       );
@@ -194,7 +194,7 @@ export class DocumentMaterials {
     ) throw new HubError("invalid_offset", "Janela de blocos inválida.");
     return await asOwner(this.hub.db, p, async (tx) => {
       const file =
-        (await tx`select id,name,sha256,extraction-'blocks'-'sanitized_html' as summary,jsonb_array_length(extraction->'blocks') as total from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`)[
+        (await tx`select id,name,sha256,extraction-'blocks'-'sanitized_html' as summary,jsonb_array_length(extraction->'blocks') as total from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`)[
           0
         ];
       if (!file) throw new HubError("not_found", "Arquivo não encontrado.", 404);
@@ -212,7 +212,7 @@ export class DocumentMaterials {
         };
       }
       const blocks =
-        await tx`select item as block from public.hub_files f cross join lateral jsonb_array_elements(f.extraction->'blocks') with ordinality as b(item,ordinal) where f.owner_id=${p.ownerId} and f.id=${fileId} and ordinal>${offset} order by ordinal limit ${limit}`;
+        await tx`select item as block from public.hub_file_contents f cross join lateral jsonb_array_elements(f.extraction->'blocks') with ordinality as b(item,ordinal) where f.owner_id=${p.ownerId} and f.id=${fileId} and ordinal>${offset} order by ordinal limit ${limit}`;
       // A large table must be read through its textual paginated representation until selected cells are requested.
       const bounded = blocks.map(({ block }) =>
         JSON.stringify(block).length <= 32000 ? block : {

@@ -90,14 +90,14 @@ Deno.test("A02 A05 A23: material registrado no curso, byte/text/hash preservados
       /não encontrado/,
     );
     const rows =
-      await db`select octet_length(binary_content)::integer as bytes from public.hub_files where id=${first.memory_commit.id}`;
+      await db`select octet_length(binary_content)::integer as bytes from public.hub_file_contents where id=${first.memory_commit.id}`;
     assert.equal(rows[0].bytes, Number(first.memory_commit.bytes));
     const pdfRef = adapter.listRegisteredFiles().find((item) => item.filename === "fixture.pdf");
     assert.ok(pdfRef);
     const pdf = await materials.preserveMoodle(a, connection.id, 123, pdfRef.file_id);
     assert.equal(Number(pdf.memory_commit?.bytes), pdfBytes.byteLength);
     const pdfStored =
-      await db`select octet_length(binary_content)::integer as bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as hash from public.hub_files where id=${pdf.memory_commit?.id}`;
+      await db`select octet_length(binary_content)::integer as bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as hash from public.hub_file_contents where id=${pdf.memory_commit?.id}`;
     assert.equal(pdfStored[0].bytes, pdfBytes.byteLength);
     assert.equal(pdfStored[0].hash, pdf.memory_commit?.sha256);
   } finally {

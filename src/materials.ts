@@ -620,7 +620,7 @@ export class Materials {
       // O digest binário é conferido no mesmo lock do merge: metadados não
       // bastam se os bytes preservados do dono foram adulterados.
       const rows = options.verifyBinary
-        ? await tx`select extraction,encode(extensions.digest(binary_content,'sha256'),'hex') as binary_sha from public.hub_files where owner_id=${p.ownerId} and id=${fileId} and sha256=${hash} for update`
+        ? await tx`select f.extraction,encode(extensions.digest((select c.binary_content from public.hub_file_contents c where c.owner_id=f.owner_id and c.id=f.id),'sha256'),'hex') as binary_sha from public.hub_files f where f.owner_id=${p.ownerId} and f.id=${fileId} and f.sha256=${hash} for update`
         : await tx`select extraction from public.hub_files where owner_id=${p.ownerId} and id=${fileId} and sha256=${hash} for update`;
       if (!rows.length) {
         throw new HubError("file_changed", "Recupere a versão atual do arquivo.", 409);
@@ -667,7 +667,7 @@ export class Materials {
       this.hub.db,
       p,
       async (tx) =>
-        (await tx`select id,mime_type,sha256,binary_content,bytes from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`)[
+        (await tx`select id,mime_type,sha256,binary_content,bytes from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`)[
           0
         ],
     );
@@ -717,7 +717,7 @@ export class Materials {
       this.hub.db,
       p,
       async (tx) =>
-        (await tx`select id,name,sha256,extraction from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`)[
+        (await tx`select id,name,sha256,extraction from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`)[
           0
         ],
     );
@@ -754,8 +754,8 @@ export class Materials {
     }
     return await asOwner(this.hub.db, p, async (tx) => {
       const rows = after
-        ? await tx`select id,name,sha256,bytes::integer as bytes, jsonb_build_object('coverage', extraction->'coverage', 'page_count', extraction->'page_count', 'page_bounds', extraction->'page_bounds', 'pages', case when jsonb_typeof(extraction->'pages')='array' then (select coalesce(jsonb_agg(jsonb_build_object('page', pg->'page', 'truncated', coalesce(pg->'truncated','false'::jsonb))), '[]'::jsonb) from jsonb_array_elements(extraction->'pages') as pg) else '[]'::jsonb end) as extraction from public.hub_files where owner_id=${p.ownerId} and mime_type=${"application/pdf"} and binary_content is not null and bytes <= ${DEFAULT_PDF_MAX_BYTES} and id > ${after}::uuid order by id limit 21`
-        : await tx`select id,name,sha256,bytes::integer as bytes, jsonb_build_object('coverage', extraction->'coverage', 'page_count', extraction->'page_count', 'page_bounds', extraction->'page_bounds', 'pages', case when jsonb_typeof(extraction->'pages')='array' then (select coalesce(jsonb_agg(jsonb_build_object('page', pg->'page', 'truncated', coalesce(pg->'truncated','false'::jsonb))), '[]'::jsonb) from jsonb_array_elements(extraction->'pages') as pg) else '[]'::jsonb end) as extraction from public.hub_files where owner_id=${p.ownerId} and mime_type=${"application/pdf"} and binary_content is not null and bytes <= ${DEFAULT_PDF_MAX_BYTES} order by id limit 21`;
+        ? await tx`select id,name,sha256,bytes::integer as bytes, jsonb_build_object('coverage', extraction->'coverage', 'page_count', extraction->'page_count', 'page_bounds', extraction->'page_bounds', 'pages', case when jsonb_typeof(extraction->'pages')='array' then (select coalesce(jsonb_agg(jsonb_build_object('page', pg->'page', 'truncated', coalesce(pg->'truncated','false'::jsonb))), '[]'::jsonb) from jsonb_array_elements(extraction->'pages') as pg) else '[]'::jsonb end) as extraction from public.hub_file_contents where owner_id=${p.ownerId} and mime_type=${"application/pdf"} and binary_content is not null and bytes <= ${DEFAULT_PDF_MAX_BYTES} and id > ${after}::uuid order by id limit 21`
+        : await tx`select id,name,sha256,bytes::integer as bytes, jsonb_build_object('coverage', extraction->'coverage', 'page_count', extraction->'page_count', 'page_bounds', extraction->'page_bounds', 'pages', case when jsonb_typeof(extraction->'pages')='array' then (select coalesce(jsonb_agg(jsonb_build_object('page', pg->'page', 'truncated', coalesce(pg->'truncated','false'::jsonb))), '[]'::jsonb) from jsonb_array_elements(extraction->'pages') as pg) else '[]'::jsonb end) as extraction from public.hub_file_contents where owner_id=${p.ownerId} and mime_type=${"application/pdf"} and binary_content is not null and bytes <= ${DEFAULT_PDF_MAX_BYTES} order by id limit 21`;
       return {
         files: rows.slice(0, 20).map((row) => ({
           id: row.id as string,
@@ -776,7 +776,7 @@ export class Materials {
       this.hub.db,
       p,
       async (tx) =>
-        (await tx`select name,mime_type,sha256,bytes,octet_length(binary_content)::integer as binary_bytes,binary_content from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`)[
+        (await tx`select name,mime_type,sha256,bytes,octet_length(binary_content)::integer as binary_bytes,binary_content from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`)[
           0
         ],
     );
@@ -813,7 +813,7 @@ export class Materials {
       this.hub.db,
       p,
       async (tx) =>
-        (await tx`select mime_type,sha256,bytes,octet_length(binary_content)::integer as binary_bytes from public.hub_files where owner_id=${p.ownerId} and id=${fileId}`)[
+        (await tx`select mime_type,sha256,bytes,octet_length(binary_content)::integer as binary_bytes from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId}`)[
           0
         ],
     );
@@ -930,7 +930,7 @@ export class Materials {
           binary.text ?? null
         },${
           tx.json(extraction)
-        }) on conflict(owner_id,entity_id,sha256) do update set name=excluded.name returning id,entity_id,sha256,bytes,mime_type,extraction,octet_length(binary_content)::integer as stored_bytes`)[
+        }) on conflict(owner_id,entity_id,sha256) do update set name=excluded.name returning id,entity_id,sha256,bytes,mime_type,extraction,coalesce(octet_length(binary_content),case when blob_sha256 is not null then bytes end)::integer as stored_bytes`)[
           0
         ];
       if (!stored) {
@@ -952,13 +952,14 @@ export class Materials {
         }
       }
       const verified =
-        (await tx`select octet_length(binary_content)::integer as stored_bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as stored_sha from public.hub_files where owner_id=${p.ownerId} and id=${stored.id}`)[
+        (await tx`select octet_length(binary_content)::integer as stored_bytes,encode(extensions.digest(binary_content,'sha256'),'hex') as stored_sha from public.hub_file_contents where owner_id=${p.ownerId} and id=${stored.id}`)[
           0
         ];
       if (
         !verified || Number(verified.stored_bytes) !== binary.byte_length ||
         verified.stored_sha !== binary.sha256
       ) throw new HubError("material_conflict", "Verificação do arquivo guardado falhou.", 409);
+      await tx`select public.hub_compact_file(${stored.id}::uuid)`;
       return stored;
     });
     await asOwner(this.hub.db, p, async (tx) => {

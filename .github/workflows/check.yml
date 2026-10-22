@@ -1,0 +1,44 @@
+name: Verificação do AraHub
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: arahub
+          POSTGRES_PASSWORD: synthetic-local-only
+          POSTGRES_DB: arahub
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U arahub"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: 2.9.3
+      - name: Tipos e interface
+        run: |
+          deno task check
+          deno task edge:check
+          deno task web:check
+          deno task web:build
+      - name: Banco e regressão com identidades sintéticas
+        run: |
+          deno task db:setup
+          deno task test
+      - name: Documentação e fronteira pública
+        run: |
+          deno task docs:check
+          deno task secrets

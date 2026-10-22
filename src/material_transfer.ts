@@ -82,7 +82,7 @@ export class MaterialTransfers {
       (tx) =>
         tx`select id,name,mime_type,sha256,bytes,octet_length(binary_content)::integer as stored_bytes,
         encode(extensions.digest(binary_content,'sha256'),'hex') as actual_hash
-        from public.hub_files where owner_id=${p.ownerId} and id=${fileId} and sha256=${hash}`,
+        from public.hub_file_contents where owner_id=${p.ownerId} and id=${fileId} and sha256=${hash}`,
     );
     if (!file) throw new HubError("not_found", "Arquivo não encontrado.", 404);
     const bytes = Number(file.bytes);
@@ -176,7 +176,7 @@ export class MaterialTransfers {
       this.db,
       p,
       (tx) =>
-        tx`select name from public.hub_files where owner_id=${p.ownerId} and id=${claims.file}
+        tx`select name from public.hub_file_contents where owner_id=${p.ownerId} and id=${claims.file}
         and sha256=${claims.sha256} and bytes=${claims.bytes}
         and octet_length(binary_content)=${claims.bytes}`,
     );
@@ -195,7 +195,7 @@ export class MaterialTransfers {
             p,
             (tx) =>
               tx`select substring(binary_content from ${offset + 1} for ${length}) as chunk
-              from public.hub_files where owner_id=${p.ownerId} and id=${claims.file}
+              from public.hub_file_contents where owner_id=${p.ownerId} and id=${claims.file}
               and sha256=${claims.sha256} and bytes=${claims.bytes}
               and octet_length(binary_content)=${claims.bytes}`,
           );
