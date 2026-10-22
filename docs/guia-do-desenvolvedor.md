@@ -80,8 +80,12 @@ exatos, preserve a solicitação de consentimento MCP e trate falhas sem expor o
 corpo privado de um erro.
 
 UI exige interação e inspeção visual, inclusive em tela estreita, tema escuro,
-teclado e estado de erro. Os roteiros `qa_ui.mjs` e `qa_pages.mjs` usam fontes e
-identidades controladas. A prova hospedada precisa conferir o asset efetivamente
+teclado e estado de erro. Os roteiros `qa_ui.mjs`, `qa_pages.mjs` e `qa_login.mjs`
+usam fontes e identidades controladas. O último cobre política de cadastro,
+senha, recuperação e retomada do consentimento. Ele pode usar um contexto
+isolado no Chrome dedicado com `ARAHUB_QA_CDP=http://127.0.0.1:9225`, sem fechar
+abas existentes; a dependência Playwright segue o ambiente privado dos outros
+roteiros, sem entrar no pacote público. A prova hospedada precisa conferir o asset efetivamente
 servido e o cliente real. Capturas são obtidas pelo retorno nativo do instrumento;
 não automatize downloads ou diálogos “Salvar como”.
 
