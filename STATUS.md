@@ -121,7 +121,7 @@ restaurar dados para corrigir a ausência do cadastro pessoal.
 Documentação conferida com `deno task docs:check` (199 links locais em 53 arquivos),
 `git diff --check` e revisão do diff. Nenhum código, migration ou dado foi alterado.
 
-## Próximo passo
+## Correção do retorno de login — 22/10/2026
 
 A tentativa posterior de login retornou `otp_expired`; solicitações de outro
 link retornaram 429, `over_email_send_rate_limit`. A instância usa o provedor de
@@ -132,10 +132,19 @@ A correção da interface distingue expiração, retorno sem prova do navegador 
 limite de envio (também na recuperação de senha). O retorno Auth é limpo após o
 SDK processá-lo; uma sessão válida permanece utilizável ao abrir um link antigo.
 Tipos/build, seis testes dirigidos e UI/SDK em 390 e 1280 pixels passaram. Os
-testes de UI usam respostas Auth controladas e não enviam e-mails. A publicação
-e a confirmação da interface hospedada serão registradas após seus gates.
+testes de UI usam respostas Auth controladas e não enviam e-mails. A correção
+está no commit `958dd3d`: [CI aprovada](https://github.com/fabio-ara/AraHub/actions/runs/39878247060)
+e [Pages publicado](https://github.com/fabio-ara/AraHub/actions/runs/39878488653).
+O bundle servido é idêntico ao validado por SHA-256; a página real que retornou
+`otp_expired` passou a mostrar a orientação. A inspeção visual ocorreu nos dois
+viewports da prova controlada; a captura hospedada não concluiu no instrumento.
+Não foram alterados limites, SMTP, credenciais, backend ou dados do titular.
 
-Concluir login e consentimento do titular, conferir ferramentas, restaurar a Skill
+## Próximo passo
+
+Aguardar a liberação do envio e solicitar um único link novo, abrindo a mensagem
+mais recente no mesmo perfil de navegador.
+Concluir login e consentimento, conferir ferramentas, restaurar a Skill
 e provar uma leitura em conversa nova. Quando o titular decidir ativar SMTP, seguir o
 roteiro documentado, configurar a credencial em superfície protegida, testar
 entrega/recuperação e só então alinhar a política de cadastro. Não há engenharia
