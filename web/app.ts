@@ -5,6 +5,7 @@ import { renderUiIcon } from "./icons.ts";
 import { actionReview, describeAction } from "./action_preview.ts";
 import { type LibraryFile, previewMime, readLibraryFile, safeFileName } from "./library.ts";
 import { moodleMobileLaunchUrl, parseMoodleMobileLink } from "./moodle_mobile.ts";
+import { authErrorMessage, authReturnState, incompleteAuthMessage } from "./auth_feedback.ts";
 const siteBase = new URL("../", import.meta.url).href;
 const route = (path: string) => sitePath(siteBase, path);
 const localCredentialEntry = ["localhost", "127.0.0.1", "[::1]"].includes(
@@ -61,6 +62,10 @@ setAction(el("connections-tab"), "account", "Conexões");
 const msg = (s: string) => {
   el("message").textContent = s;
 };
+const authReturn = authReturnState(location.href);
+let initialAuthMessage = authReturn.hasError
+  ? authErrorMessage({ code: authReturn.errorCode }, incompleteAuthMessage)
+  : "";
 const cfg = await fetch(endpoint("/api/config"), { signal: AbortSignal.timeout(15000) }).then(
   (r) => {
     if (!r.ok) throw new Error("Configuração de acesso indisponível.");
@@ -731,7 +736,10 @@ el("login-form").addEventListener("submit", async (e) => {
       el("signin").removeAttribute("disabled");
       msg(
         error
-          ? "Não foi possível solicitar o acesso. Confira o cadastro da sua conta e tente novamente."
+          ? authErrorMessage(
+            error,
+            "Não foi possível solicitar o acesso. Confira o cadastro da sua conta e tente novamente.",
+          )
           : "Confira seu e-mail e abra o link neste navegador para entrar.",
       );
       return;
@@ -767,7 +775,7 @@ el("forgot-password").addEventListener("click", async () => {
     });
     msg(
       error
-        ? "Não foi possível solicitar a recuperação. Tente novamente mais tarde."
+        ? authErrorMessage(error, "Não foi possível solicitar a recuperação. Tente novamente mais tarde.")
         : "Se a conta puder receber a mensagem, enviaremos o link de recuperação. Abra-o neste navegador.",
     );
   } catch {
@@ -948,11 +956,20 @@ if (supabase) {
       el("action-list").replaceChildren();
     }
   });
-  const { data } = await supabase.auth.getSession();
+  const initialized = await supabase.auth.initialize();
+  const { data, error } = await supabase.auth.getSession();
   token = data.session?.access_token ?? null;
+  if (initialized.error || error) {
+    initialAuthMessage ||= authErrorMessage(initialized.error ?? error!, incompleteAuthMessage);
+  }
+  // Without its local verifier the SDK can ignore a PKCE code without an error.
+  if (authReturn.hasCode && !token) initialAuthMessage ||= incompleteAuthMessage;
+  // Let the SDK finish first. Never leave a consumed code/error to replay on reload.
+  if (authReturn.hasReturn) history.replaceState(history.state, "", authReturn.cleanUrl);
 }
 await render();
 await consent();
+if (!token && initialAuthMessage) msg(initialAuthMessage);
 
 const moodleOrigin = el("moodle-origin") as HTMLInputElement;
 const clearMoodleOriginAutofill = () => {

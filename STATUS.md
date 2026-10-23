@@ -123,6 +123,18 @@ Documentação conferida com `deno task docs:check` (199 links locais em 53 arqu
 
 ## Próximo passo
 
+A tentativa posterior de login retornou `otp_expired`; solicitações de outro
+link retornaram 429, `over_email_send_rate_limit`. A instância usa o provedor de
+e-mail padrão, com limite de dois envios por hora. Não é possível concluir a
+conexão apenas repetindo a solicitação enquanto esse limite estiver ativo.
+
+A correção da interface distingue expiração, retorno sem prova do navegador e
+limite de envio (também na recuperação de senha). O retorno Auth é limpo após o
+SDK processá-lo; uma sessão válida permanece utilizável ao abrir um link antigo.
+Tipos/build, seis testes dirigidos e UI/SDK em 390 e 1280 pixels passaram. Os
+testes de UI usam respostas Auth controladas e não enviam e-mails. A publicação
+e a confirmação da interface hospedada serão registradas após seus gates.
+
 Concluir login e consentimento do titular, conferir ferramentas, restaurar a Skill
 e provar uma leitura em conversa nova. Quando o titular decidir ativar SMTP, seguir o
 roteiro documentado, configurar a credencial em superfície protegida, testar

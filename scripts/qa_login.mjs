@@ -56,12 +56,18 @@ try {
     const context = await browser.newContext({ viewport });
     try {
       let registration = "invite", unavailable = false, password = true, providers = [];
+      let emailLimited = false;
       const calls = [], errors = [];
       const page = await context.newPage();
       page.on("pageerror", (e) => errors.push(e.message));
       await context.route("**/*", async (route) => {
         const request = route.request(), url = new URL(request.url());
-        const headers = { "Access-Control-Allow-Origin": origin, "Cache-Control": "no-store" };
+        const headers = {
+          "Access-Control-Allow-Origin": origin,
+          "Access-Control-Expose-Headers": "X-Supabase-Api-Version",
+          "X-Supabase-Api-Version": "2024-01-01",
+          "Cache-Control": "no-store",
+        };
         const reply = (data, status = 200) =>
           route.fulfill({
             status,
@@ -111,6 +117,12 @@ try {
               body: request.postDataJSON(),
               redirect: url.searchParams.get("redirect_to"),
             });
+            if (emailLimited) {
+              return reply({
+                code: "over_email_send_rate_limit",
+                message: "email rate limit exceeded",
+              }, 429);
+            }
             return reply({});
           }
           if (url.pathname === "/auth/v1/token") {
@@ -159,6 +171,38 @@ try {
         new URL(calls.at(-1).redirect).searchParams.get("authorization_id"),
         "synthetic-consent",
       );
+      await page.goto(
+        site +
+          "oauth/callback/?authorization_id=synthetic-consent&error=access_denied&error_code=otp_expired#error=access_denied&error_code=otp_expired&error_description=untrusted-description",
+      );
+      await page.getByText(/Este link de acesso é inválido, expirou ou já foi usado/).waitFor();
+      assert.equal(new URL(page.url()).searchParams.get("authorization_id"), "synthetic-consent");
+      assert.equal(new URL(page.url()).searchParams.has("error_code"), false);
+      assert.equal(new URL(page.url()).hash, "");
+      assert.equal(await page.getByText("untrusted-description", { exact: true }).count(), 0);
+      await writeFile(
+        `${folder}/${viewport.width}-expired.png`,
+        await page.screenshot({ fullPage: true }),
+      );
+      emailLimited = true;
+      await page.locator("#email").fill(user.email);
+      await page.getByRole("button", { name: "Receber link de acesso", exact: true }).click();
+      await page.getByText(/O serviço atingiu o limite de envio de e-mails/).waitFor();
+      await writeFile(
+        `${folder}/${viewport.width}-rate-limit.png`,
+        await page.screenshot({ fullPage: true }),
+      );
+      await page.locator("#login-method").selectOption("password");
+      await page.getByRole("button", { name: "Esqueci minha senha", exact: true }).click();
+      await page.getByText(/O serviço atingiu o limite de envio de e-mails/).waitFor();
+      assert.equal(calls.at(-1).path, "/auth/v1/recover");
+      await page.evaluate(() => localStorage.clear()); // This isolated fixture origin only.
+      const exchangesBefore = calls.filter((c) => c.grant === "pkce").length;
+      await page.goto(site + "oauth/callback/?code=synthetic-without-verifier");
+      await page.getByText(/Não foi possível concluir este acesso/).waitFor();
+      assert.equal(new URL(page.url()).searchParams.has("code"), false);
+      assert.equal(calls.filter((c) => c.grant === "pkce").length, exchangesBefore);
+      emailLimited = false;
       // Test signup policy separately from consent; do not auto-approve a client.
       await page.evaluate(() => sessionStorage.removeItem("arahub-pending-consent"));
       registration = "open";
@@ -201,6 +245,9 @@ try {
       await page.getByRole("button", { name: "Entrar", exact: true }).click();
       await page.locator("#workspace").waitFor({ state: "visible" });
       assert.ok(calls.some((c) => c.grant === "password"));
+      await page.goto(site + "oauth/callback/?error=access_denied&error_code=otp_expired");
+      await page.locator("#workspace").waitFor({ state: "visible" });
+      assert.equal(await page.locator("#login-form").isVisible(), false);
       await Promise.all([
         page.waitForEvent("load"),
         page.getByRole("button", { name: "Sair", exact: true }).click(),
@@ -235,6 +282,10 @@ try {
         social_pkce: true,
         consent_preserved: true,
         retry: true,
+        expired_link: true,
+        email_limit_login_and_recovery: true,
+        missing_verifier: true,
+        failed_callback_preserves_session: true,
         auth: "controlled_responses",
         email_sent: false,
       });

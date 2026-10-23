@@ -109,9 +109,25 @@ dados institucionais. As integrações próprias Google de conteúdo foram
 | Cadastro recusado | Confira `disable_signup` no Auth e a política apresentada pelo AraHub. |
 | Link não entregue | Confira SMTP/remetente, limites e destinatário autorizado; não abra cadastro apenas para esconder o erro. |
 | Link abriu sem sessão | Confira callback, navegador inicial, expiração e uso anterior. |
+| Mensagem de link inválido/expirado | Use somente o link da mensagem mais recente, no perfil que o solicitou; links anteriores podem ter sido substituídos ou consumidos. |
+| Limite de envio atingido | Aguarde a liberação da janela de envio; repetir a solicitação não resolve o bloqueio. A recuperação de senha usa o mesmo serviço de e-mail. |
 | Senha não funciona | Use recuperação da conta correta; a senha Moodle não autentica no AraHub. |
 | Botão social falha | Confira provedor ativo, aplicativo, segredo e URLs de retorno. |
 | Sessão não acessa MCP | Confira cliente OAuth autorizado, emissor, sessão ativa e endpoint correto. |
 
 Registre o sintoma e o horário sem copiar tokens. Veja [operação](operacao-e-recuperacao.md)
 e [privacidade](privacidade.md).
+
+O provedor padrão da Supabase limita o projeto a **dois e-mails por hora**,
+segundo os [limites oficiais de Auth](https://supabase.com/docs/guides/auth/rate-limits).
+A resposta `over_email_send_rate_limit` informa que o envio foi recusado; ela não
+confirma que uma nova mensagem chegou. A interface distingue esse caso de
+`otp_expired` e de um retorno sem a prova PKCE do navegador. Ela remove os
+parâmetros de retorno após processá-los, sem exibir descrições arbitrárias do URL.
+
+Uma verificação automática do provedor de e-mail também pode consumir o link
+antes do clique humano. Isso é uma possibilidade documentada, não uma conclusão
+automática para todo link recusado. Se o problema persistir mesmo com a mensagem
+mais recente, consulte as [orientações sobre leitura antecipada de links](https://supabase.com/docs/guides/auth/auth-email-templates#email-prefetching).
+As alternativas com código de uso único ou confirmação intermediária exigem
+configuração do template/envio; não são ativadas pelo simples reenvio do link.
