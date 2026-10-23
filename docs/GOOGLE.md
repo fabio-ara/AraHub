@@ -1,4 +1,8 @@
-# Google (caminho aposentado)
+# Integrações Google de conteúdo (caminho aposentado)
+
+Este documento trata das antigas ferramentas de conteúdo. O login com Google
+é uma opção independente do Supabase Auth, descrita em
+[acesso e identidade](acesso-e-identidade.md#entrar-com-google-sem-esperar-um-e-mail).
 
 O caminho operacional Google próprio do AraHub foi **retirado**: OAuth, leituras
 (Gmail/Calendar/Drive/Docs/Sheets/Slides), sincronização e as escritas de

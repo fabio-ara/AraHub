@@ -6,6 +6,9 @@ O administrador precisa fornecer o endereço HTTPS do MCP dessa instalação;
 um link do GitHub não substitui o servidor.
 
 1. Abra a interface AraHub da instalação e entre com sua própria conta.
+   Se houver **Continuar com Google**, use a conta Google com o mesmo e-mail da
+   conta AraHub que possui seus materiais; não é necessário receber um link.
+   Veja [entrada com Google](acesso-e-identidade.md#entrar-com-google-sem-esperar-um-e-mail).
    Conecte o Moodle em Conexões → Moodle pelo fluxo oficial descrito no
    [README](../README.md). Não envie a chave móvel, senha ou link de login no
    chat. A chave fica no formulário HTTPS protegido da sua instalação.
@@ -54,7 +57,9 @@ conta/workspace. A publicação do código não instala o plugin automaticamente
    O callback mostrado pelo ChatGPT precisa coincidir exatamente com um callback
    cadastrado nesse cliente. Cliente público não usa segredo de cliente; não
    coloque a chave `service_role`, PAT ou token de sessão nesse formulário.
-5. Entre na sua própria conta AraHub durante a conexão. Se usar link por e-mail,
+5. Entre na sua própria conta AraHub durante a conexão. O botão **Continuar com
+   Google**, quando habilitado, permite entrar sem solicitar e-mail.
+   Se usar link por e-mail,
    abra-o no mesmo perfil de navegador que iniciou o pedido: a prova de login
    fica nesse perfil. Abrir em outro Chrome pode impedir a conclusão. Não envie
    o link ao assistente. Se a autorização expirar durante a espera, volte ao

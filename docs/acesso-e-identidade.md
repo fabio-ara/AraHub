@@ -102,6 +102,60 @@ e-mail necessário à identidade. Isso não autoriza ler Drive, Gmail, Calendar 
 dados institucionais. As integrações próprias Google de conteúdo foram
 [aposentadas](GOOGLE.md); login social não as reativa.
 
+### Entrar com Google sem esperar um e-mail
+
+Quando o administrador habilita o provedor, o botão **Continuar com Google**
+aparece antes do formulário de e-mail. Clique nele, selecione a conta Google e
+conclua a confirmação solicitada pelo provedor. O retorno abre o AraHub; se a
+entrada começou pelo ChatGPT, o próximo passo é o consentimento do cliente MCP.
+Não é preciso preencher o campo de e-mail do AraHub antes de clicar no botão.
+
+Escolha uma conta Google com **o mesmo endereço de e-mail da conta AraHub que já
+possui seus materiais**. Um endereço institucional pode ser uma conta Google;
+não precisa terminar em `gmail.com`. Contas pessoal e institucional com endereços
+diferentes não são intercambiáveis. O Supabase associa automaticamente identidades
+compatíveis com o mesmo e-mail verificado; isso preserva o usuário existente. Uma
+conta de outro endereço não recebe sua memória. Consulte a documentação de
+[associação de identidades](https://supabase.com/docs/guides/auth/auth-identity-linking).
+
+O login Google não usa o envio de links do SMTP. A senha e eventual segundo fator
+são informados somente na tela do Google. Se a organização exigir uma confirmação
+adicional, ela precisa ser concluída pelo titular.
+
+### Configurar o Google: roteiro do administrador
+
+1. Abra o projeto da aplicação no Google Cloud com a conta que o administra.
+   Confira nome, público permitido e dados de contato no Google Auth Platform.
+2. Crie um cliente OAuth do tipo **Aplicativo da Web**, dedicado ao login.
+   Cadastre a origem da interface e o retorno
+   `https://<project-ref>.supabase.co/auth/v1/callback`. Esse retorno pertence ao
+   Supabase; não substitua pelo endereço da interface.
+3. Use somente os escopos de identidade: `openid`, `userinfo.email` e
+   `userinfo.profile`. Confira se o público configurado permite as contas desejadas;
+   uma aplicação interna pode restringir usuários de fora da organização.
+4. No provedor Google do Supabase Auth, guarde o ID e o segredo do cliente e ative
+   o provedor. Não coloque o segredo em código, variáveis do navegador ou chat.
+
+Os detalhes atuais estão no [guia Google do Supabase](https://supabase.com/docs/guides/auth/social-login/auth-google).
+A administração do Google Cloud pode exigir nova autenticação do responsável.
+Isso é uma etapa da configuração; não exige descobrir ou redefinir a senha AraHub.
+
+No AraHub, configure `ARAHUB_LOGIN_PROVIDERS=google` após preparar o provedor.
+Preserve as demais opções de entrada que ainda forem necessárias. Confira em
+`/api/config` se a lista pública contém `google` e recarregue a interface. O
+retorno final à interface continua cadastrado na lista de URLs permitidas do Auth,
+por exemplo `https://<host>/<base>/oauth/callback`.
+
+Faça a primeira entrada com uma conta existente. Compare o identificador do
+usuário antes/depois e abra seus materiais; encontrar um botão ou receber um
+redirecionamento não comprova acesso ao acervo. Depois, complete o consentimento
+do ChatGPT e uma chamada MCP de leitura. Registre separadamente essas provas.
+
+Habilitar Google não abre o cadastro do AraHub. Para receber outras pessoas,
+defina também a política de admissão no Supabase e na instalação. Um eventual
+cadastro aberto exige validar isolamento entre contas. O SMTP próprio continua
+necessário para os fluxos de e-mail que a instalação quiser oferecer.
+
 ## Diagnóstico
 
 | Situação | Como distinguir |
@@ -113,6 +167,8 @@ dados institucionais. As integrações próprias Google de conteúdo foram
 | Limite de envio atingido | Aguarde a liberação da janela de envio; repetir a solicitação não resolve o bloqueio. A recuperação de senha usa o mesmo serviço de e-mail. |
 | Senha não funciona | Use recuperação da conta correta; a senha Moodle não autentica no AraHub. |
 | Botão social falha | Confira provedor ativo, aplicativo, segredo e URLs de retorno. |
+| Google informa `redirect_uri_mismatch` | Confira o retorno do Supabase no cliente Web do Google, incluindo domínio e caminho exatos. |
+| Entrou com Google, mas não encontrou os materiais | Confira o endereço escolhido e o identificador da conta; não copie dados entre donos para contornar uma identidade errada. |
 | Sessão não acessa MCP | Confira cliente OAuth autorizado, emissor, sessão ativa e endpoint correto. |
 
 Registre o sintoma e o horário sem copiar tokens. Veja [operação](operacao-e-recuperacao.md)

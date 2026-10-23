@@ -75,8 +75,9 @@ antigo. As contas descartáveis foram removidas; restam a conta original,
 
 **Por decisão expressa do titular, a ativação SMTP ficou para depois.** A instância
 mantém cadastro fechado e SMTP padrão. O login existente por link foi preservado;
-a interface também oferece senha/recuperação para contas existentes. Não há login
-Google configurado. O roteiro de SMTP próprio, remetente verificado e teste de
+a interface também oferece senha/recuperação para contas existentes. **Google
+habilitado e testado com a conta existente**, conforme a prova abaixo.
+O roteiro de SMTP próprio, remetente verificado e teste de
 entrega está em [acesso e identidade](docs/acesso-e-identidade.md). A documentação
 apresenta a opção gratuita sem contratar serviços ou prometer sua aprovação.
 
@@ -106,12 +107,13 @@ O backend permaneceu acessível: saúde 200, recurso protegido 200 e MCP anônim
 401. A disponibilidade do servidor não comprovava a instalação no ChatGPT.
 
 O cadastro pessoal foi recriado no Chrome dedicado com o mesmo backend e cliente
-OAuth público. O callback observado coincide com o já cadastrado. O AraHub voltou
-a aparecer, instalado, com a conexão pendente. A solicitação de link de login foi
-aceita pelo Auth; a leitura autenticada pelo ChatGPT aguarda o titular entrar no
-mesmo perfil de navegador. Não foi usada credencial administrativa para entrar
-na conta do titular. O pacote com a Skill foi preparado para o novo ID; seu envio
-também permanece pendente. IDs, recibos e detalhes operacionais ficam privados.
+OAuth público. O callback observado coincide com o já cadastrado. **O AraHub está
+instalado e conectado; uma conversa nova chamou `hub_usage` com sucesso.** O
+registro da conversa contém a chamada e a resposta da ferramenta concluídas,
+confirmando 117 arquivos, 104 objetos e 80.118.099 bytes binários após deduplicação.
+Não foi usada credencial administrativa para entrar na conta do titular.
+O pacote com a Skill foi preparado para o novo ID; seu envio permanece pendente.
+Essa pendência não impediu a chamada MCP real. IDs, recibos e detalhes ficam privados.
 O upload pelo DevTools recusou o caminho do workspace; não foram alteradas suas
 raízes nem usado o Chrome pessoal. O checkpoint privado conserva o pacote pronto.
 
@@ -140,13 +142,42 @@ O bundle servido é idêntico ao validado por SHA-256; a página real que retorn
 viewports da prova controlada; a captura hospedada não concluiu no instrumento.
 Não foram alterados limites, SMTP, credenciais, backend ou dados do titular.
 
-## Próximo passo
+## Login Google verificado — 22/10/2026
 
-Aguardar a liberação do envio e solicitar um único link novo, abrindo a mensagem
-mais recente no mesmo perfil de navegador.
-Concluir login e consentimento, conferir ferramentas, restaurar a Skill
-e provar uma leitura em conversa nova. Quando o titular decidir ativar SMTP, seguir o
+Por solicitação do titular, foi criado um cliente Web dedicado ao login no projeto
+Google existente e configurado o provedor nativo do Supabase. O botão **Continuar
+com Google** está publicado via configuração do backend. A entrada real usou a
+conta Google com o mesmo e-mail confirmado do proprietário; `/auth/v1/user`
+comprovou **o mesmo identificador de usuário** e as identidades `email` e `google`.
+A biblioteca autenticada respondeu 200. O consentimento OAuth do ChatGPT concluiu
+e a leitura MCP descrita acima passou. Houve interação e inspeção visual nativa
+da tela publicada no Chrome dedicado, sem download pela interface.
+
+Cadastro fechado, opções de e-mail/senha, SMTP, URLs de retorno da interface e
+dados foram preservados. A solicitação Google observada incluiu somente `email`
+e `profile`; não pediu acesso a conteúdo Google. O aplicativo Google continua
+externo em teste, com a conta existente admitida. A entrada de outras pessoas
+depende da política de público Google e da admissão no AraHub; não foi declarada
+abertura pública. Nenhuma cobrança ou teste pago foi ativado.
+
+A configuração foi aplicada no Auth e nas variáveis Edge; não exigiu alterar o
+bundle da interface. O procedimento e a escolha da identidade estão em
+[acesso e identidade](docs/acesso-e-identidade.md#entrar-com-google-sem-esperar-um-e-mail).
+Evidências protegidas em `.private/mcp-reconnect-2026-10-22/`: configuração,
+comparação de identidade, biblioteca e chamada real do ChatGPT. A credencial
+Google permanece fora do Git e do navegador da aplicação.
+
+Documentação conferida com `deno task docs:check` (202 links locais em 53 arquivos),
+`git diff --check` e revisão do diff. `deno task secrets` conferiu 264 arquivos no
+índice e o histórico, sem achados. A validação funcional desta configuração é a
+entrada Google e a chamada MCP hospedadas descritas acima.
+
+## Pendências e próximo passo
+
+**O titular já pode usar o MCP e entrar com Google.** Resta enviar o pacote da
+Skill `academic-memory` quando houver um caminho de upload autorizado disponível,
+preservando o cadastro conectado. Não recriar o plugin nem repetir o login para
+resolver apenas essa pendência de pacote. Quando o titular decidir ativar SMTP, seguir o
 roteiro documentado, configurar a credencial em superfície protegida, testar
 entrega/recuperação e só então alinhar a política de cadastro. Não há engenharia
-ou publicação pendente da versão 0.3.0; a reconexão do cliente está descrita acima
-e a ativação SMTP foi explicitamente adiada.
+ou publicação pendente da versão 0.3.0; a ativação SMTP foi explicitamente adiada.
