@@ -103,6 +103,7 @@ backup; esse efeito precisa ser avaliado, não escondido como rollback automáti
 | Página abre, mas acesso não carrega | API base, rede, Edge Function, pausa e CORS. |
 | Link de entrada não chega | Auth, SMTP, remetente, limite e cadastro permitido. |
 | Sessão existe, mas API retorna 401 | Emissor, assinatura, audiência, sessão revogada ou cliente MCP não autorizado. |
+| AraHub não aparece no ChatGPT | Conta/workspace, cadastro pessoal, instalação e conexão; siga o [diagnóstico do cliente](INSTALAR-MCP-SEM-CODEX.md#se-o-arahub-não-aparecer-no-chatgpt). |
 | Arquivo aparece sem bytes | Referência, view, objeto, tamanho e hash; não marcar como íntegro sem conferir. |
 | Apenas uma conexão Moodle falha | Credencial, identidade, origem e capacidades da instituição. |
 | Ação externa ficou incerta | Resultado na fonte e recibo; não repetir antes da reconciliação. |

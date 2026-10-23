@@ -83,8 +83,8 @@ apresenta a opção gratuita sem contratar serviços ou prometer sua aprovação
 O plano continua Free. Deduplicação não elimina a pausa por inatividade; veja
 [operação e recuperação](docs/operacao-e-recuperacao.md). Não há cota automática
 por usuário, retenção destrutiva, cron de atividade artificial ou abertura ampla
-do serviço. O pacote pessoal previamente instalado não precisou ser substituído:
-o catálogo e o contrato MCP continuam compatíveis.
+do serviço. O catálogo e o contrato MCP continuam compatíveis. A verificação
+posterior do cliente identificou uma pendência separada, descrita abaixo.
 
 O diagnóstico Supabase antes/depois conserva 29 avisos preexistentes de
 [desempenho das políticas RLS](https://supabase.com/docs/guides/database/database-linter?lint=0003_auth_rls_initplan)
@@ -97,9 +97,35 @@ não produziram alterações. A sessão principal concluiu o trabalho sem recorr
 outro provedor pago. Evidências, backup, hashes, roteiro de recuperação e recibos
 ficam em `.private/universal/` e na cópia protegida indicada ali, fora do Git.
 
+## Reconexão do ChatGPT — 22/10/2026
+
+O cadastro pessoal anterior estava ausente das listas de plugins criados e
+instalados da conta inspecionada; sua página retornou `Plugin not found` e a API,
+404. Isso não permite determinar quando ou por que o cadastro desapareceu.
+O backend permaneceu acessível: saúde 200, recurso protegido 200 e MCP anônimo
+401. A disponibilidade do servidor não comprovava a instalação no ChatGPT.
+
+O cadastro pessoal foi recriado no Chrome dedicado com o mesmo backend e cliente
+OAuth público. O callback observado coincide com o já cadastrado. O AraHub voltou
+a aparecer, instalado, com a conexão pendente. A solicitação de link de login foi
+aceita pelo Auth; a leitura autenticada pelo ChatGPT aguarda o titular entrar no
+mesmo perfil de navegador. Não foi usada credencial administrativa para entrar
+na conta do titular. O pacote com a Skill foi preparado para o novo ID; seu envio
+também permanece pendente. IDs, recibos e detalhes operacionais ficam privados.
+O upload pelo DevTools recusou o caminho do workspace; não foram alteradas suas
+raízes nem usado o Chrome pessoal. O checkpoint privado conserva o pacote pronto.
+
+O [roteiro de recuperação do cliente](docs/INSTALAR-MCP-SEM-CODEX.md#se-o-arahub-não-aparecer-no-chatgpt)
+separa cadastro, sessão e chamada real. Não é necessário republicar o backend ou
+restaurar dados para corrigir a ausência do cadastro pessoal.
+Documentação conferida com `deno task docs:check` (199 links locais em 53 arquivos),
+`git diff --check` e revisão do diff. Nenhum código, migration ou dado foi alterado.
+
 ## Próximo passo
 
-Uso cotidiano da versão publicada. Quando o titular decidir ativar SMTP, seguir o
+Concluir login e consentimento do titular, conferir ferramentas, restaurar a Skill
+e provar uma leitura em conversa nova. Quando o titular decidir ativar SMTP, seguir o
 roteiro documentado, configurar a credencial em superfície protegida, testar
 entrega/recuperação e só então alinhar a política de cadastro. Não há engenharia
-ou publicação pendente desta entrega; a ativação foi explicitamente adiada.
+ou publicação pendente da versão 0.3.0; a reconexão do cliente está descrita acima
+e a ativação SMTP foi explicitamente adiada.
